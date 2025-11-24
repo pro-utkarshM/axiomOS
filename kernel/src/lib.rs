@@ -1,6 +1,7 @@
 #![no_std]
 #![no_main]
-#![feature(abi_x86_interrupt, negative_impls, vec_push_within_capacity)]
+#![cfg_attr(target_arch = "x86_64", feature(abi_x86_interrupt))]
+#![feature(negative_impls, vec_push_within_capacity)]
 extern crate alloc;
 
 use ::log::info;
@@ -9,18 +10,22 @@ use conquer_once::spin::OnceCell;
 use crate::driver::pci;
 use crate::limine::BOOT_TIME;
 
+#[cfg(target_arch = "x86_64")]
 mod acpi;
+#[cfg(target_arch = "x86_64")]
 mod apic;
 mod arch;
 pub mod backtrace;
 pub mod driver;
 pub mod file;
+#[cfg(target_arch = "x86_64")]
 pub mod hpet;
 pub mod limine;
 mod log;
 pub mod mcore;
 pub mod mem;
 mod serial;
+#[cfg(target_arch = "x86_64")]
 pub mod sse;
 pub mod syscall;
 pub mod time;
@@ -38,9 +43,14 @@ pub fn init() {
 
     log::init();
     mem::init();
-    acpi::init();
-    apic::init();
-    hpet::init();
+    
+    #[cfg(target_arch = "x86_64")]
+    {
+        acpi::init();
+        apic::init();
+        hpet::init();
+    }
+    
     backtrace::init();
     mcore::init();
     file::init();

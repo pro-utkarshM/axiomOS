@@ -19,7 +19,17 @@ use kernel_device::block::{BlockBuf, BlockDevice};
 use kernel_vfs::path::{AbsolutePath, ROOT};
 use log::{error, info};
 use spin::RwLock;
+#[cfg(target_arch = "x86_64")]
 use x86_64::instructions::hlt;
+
+#[cfg(not(target_arch = "x86_64"))]
+fn hlt() {
+    use kernel::arch::traits::Architecture;
+    #[cfg(target_arch = "riscv64")]
+    kernel::arch::riscv64::Riscv64::wait_for_interrupt();
+    #[cfg(target_arch = "aarch64")]
+    kernel::arch::aarch64::Aarch64::wait_for_interrupt();
+}
 
 #[unsafe(export_name = "kernel_main")]
 unsafe extern "C" fn main() -> ! {
