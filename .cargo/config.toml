@@ -13,10 +13,5 @@ rustflags = [
     "-g"
 ]
 
-[target.riscv64gc-unknown-none-elf]
-rustflags = [
-    "-C", "link-arg=-Tkernel/linker-riscv64.ld",
-    "-C", "relocation-model=static",
-    "-C", "force-frame-pointers=yes",
-    "-g"
-]
+# RISC-V config removed - main kernel doesn't build for RISC-V yet
+# Use kernel/riscv-demo/ which has its own .cargo/config.toml

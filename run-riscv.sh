@@ -1,11 +1,14 @@
 #!/bin/bash
 set -e
 
+# Get the directory where this script is located
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 echo "Running Muffin OS RISC-V Demo Kernel in QEMU..."
 echo "================================================"
 echo ""
 
-KERNEL_PATH="/home/ubuntu/riscv-kernel-demo/target/riscv64gc-unknown-none-elf/debug/riscv-kernel-demo"
+KERNEL_PATH="$SCRIPT_DIR/kernel/riscv-demo/target/riscv64gc-unknown-none-elf/debug/riscv-kernel-demo"
 
 # Check if kernel exists
 if [ ! -f "$KERNEL_PATH" ]; then

@@ -16,9 +16,9 @@ Press `Ctrl+A` then `X` to exit QEMU.
 
 ## What Gets Built
 
-The build script compiles the **standalone RISC-V demo kernel** located at:
+The build script compiles the **RISC-V demo kernel** located at:
 ```
-/home/ubuntu/riscv-kernel-demo/
+kernel/riscv-demo/
 ```
 
 **Note:** This is NOT the main Muffin kernel. It's a minimal demonstration kernel that proves OpenSBI integration works.
@@ -73,13 +73,13 @@ Halting...
 
 ### Binary Location
 ```
-/home/ubuntu/riscv-kernel-demo/target/riscv64gc-unknown-none-elf/debug/riscv-kernel-demo
+kernel/riscv-demo/target/riscv64gc-unknown-none-elf/debug/riscv-kernel-demo
 ```
 
 ## Manual Build (Alternative)
 
 ```bash
-cd /home/ubuntu/riscv-kernel-demo
+cd kernel/riscv-demo
 rustup target add riscv64gc-unknown-none-elf
 cargo build
 ```
@@ -90,7 +90,7 @@ cargo build
 qemu-system-riscv64 \
   -machine virt \
   -bios default \
-  -kernel /home/ubuntu/riscv-kernel-demo/target/riscv64gc-unknown-none-elf/debug/riscv-kernel-demo \
+  -kernel kernel/riscv-demo/target/riscv64gc-unknown-none-elf/debug/riscv-kernel-demo \
   -nographic
 ```
 
@@ -113,6 +113,21 @@ sudo apt install gcc-riscv64-unknown-elf
 
 ### Build fails with x86_64 errors
 You're trying to build the main kernel (`kernel/`) which doesn't support RISC-V yet. Use the demo kernel instead via `./build-riscv.sh`.
+
+### Build fails with workspace errors
+The demo kernel should be excluded from the workspace. Check that `Cargo.toml` has:
+```toml
+[workspace]
+exclude = [
+  "kernel/riscv-demo",
+]
+```
+
+And `kernel/riscv-demo/Cargo.toml` has:
+```toml
+[workspace]
+# This is a standalone project
+```
 
 ## Next Steps
 
