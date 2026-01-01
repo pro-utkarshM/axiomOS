@@ -2,6 +2,12 @@
 /.idea
 debug.lldb
 
+# RISC-V demo kernel build artifacts
+kernel-riscv-minimal/target/
+
+# Claude Code settings
+.claude/
+
 # Added by cargo
 #
 # already existing elements were commented out

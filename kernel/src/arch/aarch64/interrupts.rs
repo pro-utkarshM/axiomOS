@@ -1,38 +1,63 @@
-/// Initialize GIC (Generic Interrupt Controller)
+//! ARM64 Interrupt Handling
+//!
+//! This module handles interrupt initialization and dispatching for ARM64.
+//! It uses the GIC (Generic Interrupt Controller) for interrupt management
+//! and the ARM generic timer for scheduling.
+
+use super::gic;
+
+/// Physical timer IRQ number
+const TIMER_IRQ: u32 = gic::irq::TIMER_PHYS;
+
+/// Initialize interrupt controller and timer
 pub fn init() {
-    // TODO: Initialize GICv2/GICv3
-    // For now, this is a placeholder
-    log::info!("ARM GIC initialized");
+    // Initialize the GIC
+    gic::init();
+
+    // Enable timer interrupt
+    gic::enable_irq(TIMER_IRQ);
+
+    // Set timer priority (high priority)
+    gic::set_priority(TIMER_IRQ, 0x80);
+
+    // Initialize and start the timer
+    init_timer();
+
+    log::info!("ARM interrupts initialized");
 }
 
-/// Handle IRQ interrupt
-pub fn handle_irq() {
-    // TODO: Read GIC IAR register to get interrupt ID
-    // TODO: Handle device-specific interrupts
-    // TODO: Write to GIC EOIR register to signal end of interrupt
-    
-    // Check if this is a timer interrupt
-    if is_timer_interrupt() {
-        handle_timer_interrupt();
+/// Handle IRQ interrupt (called from exception vector)
+#[no_mangle]
+pub extern "C" fn handle_irq() {
+    // Acknowledge the interrupt and get its ID
+    let irq = gic::acknowledge();
+
+    // Check for spurious interrupt
+    if irq == gic::irq::SPURIOUS {
+        return;
     }
-}
 
-/// Check if current interrupt is a timer interrupt
-fn is_timer_interrupt() -> bool {
-    // TODO: Read timer interrupt status
-    // For now, assume all IRQs are timer interrupts
-    true
+    // Dispatch based on IRQ number
+    match irq {
+        TIMER_IRQ => handle_timer_interrupt(),
+        _ => {
+            log::warn!("Unhandled IRQ: {}", irq);
+        }
+    }
+
+    // Signal end of interrupt
+    if irq != gic::irq::SPURIOUS {
+        gic::end_of_interrupt(irq);
+    }
 }
 
 /// Handle timer interrupt
 fn handle_timer_interrupt() {
-    // Clear timer interrupt
+    // Clear and reset timer for next interrupt
     clear_timer_interrupt();
-    
-    // Set next timer
     set_next_timer();
-    
-    // Notify scheduler
+
+    // Notify scheduler for preemption
     if let Some(ctx) = crate::mcore::context::ExecutionContext::try_load() {
         unsafe {
             ctx.scheduler_mut().reschedule();
@@ -43,7 +68,7 @@ fn handle_timer_interrupt() {
 /// Clear timer interrupt
 fn clear_timer_interrupt() {
     unsafe {
-        // Write to CNTP_CTL_EL0 to clear interrupt
+        // Disable timer to clear interrupt
         core::arch::asm!("msr cntp_ctl_el0, {}", in(reg) 0u64);
     }
 }
@@ -51,21 +76,22 @@ fn clear_timer_interrupt() {
 /// Set next timer interrupt
 fn set_next_timer() {
     unsafe {
-        // Read current counter value
+        // Read timer frequency
         let cntfrq: u64;
         core::arch::asm!("mrs {}, cntfrq_el0", out(reg) cntfrq);
-        
+
+        // Read current counter value
         let cntvct: u64;
         core::arch::asm!("mrs {}, cntvct_el0", out(reg) cntvct);
-        
-        // Set timer to fire in 10ms
+
+        // Set timer to fire in 10ms (100 Hz)
         let interval = cntfrq / 100;
         let next = cntvct + interval;
-        
-        // Write to CNTP_CVAL_EL0
+
+        // Write compare value
         core::arch::asm!("msr cntp_cval_el0, {}", in(reg) next);
-        
-        // Enable timer
+
+        // Enable timer (bit 0 = enable, bit 1 = mask output)
         core::arch::asm!("msr cntp_ctl_el0, {}", in(reg) 1u64);
     }
 }
@@ -73,10 +99,10 @@ fn set_next_timer() {
 /// Initialize timer
 pub fn init_timer() {
     set_next_timer();
+    log::debug!("ARM generic timer initialized (100 Hz)");
 }
 
-/// End of interrupt
+/// End of interrupt (public wrapper)
 pub fn end_of_interrupt(irq_id: u32) {
-    // TODO: Write to GIC EOIR register
-    // This is GIC-specific and depends on GICv2 vs GICv3
+    gic::end_of_interrupt(irq_id);
 }

@@ -15,3 +15,13 @@ rustflags = [
 
 # RISC-V config removed - main kernel doesn't build for RISC-V yet
 # Use kernel/riscv-demo/ which has its own .cargo/config.toml
+
+[target.aarch64-unknown-none]
+rustflags = [
+    "-C", "link-arg=-z",
+    "-C", "link-arg=nostart-stop-gc",
+    "-C", "force-frame-pointers=yes",
+    "-C", "force-unwind-tables=yes",
+    "-C", "relocation-model=static",
+    "-g"
+]

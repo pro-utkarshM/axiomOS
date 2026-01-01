@@ -18,8 +18,13 @@ fn main() {
                 .compile("riscv64_boot");
         }
         "aarch64" => {
-            // TODO: Add ARM boot assembly when ready
-            println!("cargo:warning=ARM boot assembly not yet implemented");
+            println!("cargo:rerun-if-changed=src/arch/aarch64/boot.S");
+            println!("cargo:rerun-if-changed=src/arch/aarch64/exception_vectors.S");
+
+            cc::Build::new()
+                .file("src/arch/aarch64/boot.S")
+                .file("src/arch/aarch64/exception_vectors.S")
+                .compile("aarch64_boot");
         }
         "x86_64" => {
             // x86_64 doesn't need assembly compilation (uses Limine)

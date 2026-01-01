@@ -1,8 +1,10 @@
 pub mod boot;
 pub mod context;
 pub mod exceptions;
+pub mod gic;
 pub mod interrupts;
 pub mod paging;
+pub mod platform;
 pub mod shutdown;
 pub mod syscall;
 

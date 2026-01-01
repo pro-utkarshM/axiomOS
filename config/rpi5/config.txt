@@ -1,0 +1,59 @@
+# Raspberry Pi 5 Boot Configuration for Muffin OS
+# Copy this file to the root of your SD card's boot partition
+
+# Use 64-bit kernel (required for AArch64)
+arm_64bit=1
+
+# Kernel filename - Pi 5 looks for kernel8.img for 64-bit kernels
+kernel=kernel8.img
+
+# ============================================================================
+# CRITICAL FIRMWARE SHORTCUTS
+# These settings are required for bare-metal kernel development without
+# implementing a full PCIe driver.
+# ============================================================================
+
+# Disable PCIe reset - keeps RP1 southbridge in firmware-initialized state
+# Without this, RP1 peripherals (UART, GPIO, etc.) won't be accessible
+pciex4_reset=0
+
+# Enable RP1 UART for bare metal kernel
+# This pre-configures UART0 at 115200 baud, 8N1
+enable_rp1_uart=1
+
+# ============================================================================
+# UART/Serial Console Settings
+# ============================================================================
+
+# Enable UART output on GPIO 14/15
+enable_uart=1
+
+# Enable early UART output for boot debugging
+uart_2ndstage=1
+
+# Disable Bluetooth which otherwise uses the UART pins
+dtoverlay=disable-bt
+
+# ============================================================================
+# Display and GPU Settings
+# ============================================================================
+
+# Disable rainbow splash screen for faster boot
+disable_splash=1
+
+# Minimum GPU memory allocation (we don't use the GPU)
+gpu_mem=16
+
+# ============================================================================
+# Serial Console Connection
+# ============================================================================
+# Connect a USB-to-TTL serial cable (3.3V logic level!):
+#   - GPIO 14 (Pin 8)  = TXD -> Connect to RX on USB-TTL adapter
+#   - GPIO 15 (Pin 10) = RXD -> Connect to TX on USB-TTL adapter
+#   - GND (Pin 6)      = GND -> Connect to GND on USB-TTL adapter
+#
+# Serial settings: 115200 baud, 8 data bits, no parity, 1 stop bit (8N1)
+#
+# Linux: screen /dev/ttyUSB0 115200
+# macOS: screen /dev/tty.usbserial 115200
+# ============================================================================

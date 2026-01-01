@@ -20,23 +20,22 @@ pub fn boot_info() -> &'static BootInfo {
 pub unsafe extern "C" fn _start(dtb_addr: usize) -> ! {
     // Initialize boot info
     init_boot_info(dtb_addr);
-    
-    // Clear BSS
+
+    // BSS is already cleared by assembly, but we define the symbols
+    // for reference
     extern "C" {
-        static mut __bss_start: u8;
-        static mut __bss_end: u8;
+        static __bss_start: u8;
+        static __bss_end: u8;
     }
-    
-    let bss_start = &mut __bss_start as *mut u8;
-    let bss_end = &mut __bss_end as *mut u8;
-    let bss_size = bss_end as usize - bss_start as usize;
-    
-    core::ptr::write_bytes(bss_start, 0, bss_size);
-    
+
+    // Initialize platform-specific hardware (UART, etc.)
+    #[cfg(feature = "rpi5")]
+    super::platform::rpi5::init();
+
     // Jump to kernel main
     extern "Rust" {
         fn kernel_main() -> !;
     }
-    
+
     kernel_main()
 }

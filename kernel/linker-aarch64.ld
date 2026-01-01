@@ -2,8 +2,8 @@
 OUTPUT_FORMAT(elf64-littleaarch64)
 OUTPUT_ARCH(aarch64)
 
-/* We want the symbol _start to be our entry point */
-ENTRY(_start)
+/* We want the symbol _start_asm to be our entry point (assembly) */
+ENTRY(_start_asm)
 
 /* Define the program headers we want so the bootloader gives us the right */
 /* MMU permissions */
@@ -16,11 +16,13 @@ PHDRS
 
 SECTIONS
 {
-    /* Kernel starts at higher half of virtual memory */
-    . = 0xffffffff80000000;
+    /* Raspberry Pi 5 loads kernel at 0x80000 physical address */
+    /* We start without MMU enabled, so use physical addresses */
+    . = 0x80000;
 
+    /* Boot code must come first */
     .text : {
-        *(.text.boot)
+        KEEP(*(.text.boot))
         *(.text .text.*)
     } :text
 
@@ -43,6 +45,8 @@ SECTIONS
         __bss_start = .;
         *(.bss .bss.*)
         *(COMMON)
+        . = ALIGN(16);
+        *(.bss.stack)
         __bss_end = .;
     } :data
 
