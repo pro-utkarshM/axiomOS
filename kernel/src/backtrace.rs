@@ -27,7 +27,7 @@ unsafe impl Send for BacktraceContext {}
 /// during parsing.
 pub fn init() {
     // TODO: make this work in release builds as well
-    #[cfg(all(debug_assertions, feature = "backtrace"))]
+    #[cfg(all(debug_assertions, feature = "backtrace", target_arch = "x86_64"))]
     BACKTRACE_CONTEXT.init_once(|| {
         use core::slice::from_raw_parts;
 
@@ -179,6 +179,7 @@ struct ReturnAddressIterator {
 }
 
 impl ReturnAddressIterator {
+    #[cfg(target_arch = "x86_64")]
     pub fn new() -> Self {
         let mut current_bp: *const usize;
         unsafe {
@@ -188,6 +189,12 @@ impl ReturnAddressIterator {
             );
         }
         Self { current_bp }
+    }
+
+    #[cfg(not(target_arch = "x86_64"))]
+    pub fn new() -> Self {
+        // Backtrace not implemented for non-x86_64
+        Self { current_bp: core::ptr::null() }
     }
 }
 

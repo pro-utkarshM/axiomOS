@@ -37,12 +37,12 @@ pub fn init_exception_vector() {
 }
 
 /// Exception vector base (defined in assembly)
-extern "C" {
+unsafe extern "C" {
     fn exception_vector_base();
 }
 
 /// Synchronous exception handler
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn handle_sync_exception() {
     let esr: u64;
     let elr: u64;
@@ -93,20 +93,17 @@ fn handle_data_abort(elr: u64, far: u64, iss: u64) {
     panic!("Data abort not yet implemented");
 }
 
-/// IRQ handler
-#[no_mangle]
-pub extern "C" fn handle_irq() {
-    crate::arch::aarch64::interrupts::handle_irq();
-}
+// IRQ handler is defined in interrupts.rs module
+// (Re-exported through assembly vector table)
 
 /// FIQ handler
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn handle_fiq() {
     log::warn!("FIQ received");
 }
 
 /// SError handler
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn handle_serror() {
     panic!("SError received");
 }

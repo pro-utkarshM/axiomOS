@@ -1,7 +1,7 @@
 use core::slice::{from_raw_parts, from_raw_parts_mut};
 use core::ops::Neg;
 
-
+#[cfg(target_arch = "x86_64")]
 use access::KernelAccess;
 use kernel_abi::{EINVAL, Errno, syscall_name};
 use kernel_syscall::access::FileAccess;
@@ -22,6 +22,7 @@ fn hlt() {
     unsafe { core::arch::asm!("wfi"); }
 }
 
+#[cfg(target_arch = "x86_64")]
 mod access;
 
 #[must_use]
@@ -40,12 +41,20 @@ pub fn dispatch_syscall(
     );
 
     let result: Result<usize, Errno> = match n {
+        #[cfg(target_arch = "x86_64")]
         kernel_abi::SYS_EXIT => {
             let status = i32::try_from(arg1).unwrap_or(0);
             let task = crate::mcore::context::ExecutionContext::load().current_task();
             let process = task.process();
             *process.exit_code().write() = Some(status);
             task.set_should_terminate(true);
+            loop {
+                hlt();
+            }
+        }
+        #[cfg(not(target_arch = "x86_64"))]
+        kernel_abi::SYS_EXIT => {
+            error!("SYS_EXIT not implemented for aarch64/riscv64");
             loop {
                 hlt();
             }
@@ -91,6 +100,7 @@ unsafe fn slice_from_ptr_and_len_mut<'a, T>(ptr: usize, len: usize) -> Result<&'
     Ok(slice)
 }
 
+#[cfg(target_arch = "x86_64")]
 fn dispatch_sys_getcwd(path: usize, size: usize) -> Result<usize, Errno> {
     let cx = KernelAccess::new();
 
@@ -98,6 +108,7 @@ fn dispatch_sys_getcwd(path: usize, size: usize) -> Result<usize, Errno> {
     sys_getcwd(&cx, path, size)
 }
 
+#[cfg(target_arch = "x86_64")]
 fn dispatch_sys_mmap(
     addr: usize,
     len: usize,
@@ -115,6 +126,7 @@ fn dispatch_sys_mmap(
     sys_mmap(&cx, addr, len, prot, flags, fd, offset)
 }
 
+#[cfg(target_arch = "x86_64")]
 fn dispatch_sys_open(
     path: usize,
     path_len: usize,
@@ -127,6 +139,7 @@ fn dispatch_sys_open(
     sys_open(&cx, path, path_len, oflag as i32, mode as i32)
 }
 
+#[cfg(target_arch = "x86_64")]
 fn dispatch_sys_read(fd: usize, buf: usize, nbyte: usize) -> Result<usize, Errno> {
     let cx = KernelAccess::new();
 
@@ -137,6 +150,7 @@ fn dispatch_sys_read(fd: usize, buf: usize, nbyte: usize) -> Result<usize, Errno
     sys_read(&cx, fd, slice)
 }
 
+#[cfg(target_arch = "x86_64")]
 fn dispatch_sys_write(fd: usize, buf: usize, nbyte: usize) -> Result<usize, Errno> {
     let cx = KernelAccess::new();
 
@@ -145,4 +159,41 @@ fn dispatch_sys_write(fd: usize, buf: usize, nbyte: usize) -> Result<usize, Errn
 
     let slice = unsafe { slice_from_ptr_and_len(buf, nbyte) }?;
     sys_write(&cx, fd, slice)
+}
+
+#[cfg(not(target_arch = "x86_64"))]
+fn dispatch_sys_getcwd(_path: usize, _size: usize) -> Result<usize, Errno> {
+    Err(EINVAL)
+}
+
+#[cfg(not(target_arch = "x86_64"))]
+fn dispatch_sys_mmap(
+    _addr: usize,
+    _len: usize,
+    _prot: usize,
+    _flags: usize,
+    _fd: usize,
+    _offset: usize,
+) -> Result<usize, Errno> {
+    Err(EINVAL)
+}
+
+#[cfg(not(target_arch = "x86_64"))]
+fn dispatch_sys_open(
+    _path: usize,
+    _path_len: usize,
+    _oflag: usize,
+    _mode: usize,
+) -> Result<usize, Errno> {
+    Err(EINVAL)
+}
+
+#[cfg(not(target_arch = "x86_64"))]
+fn dispatch_sys_read(_fd: usize, _buf: usize, _nbyte: usize) -> Result<usize, Errno> {
+    Err(EINVAL)
+}
+
+#[cfg(not(target_arch = "x86_64"))]
+fn dispatch_sys_write(_fd: usize, _buf: usize, _nbyte: usize) -> Result<usize, Errno> {
+    Err(EINVAL)
 }

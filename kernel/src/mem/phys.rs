@@ -7,8 +7,12 @@ use kernel_physical_memory::{PhysicalFrameAllocator, PhysicalMemoryManager};
 use limine::memory_map::{Entry, EntryType};
 use log::{info, warn};
 use spin::Mutex;
+
+#[cfg(target_arch = "x86_64")]
 use x86_64::PhysAddr;
+#[cfg(target_arch = "x86_64")]
 use x86_64::structures::paging::frame::PhysFrameRangeInclusive;
+#[cfg(target_arch = "x86_64")]
 use x86_64::structures::paging::{PageSize, PhysFrame, Size4KiB};
 
 use crate::mem::heap::Heap;
@@ -134,6 +138,7 @@ impl PhysicalMemory {
     }
 }
 
+#[cfg(target_arch = "x86_64")]
 unsafe impl x86_64::structures::paging::FrameAllocator<Size4KiB> for PhysicalMemory {
     fn allocate_frame(&mut self) -> Option<PhysFrame> {
         Self::allocate_frame()

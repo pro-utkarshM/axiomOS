@@ -23,7 +23,7 @@ pub fn handle_syscall() {
 }
 
 /// Syscall entry point with full context
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn syscall_handler_with_context(
     x0: usize,
     x1: usize,

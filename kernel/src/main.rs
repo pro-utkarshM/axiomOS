@@ -14,7 +14,9 @@ use kernel::file::ext2::VirtualExt2Fs;
 use kernel::file::vfs;
 #[cfg(target_arch = "x86_64")]
 use kernel::limine::BASE_REVISION;
+#[cfg(target_arch = "x86_64")]
 use kernel::mcore;
+#[cfg(target_arch = "x86_64")]
 use kernel::mcore::mtask::process::Process;
 use kernel_device::block::{BlockBuf, BlockDevice};
 use kernel_vfs::path::{AbsolutePath, ROOT};
@@ -25,16 +27,15 @@ use x86_64::instructions::hlt;
 
 #[cfg(not(target_arch = "x86_64"))]
 fn hlt() {
-    use kernel::arch::traits::Architecture;
     #[cfg(target_arch = "riscv64")]
-    kernel::arch::riscv64::Riscv64::wait_for_interrupt();
+    unsafe { riscv::asm::wfi(); }
     #[cfg(target_arch = "aarch64")]
-    kernel::arch::aarch64::Aarch64::wait_for_interrupt();
+    unsafe { core::arch::asm!("wfi"); }
 }
 
+#[cfg(target_arch = "x86_64")]
 #[unsafe(export_name = "kernel_main")]
 unsafe extern "C" fn main() -> ! {
-    #[cfg(target_arch = "x86_64")]
     assert!(BASE_REVISION.is_supported());
 
     kernel::init();
@@ -65,10 +66,25 @@ unsafe extern "C" fn main() -> ! {
     mcore::turn_idle()
 }
 
+#[cfg(not(target_arch = "x86_64"))]
+#[unsafe(export_name = "kernel_main")]
+unsafe extern "C" fn main() -> ! {
+    kernel::init();
+
+    info!("ARM64/RISC-V kernel started");
+    info!("Kernel initialization complete");
+
+    loop {
+        hlt();
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
 struct ArcLockedBlockDevice<const N: usize>(
     Arc<RwLock<dyn BlockDevice<KernelDeviceId, N> + Send + Sync>>,
 );
 
+#[cfg(target_arch = "x86_64")]
 impl<const N: usize> filesystem::BlockDevice for ArcLockedBlockDevice<N> {
     type Error = Box<dyn Error>;
 

@@ -27,7 +27,7 @@ pub fn init() {
 }
 
 /// Handle IRQ interrupt (called from exception vector)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn handle_irq() {
     // Acknowledge the interrupt and get its ID
     let irq = gic::acknowledge();
@@ -57,12 +57,8 @@ fn handle_timer_interrupt() {
     clear_timer_interrupt();
     set_next_timer();
 
-    // Notify scheduler for preemption
-    if let Some(ctx) = crate::mcore::context::ExecutionContext::try_load() {
-        unsafe {
-            ctx.scheduler_mut().reschedule();
-        }
-    }
+    // TODO: Implement scheduler integration for ARM64
+    // Scheduler not yet implemented for aarch64
 }
 
 /// Clear timer interrupt

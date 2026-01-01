@@ -3,10 +3,12 @@ pub fn shutdown() -> ! {
     unsafe {
         psci_system_off();
     }
-    
+
     // If PSCI shutdown fails, loop forever
     loop {
-        core::arch::asm!("wfi");
+        unsafe {
+            core::arch::asm!("wfi");
+        }
     }
 }
 
@@ -15,10 +17,12 @@ pub fn reboot() -> ! {
     unsafe {
         psci_system_reset();
     }
-    
+
     // If PSCI reboot fails, loop forever
     loop {
-        core::arch::asm!("wfi");
+        unsafe {
+            core::arch::asm!("wfi");
+        }
     }
 }
 

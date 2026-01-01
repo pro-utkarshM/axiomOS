@@ -1,5 +1,6 @@
 use log::{Level, Metadata, Record};
 
+#[cfg(target_arch = "x86_64")]
 use crate::mcore::context::ExecutionContext;
 use crate::serial_println;
 
@@ -27,17 +28,31 @@ impl log::Log for SerialLogger {
                 Level::Trace => "\x1b[1;90m",
             };
 
-            if let Some(ctx) = ExecutionContext::try_load() {
-                serial_println!(
-                    "{}{:5}\x1b[0m cpu{} pid{:3} [{}] {}",
-                    color,
-                    record.level(),
-                    ctx.cpu_id(),
-                    ctx.pid(),
-                    record.target(),
-                    record.args()
-                );
-            } else {
+            #[cfg(target_arch = "x86_64")]
+            {
+                if let Some(ctx) = ExecutionContext::try_load() {
+                    serial_println!(
+                        "{}{:5}\x1b[0m cpu{} pid{:3} [{}] {}",
+                        color,
+                        record.level(),
+                        ctx.cpu_id(),
+                        ctx.pid(),
+                        record.target(),
+                        record.args()
+                    );
+                } else {
+                    serial_println!(
+                        "{}{:5}\x1b[0m boot [{}] {}",
+                        color,
+                        record.level(),
+                        record.target(),
+                        record.args()
+                    );
+                }
+            }
+
+            #[cfg(not(target_arch = "x86_64"))]
+            {
                 serial_println!(
                     "{}{:5}\x1b[0m boot [{}] {}",
                     color,

@@ -22,6 +22,7 @@ fn main() {
             println!("cargo:rerun-if-changed=src/arch/aarch64/exception_vectors.S");
 
             cc::Build::new()
+                .compiler("aarch64-linux-gnu-gcc")
                 .file("src/arch/aarch64/boot.S")
                 .file("src/arch/aarch64/exception_vectors.S")
                 .compile("aarch64_boot");

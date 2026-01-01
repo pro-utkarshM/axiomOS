@@ -7,6 +7,7 @@ extern crate alloc;
 use ::log::info;
 use conquer_once::spin::OnceCell;
 
+#[cfg(target_arch = "x86_64")]
 use crate::driver::pci;
 #[cfg(target_arch = "x86_64")]
 use crate::limine::BOOT_TIME;
@@ -24,9 +25,29 @@ pub mod hpet;
 #[cfg(target_arch = "x86_64")]
 pub mod limine;
 mod log;
+#[cfg(target_arch = "x86_64")]
 pub mod mcore;
 pub mod mem;
 mod serial;
+
+// Provide a dummy allocator for non-x86_64 targets
+#[cfg(not(target_arch = "x86_64"))]
+#[global_allocator]
+static ALLOCATOR: DummyAllocator = DummyAllocator;
+
+#[cfg(not(target_arch = "x86_64"))]
+struct DummyAllocator;
+
+#[cfg(not(target_arch = "x86_64"))]
+unsafe impl core::alloc::GlobalAlloc for DummyAllocator {
+    unsafe fn alloc(&self, _layout: core::alloc::Layout) -> *mut u8 {
+        core::ptr::null_mut()
+    }
+
+    unsafe fn dealloc(&self, _ptr: *mut u8, _layout: core::alloc::Layout) {
+        // no-op
+    }
+}
 #[cfg(target_arch = "x86_64")]
 pub mod sse;
 pub mod syscall;
@@ -57,9 +78,14 @@ pub fn init() {
     }
     
     backtrace::init();
-    mcore::init();
+
+    #[cfg(target_arch = "x86_64")]
+    {
+        mcore::init();
+        pci::init();
+    }
+
     file::init();
-    pci::init();
 
     info!("kernel initialized");
 }

@@ -12,18 +12,18 @@ pub unsafe fn init_boot_info(dtb_addr: usize) {
 
 /// Get boot information
 pub fn boot_info() -> &'static BootInfo {
-    unsafe { &BOOT_INFO }
+    unsafe { &*(&raw const BOOT_INFO) }
 }
 
 /// Early boot initialization (called from assembly)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn _start(dtb_addr: usize) -> ! {
     // Initialize boot info
     init_boot_info(dtb_addr);
 
     // BSS is already cleared by assembly, but we define the symbols
     // for reference
-    extern "C" {
+    unsafe extern "C" {
         static __bss_start: u8;
         static __bss_end: u8;
     }
@@ -33,7 +33,7 @@ pub unsafe extern "C" fn _start(dtb_addr: usize) -> ! {
     super::platform::rpi5::init();
 
     // Jump to kernel main
-    extern "Rust" {
+    unsafe extern "Rust" {
         fn kernel_main() -> !;
     }
 

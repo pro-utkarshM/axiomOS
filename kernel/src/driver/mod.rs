@@ -5,8 +5,10 @@ use core::sync::atomic::Ordering::Relaxed;
 use kernel_device::DeviceId;
 
 pub mod block;
+#[cfg(target_arch = "x86_64")]
 pub mod pci;
 pub mod raw;
+#[cfg(target_arch = "x86_64")]
 pub mod virtio;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
