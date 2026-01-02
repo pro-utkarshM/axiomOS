@@ -8,7 +8,7 @@ pub fn init() {
         sie::set_ssoft();
         sie::set_sext();
     }
-    
+
     // Initialize timer
     init_timer();
 }
@@ -18,7 +18,7 @@ fn init_timer() {
     // Set next timer interrupt (10ms from now)
     let timebase = 10_000_000; // 10 MHz timebase
     let interval = timebase / 100; // 10ms
-    
+
     unsafe {
         let next = time::read() + interval;
         set_timer(next);
@@ -39,7 +39,13 @@ unsafe fn sbi_set_timer(stime_value: u64) {
 
 /// Generic SBI call
 #[inline(always)]
-unsafe fn sbi_call(extension: usize, function: usize, arg0: u64, arg1: usize, arg2: usize) -> usize {
+unsafe fn sbi_call(
+    extension: usize,
+    function: usize,
+    arg0: u64,
+    arg1: usize,
+    arg2: usize,
+) -> usize {
     let error: usize;
     core::arch::asm!(
         "ecall",
@@ -59,7 +65,7 @@ pub fn handle_soft_interrupt() {
     unsafe {
         sip::clear_ssoft();
     }
-    
+
     log::debug!("Software interrupt");
 }
 
@@ -68,12 +74,12 @@ pub fn handle_timer_interrupt() {
     // Clear timer interrupt by setting next timer
     let timebase = 10_000_000;
     let interval = timebase / 100; // 10ms
-    
+
     unsafe {
         let next = time::read() + interval;
         set_timer(next);
     }
-    
+
     // Notify scheduler
     if let Some(ctx) = crate::mcore::context::ExecutionContext::try_load() {
         unsafe {
@@ -87,7 +93,7 @@ pub fn handle_external_interrupt() {
     // TODO: Read PLIC claim register to get interrupt source
     // TODO: Handle device-specific interrupts
     // TODO: Write to PLIC complete register
-    
+
     log::debug!("External interrupt");
 }
 

@@ -69,14 +69,14 @@ pub fn init() {
 
     log::init();
     mem::init();
-    
+
     #[cfg(target_arch = "x86_64")]
     {
         acpi::init();
         apic::init();
         hpet::init();
     }
-    
+
     backtrace::init();
 
     #[cfg(target_arch = "x86_64")]

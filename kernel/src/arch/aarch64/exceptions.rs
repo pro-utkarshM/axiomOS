@@ -8,19 +8,19 @@ pub struct ExceptionVectorTable {
     curr_el_sp0_irq: [u8; 128],
     curr_el_sp0_fiq: [u8; 128],
     curr_el_sp0_serror: [u8; 128],
-    
+
     // Current EL with SPx
     curr_el_spx_sync: [u8; 128],
     curr_el_spx_irq: [u8; 128],
     curr_el_spx_fiq: [u8; 128],
     curr_el_spx_serror: [u8; 128],
-    
+
     // Lower EL using AArch64
     lower_el_aarch64_sync: [u8; 128],
     lower_el_aarch64_irq: [u8; 128],
     lower_el_aarch64_fiq: [u8; 128],
     lower_el_aarch64_serror: [u8; 128],
-    
+
     // Lower EL using AArch32
     lower_el_aarch32_sync: [u8; 128],
     lower_el_aarch32_irq: [u8; 128],
@@ -47,16 +47,16 @@ pub extern "C" fn handle_sync_exception() {
     let esr: u64;
     let elr: u64;
     let far: u64;
-    
+
     unsafe {
         asm!("mrs {}, esr_el1", out(reg) esr);
         asm!("mrs {}, elr_el1", out(reg) elr);
         asm!("mrs {}, far_el1", out(reg) far);
     }
-    
+
     let ec = (esr >> 26) & 0x3F; // Exception class
-    let iss = esr & 0x1FFFFFF;   // Instruction specific syndrome
-    
+    let iss = esr & 0x1FFFFFF; // Instruction specific syndrome
+
     match ec {
         0x15 => {
             // SVC instruction execution in AArch64 state
@@ -81,14 +81,14 @@ pub extern "C" fn handle_sync_exception() {
 
 fn handle_data_abort(elr: u64, far: u64, iss: u64) {
     let is_write = (iss & (1 << 6)) != 0;
-    
+
     log::error!(
         "Data abort at {:#x}, address: {:#x}, write: {}",
         elr,
         far,
         is_write
     );
-    
+
     // TODO: Implement page fault handling
     panic!("Data abort not yet implemented");
 }
@@ -143,7 +143,7 @@ pub struct ExceptionContext {
     pub x28: u64,
     pub x29: u64, // Frame pointer
     pub x30: u64, // Link register
-    
+
     // Exception state
     pub elr: u64,  // Exception link register
     pub spsr: u64, // Saved program status register

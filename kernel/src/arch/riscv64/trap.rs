@@ -1,4 +1,5 @@
 use core::arch::asm;
+
 use riscv::register::{scause, sepc, sstatus, stval, stvec};
 
 /// Initialize the trap vector
@@ -16,7 +17,7 @@ pub extern "C" fn trap_handler() {
     let scause = scause::read();
     let sepc = sepc::read();
     let stval = stval::read();
-    
+
     match scause.cause() {
         scause::Trap::Exception(exception) => {
             handle_exception(exception, sepc, stval);
@@ -29,7 +30,7 @@ pub extern "C" fn trap_handler() {
 
 fn handle_exception(exception: scause::Exception, sepc: usize, stval: usize) {
     use scause::Exception;
-    
+
     match exception {
         Exception::InstructionMisaligned => {
             panic!("Instruction misaligned at {:#x}, stval: {:#x}", sepc, stval);
@@ -77,7 +78,7 @@ fn handle_exception(exception: scause::Exception, sepc: usize, stval: usize) {
 
 fn handle_interrupt(interrupt: scause::Interrupt) {
     use scause::Interrupt;
-    
+
     match interrupt {
         Interrupt::SupervisorSoft => {
             // Software interrupt (IPI)
@@ -104,7 +105,7 @@ fn handle_page_fault(sepc: usize, stval: usize, is_write: bool) {
         stval,
         is_write
     );
-    
+
     // TODO: Implement lazy page allocation and COW
     // For now, just panic
     panic!("Page fault not yet implemented");

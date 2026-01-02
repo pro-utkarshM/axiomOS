@@ -8,12 +8,7 @@ pub fn init() {
 /// Flush TLB
 pub fn flush_tlb() {
     unsafe {
-        core::arch::asm!(
-            "dsb ishst",
-            "tlbi vmalle1is",
-            "dsb ish",
-            "isb"
-        );
+        core::arch::asm!("dsb ishst", "tlbi vmalle1is", "dsb ish", "isb");
     }
 }
 
@@ -67,31 +62,31 @@ impl PageTableEntry {
     pub const fn new() -> Self {
         Self(0)
     }
-    
+
     pub fn is_valid(&self) -> bool {
         self.0 & 0x1 != 0
     }
-    
+
     pub fn is_table(&self) -> bool {
         (self.0 & 0x3) == 0x3
     }
-    
+
     pub fn is_page(&self) -> bool {
         (self.0 & 0x3) == 0x3 && (self.0 & (1 << 1)) != 0
     }
-    
+
     pub fn is_block(&self) -> bool {
         (self.0 & 0x3) == 0x1
     }
-    
+
     pub fn address(&self) -> u64 {
         self.0 & 0x0000_FFFF_FFFF_F000
     }
-    
+
     pub fn set_address(&mut self, addr: u64) {
         self.0 = (self.0 & !0x0000_FFFF_FFFF_F000) | (addr & 0x0000_FFFF_FFFF_F000);
     }
-    
+
     pub fn set_valid(&mut self, valid: bool) {
         if valid {
             self.0 |= 0x1;
@@ -99,19 +94,19 @@ impl PageTableEntry {
             self.0 &= !0x1;
         }
     }
-    
+
     pub fn set_table(&mut self) {
         self.0 = (self.0 & !0x3) | 0x3;
     }
-    
+
     pub fn set_page(&mut self) {
         self.0 = (self.0 & !0x3) | 0x3;
     }
-    
+
     pub fn set_block(&mut self) {
         self.0 = (self.0 & !0x3) | 0x1;
     }
-    
+
     // Access permissions
     pub fn set_user_accessible(&mut self, accessible: bool) {
         if accessible {
@@ -120,7 +115,7 @@ impl PageTableEntry {
             self.0 &= !(1 << 6);
         }
     }
-    
+
     pub fn set_read_only(&mut self, read_only: bool) {
         if read_only {
             self.0 |= 1 << 7; // AP[2] = 1 for read-only
@@ -128,7 +123,7 @@ impl PageTableEntry {
             self.0 &= !(1 << 7);
         }
     }
-    
+
     pub fn set_executable(&mut self, executable: bool) {
         if !executable {
             self.0 |= 1 << 54; // UXN = 1 for non-executable
@@ -150,11 +145,11 @@ impl PageTable {
             entries: [PageTableEntry::new(); 512],
         }
     }
-    
+
     pub fn entry(&self, index: usize) -> &PageTableEntry {
         &self.entries[index]
     }
-    
+
     pub fn entry_mut(&mut self, index: usize) -> &mut PageTableEntry {
         &mut self.entries[index]
     }

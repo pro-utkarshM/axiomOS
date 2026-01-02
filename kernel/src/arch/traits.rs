@@ -2,25 +2,25 @@
 pub trait Architecture {
     /// Perform early architecture initialization (before memory management)
     fn early_init();
-    
+
     /// Perform full architecture initialization
     fn init();
-    
+
     /// Enable interrupts
     fn enable_interrupts();
-    
+
     /// Disable interrupts
     fn disable_interrupts();
-    
+
     /// Check if interrupts are enabled
     fn are_interrupts_enabled() -> bool;
-    
+
     /// Wait for an interrupt (halt until interrupt)
     fn wait_for_interrupt();
-    
+
     /// Shutdown the system
     fn shutdown() -> !;
-    
+
     /// Reboot the system
     fn reboot() -> !;
 }
@@ -52,8 +52,8 @@ pub struct ArchState {
 #[cfg(target_arch = "riscv64")]
 #[derive(Debug, Clone)]
 pub struct ArchState {
-    pub ra: usize,  // return address
-    pub s0: usize,  // saved registers
+    pub ra: usize, // return address
+    pub s0: usize, // saved registers
     pub s1: usize,
     pub s2: usize,
     pub s3: usize,
@@ -71,7 +71,7 @@ pub struct ArchState {
 #[cfg(target_arch = "aarch64")]
 #[derive(Debug, Clone)]
 pub struct ArchState {
-    pub x19: u64,  // callee-saved registers
+    pub x19: u64, // callee-saved registers
     pub x20: u64,
     pub x21: u64,
     pub x22: u64,
@@ -81,8 +81,8 @@ pub struct ArchState {
     pub x26: u64,
     pub x27: u64,
     pub x28: u64,
-    pub x29: u64,  // frame pointer
-    pub x30: u64,  // link register
+    pub x29: u64,   // frame pointer
+    pub x30: u64,   // link register
     pub ttbr0: u64, // page table base (user)
     pub ttbr1: u64, // page table base (kernel)
 }
@@ -101,7 +101,7 @@ impl Default for ArchState {
                 r15: 0,
             }
         }
-        
+
         #[cfg(target_arch = "riscv64")]
         {
             Self {
@@ -121,7 +121,7 @@ impl Default for ArchState {
                 satp: 0,
             }
         }
-        
+
         #[cfg(target_arch = "aarch64")]
         {
             Self {

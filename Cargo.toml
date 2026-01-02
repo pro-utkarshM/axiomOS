@@ -15,8 +15,7 @@ init = { path = "userspace/init", artifact = "bin", target = "x86_64-unknown-non
 
 [workspace]
 exclude = [
-  "kernel/riscv-demo",
-  "kernel-riscv-minimal",
+  "kernel/demos/riscv",
 ]
 members = [
   "kernel",

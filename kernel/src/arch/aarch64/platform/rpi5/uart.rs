@@ -9,9 +9,10 @@
 //! - GPIO15 (Pin 10) = RXD0 -> USB-TTL TX
 //! - GND (Pin 6) -> USB-TTL GND
 
+use core::fmt::{self, Write};
+
 use super::memory_map::RP1_UART0_BASE;
 use super::mmio::MmioReg;
-use core::fmt::{self, Write};
 
 /// PL011 UART Register offsets
 mod reg {

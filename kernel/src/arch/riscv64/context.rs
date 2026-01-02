@@ -4,7 +4,7 @@ use crate::arch::traits::TaskContext;
 pub unsafe fn switch_context(from: &mut TaskContext, to: &TaskContext) {
     // Save current context to 'from'
     // Load new context from 'to'
-    
+
     core::arch::asm!(
         // Save callee-saved registers
         "sd ra, 0(a0)",
@@ -21,7 +21,7 @@ pub unsafe fn switch_context(from: &mut TaskContext, to: &TaskContext) {
         "sd s9, 88(a0)",
         "sd s10, 96(a0)",
         "sd s11, 104(a0)",
-        
+
         // Load new context from 'to'
         "ld ra, 0(a1)",
         "ld sp, 8(a1)",
@@ -37,7 +37,7 @@ pub unsafe fn switch_context(from: &mut TaskContext, to: &TaskContext) {
         "ld s9, 88(a1)",
         "ld s10, 96(a1)",
         "ld s11, 104(a1)",
-        
+
         // Switch page table if different
         "ld t0, 112(a1)",  // Load new satp
         "csrr t1, satp",    // Read current satp
@@ -45,7 +45,7 @@ pub unsafe fn switch_context(from: &mut TaskContext, to: &TaskContext) {
         "csrw satp, t0",    // Write new satp
         "sfence.vma",       // Flush TLB
         "1:",
-        
+
         in("a0") from,
         in("a1") to,
         options(noreturn)
@@ -53,19 +53,15 @@ pub unsafe fn switch_context(from: &mut TaskContext, to: &TaskContext) {
 }
 
 /// Initialize a new task context
-pub fn init_task_context(
-    stack_top: usize,
-    entry_point: usize,
-    arg: usize,
-) -> TaskContext {
+pub fn init_task_context(stack_top: usize, entry_point: usize, arg: usize) -> TaskContext {
     let mut context = TaskContext::default();
-    
+
     context.stack_pointer = stack_top;
     context.instruction_pointer = entry_point;
-    
+
     // Set up initial register state
     context.arch_state.ra = entry_point;
     // a0 will contain the argument
-    
+
     context
 }

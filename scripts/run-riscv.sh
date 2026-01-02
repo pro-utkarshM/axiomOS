@@ -8,12 +8,12 @@ echo "Running Muffin OS RISC-V Demo Kernel in QEMU..."
 echo "================================================"
 echo ""
 
-KERNEL_PATH="$SCRIPT_DIR/kernel/riscv-demo/target/riscv64gc-unknown-none-elf/debug/riscv-kernel-demo"
+KERNEL_PATH="$SCRIPT_DIR/../kernel/demos/riscv/target/riscv64gc-unknown-none-elf/debug/riscv-kernel-demo"
 
 # Check if kernel exists
 if [ ! -f "$KERNEL_PATH" ]; then
     echo "Error: Kernel not found at $KERNEL_PATH"
-    echo "Please run ./build-riscv.sh first"
+    echo "Please run ./scripts/build-riscv.sh first"
     exit 1
 fi
 

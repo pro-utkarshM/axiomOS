@@ -3,7 +3,7 @@ pub fn shutdown() -> ! {
     unsafe {
         sbi_shutdown();
     }
-    
+
     // If SBI shutdown fails, loop forever
     loop {
         riscv::asm::wfi();
@@ -15,7 +15,7 @@ pub fn reboot() -> ! {
     unsafe {
         sbi_reboot();
     }
-    
+
     // If SBI reboot fails, loop forever
     loop {
         riscv::asm::wfi();
@@ -38,7 +38,13 @@ unsafe fn sbi_reboot() {
 
 /// Generic SBI call
 #[inline(always)]
-unsafe fn sbi_call(extension: usize, function: usize, arg0: usize, arg1: usize, arg2: usize) -> usize {
+unsafe fn sbi_call(
+    extension: usize,
+    function: usize,
+    arg0: usize,
+    arg1: usize,
+    arg2: usize,
+) -> usize {
     let error: usize;
     core::arch::asm!(
         "ecall",

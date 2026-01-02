@@ -44,35 +44,35 @@ impl PageTableEntry {
     pub const fn new() -> Self {
         Self(0)
     }
-    
+
     pub fn is_valid(&self) -> bool {
         self.0 & 0x1 != 0
     }
-    
+
     pub fn is_readable(&self) -> bool {
         self.0 & 0x2 != 0
     }
-    
+
     pub fn is_writable(&self) -> bool {
         self.0 & 0x4 != 0
     }
-    
+
     pub fn is_executable(&self) -> bool {
         self.0 & 0x8 != 0
     }
-    
+
     pub fn is_user(&self) -> bool {
         self.0 & 0x10 != 0
     }
-    
+
     pub fn ppn(&self) -> usize {
         ((self.0 >> 10) & 0xFFFFFFFFFFF) as usize
     }
-    
+
     pub fn set_ppn(&mut self, ppn: usize) {
         self.0 = (self.0 & !0xFFFFFFFFFC00) | ((ppn as u64) << 10);
     }
-    
+
     pub fn set_valid(&mut self, valid: bool) {
         if valid {
             self.0 |= 0x1;
@@ -80,7 +80,7 @@ impl PageTableEntry {
             self.0 &= !0x1;
         }
     }
-    
+
     pub fn set_readable(&mut self, readable: bool) {
         if readable {
             self.0 |= 0x2;
@@ -88,7 +88,7 @@ impl PageTableEntry {
             self.0 &= !0x2;
         }
     }
-    
+
     pub fn set_writable(&mut self, writable: bool) {
         if writable {
             self.0 |= 0x4;
@@ -96,7 +96,7 @@ impl PageTableEntry {
             self.0 &= !0x4;
         }
     }
-    
+
     pub fn set_executable(&mut self, executable: bool) {
         if executable {
             self.0 |= 0x8;
@@ -104,7 +104,7 @@ impl PageTableEntry {
             self.0 &= !0x8;
         }
     }
-    
+
     pub fn set_user(&mut self, user: bool) {
         if user {
             self.0 |= 0x10;
@@ -126,11 +126,11 @@ impl PageTable {
             entries: [PageTableEntry::new(); 512],
         }
     }
-    
+
     pub fn entry(&self, index: usize) -> &PageTableEntry {
         &self.entries[index]
     }
-    
+
     pub fn entry_mut(&mut self, index: usize) -> &mut PageTableEntry {
         &mut self.entries[index]
     }

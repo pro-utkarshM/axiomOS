@@ -3,7 +3,7 @@
 debug.lldb
 
 # RISC-V demo kernel build artifacts
-kernel-riscv-minimal/target/
+kernel/demos/riscv/target/
 
 # Claude Code settings
 .claude/

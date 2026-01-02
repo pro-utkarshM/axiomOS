@@ -26,13 +26,13 @@ pub fn boot_info() -> &'static BootInfo {
 pub unsafe extern "C" fn _start_rust(hart_id: usize, dtb_addr: usize) -> ! {
     // Initialize boot info
     init_boot_info(hart_id, dtb_addr);
-    
+
     // Note: Hart filtering and BSS clearing is done in boot.S assembly
-    
+
     // Jump to kernel main
     extern "Rust" {
         fn kernel_main() -> !;
     }
-    
+
     kernel_main()
 }

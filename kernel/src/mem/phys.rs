@@ -7,7 +7,6 @@ use kernel_physical_memory::{PhysicalFrameAllocator, PhysicalMemoryManager};
 use limine::memory_map::{Entry, EntryType};
 use log::{info, warn};
 use spin::Mutex;
-
 #[cfg(target_arch = "x86_64")]
 use x86_64::PhysAddr;
 #[cfg(target_arch = "x86_64")]

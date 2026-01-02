@@ -1,5 +1,5 @@
 //! Architecture-agnostic types for addresses and frames
-//! 
+//!
 //! This module provides common types that work across all architectures,
 //! similar to Linux's phys_addr_t and virt_addr_t
 
@@ -195,8 +195,7 @@ impl PhysFrameRange {
 // Re-export x86_64 types when building for x86_64 for compatibility
 #[cfg(target_arch = "x86_64")]
 pub use x86_64::{
-    PhysAddr as X86PhysAddr,
-    VirtAddr as X86VirtAddr,
+    PhysAddr as X86PhysAddr, VirtAddr as X86VirtAddr,
     structures::paging::{PhysFrame as X86PhysFrame, Size4KiB},
 };
 

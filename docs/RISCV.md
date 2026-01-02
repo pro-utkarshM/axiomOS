@@ -4,12 +4,12 @@
 
 ### Build
 ```bash
-./build-riscv.sh
+./scripts/build-riscv.sh
 ```
 
 ### Run
 ```bash
-./run-riscv.sh
+./scripts/run-riscv.sh
 ```
 
 Press `Ctrl+A` then `X` to exit QEMU.
@@ -18,7 +18,7 @@ Press `Ctrl+A` then `X` to exit QEMU.
 
 The build script compiles the **RISC-V demo kernel** located at:
 ```
-kernel/riscv-demo/
+kernel/demos/riscv/
 ```
 
 **Note:** This is NOT the main Muffin kernel. It's a minimal demonstration kernel that proves OpenSBI integration works.
@@ -73,13 +73,13 @@ Halting...
 
 ### Binary Location
 ```
-kernel/riscv-demo/target/riscv64gc-unknown-none-elf/debug/riscv-kernel-demo
+kernel/demos/riscv/target/riscv64gc-unknown-none-elf/debug/riscv-kernel-demo
 ```
 
 ## Manual Build (Alternative)
 
 ```bash
-cd kernel/riscv-demo
+cd kernel/demos/riscv
 rustup target add riscv64gc-unknown-none-elf
 cargo build
 ```
@@ -90,14 +90,14 @@ cargo build
 qemu-system-riscv64 \
   -machine virt \
   -bios default \
-  -kernel kernel/riscv-demo/target/riscv64gc-unknown-none-elf/debug/riscv-kernel-demo \
+  -kernel kernel/demos/riscv/target/riscv64gc-unknown-none-elf/debug/riscv-kernel-demo \
   -nographic
 ```
 
 ## Troubleshooting
 
 ### "Kernel not found"
-Run `./build-riscv.sh` first to build the kernel.
+Run `./scripts/build-riscv.sh` first to build the kernel.
 
 ### "qemu-system-riscv64: command not found"
 Install QEMU:
@@ -112,18 +112,18 @@ sudo apt install gcc-riscv64-unknown-elf
 ```
 
 ### Build fails with x86_64 errors
-You're trying to build the main kernel (`kernel/`) which doesn't support RISC-V yet. Use the demo kernel instead via `./build-riscv.sh`.
+You're trying to build the main kernel (`kernel/`) which doesn't support RISC-V yet. Use the demo kernel instead via `./scripts/build-riscv.sh`.
 
 ### Build fails with workspace errors
 The demo kernel should be excluded from the workspace. Check that `Cargo.toml` has:
 ```toml
 [workspace]
 exclude = [
-  "kernel/riscv-demo",
+  "kernel/demos/riscv",
 ]
 ```
 
-And `kernel/riscv-demo/Cargo.toml` has:
+And `kernel/demos/riscv/Cargo.toml` has:
 ```toml
 [workspace]
 # This is a standalone project

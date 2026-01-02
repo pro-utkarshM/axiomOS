@@ -91,7 +91,7 @@ The kernel binary cannot have standard unit tests. Testable functionality is ext
 
 The project supports multiple architectures:
 - **x86-64**: Fully supported (primary target)
-- **RISC-V 64-bit**: Partial (demo kernel in `kernel/riscv-demo/`)
+- **RISC-V 64-bit**: Partial (demo kernel in `kernel/demos/riscv/`)
 - **ARM 64-bit / Raspberry Pi 5**: Implemented with RP1 peripheral drivers
 
 Architecture-specific code uses conditional compilation (`#[cfg(target_arch = "...")]`). The `kernel/src/arch/` module provides architecture abstraction with traits defined in `arch/traits.rs`.
@@ -111,7 +111,7 @@ Key files:
 - `kernel/src/arch/aarch64/platform/rpi5/` - RP1 drivers (UART, GPIO)
 - `kernel/src/arch/aarch64/boot.S` - ARM64 boot assembly
 - `kernel/linker-aarch64.ld` - Linker script (loads at 0x80000)
-- `config/rpi5/config.txt` - Pi 5 boot configuration
+- `kernel/platform/rpi5/config/config.txt` - Pi 5 boot configuration
 
 Requires firmware shortcuts in config.txt:
 - `pciex4_reset=0` - Keeps RP1 in firmware-initialized state

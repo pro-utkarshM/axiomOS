@@ -13,6 +13,7 @@ mod x86_64_impl {
 
     pub fn internal_print(args: core::fmt::Arguments) {
         use core::fmt::Write;
+
         use x86_64::instructions::interrupts;
 
         // disable interrupts while holding a lock on the WRITER
@@ -35,9 +36,9 @@ mod aarch64_impl {
 
         #[cfg(feature = "rpi5")]
         {
+            use crate::arch::aarch64::Aarch64;
             use crate::arch::aarch64::platform::rpi5::UART;
             use crate::arch::traits::Architecture;
-            use crate::arch::aarch64::Aarch64;
 
             // Disable interrupts while printing to avoid deadlock
             let were_enabled = Aarch64::are_interrupts_enabled();
@@ -54,13 +55,12 @@ mod aarch64_impl {
     }
 }
 
-#[cfg(target_arch = "x86_64")]
-#[doc(hidden)]
-pub use x86_64_impl::internal_print;
-
 #[cfg(target_arch = "aarch64")]
 #[doc(hidden)]
 pub use aarch64_impl::internal_print;
+#[cfg(target_arch = "x86_64")]
+#[doc(hidden)]
+pub use x86_64_impl::internal_print;
 
 /// Prints to the host through the serial interface.
 #[macro_export]

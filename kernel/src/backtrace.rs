@@ -194,7 +194,9 @@ impl ReturnAddressIterator {
     #[cfg(not(target_arch = "x86_64"))]
     pub fn new() -> Self {
         // Backtrace not implemented for non-x86_64
-        Self { current_bp: core::ptr::null() }
+        Self {
+            current_bp: core::ptr::null(),
+        }
     }
 }
 

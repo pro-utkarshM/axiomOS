@@ -28,9 +28,13 @@ use x86_64::instructions::hlt;
 #[cfg(not(target_arch = "x86_64"))]
 fn hlt() {
     #[cfg(target_arch = "riscv64")]
-    unsafe { riscv::asm::wfi(); }
+    unsafe {
+        riscv::asm::wfi();
+    }
     #[cfg(target_arch = "aarch64")]
-    unsafe { core::arch::asm!("wfi"); }
+    unsafe {
+        core::arch::asm!("wfi");
+    }
 }
 
 #[cfg(target_arch = "x86_64")]

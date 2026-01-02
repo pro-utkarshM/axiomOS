@@ -95,7 +95,9 @@ impl Rp1Gpio {
     /// Must be called only once. The GPIO hardware must be accessible
     /// at the configured address.
     pub const unsafe fn new() -> Self {
-        Self { base: RP1_GPIO_BASE }
+        Self {
+            base: RP1_GPIO_BASE,
+        }
     }
 
     /// Set the function of a GPIO pin
