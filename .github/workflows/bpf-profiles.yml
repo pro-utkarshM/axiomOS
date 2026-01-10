@@ -1,0 +1,132 @@
+name: BPF Profile Tests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'kernel/crates/kernel_bpf/**'
+      - '.github/workflows/bpf-profiles.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'kernel/crates/kernel_bpf/**'
+      - '.github/workflows/bpf-profiles.yml'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  cloud-profile:
+    name: Cloud Profile Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-action@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-cloud-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Build with cloud-profile
+        run: cargo build --features cloud-profile -p kernel_bpf
+
+      - name: Run tests with cloud-profile
+        run: cargo test --features cloud-profile -p kernel_bpf
+
+      - name: Clippy with cloud-profile
+        run: cargo clippy --features cloud-profile -p kernel_bpf -- -D warnings
+
+  embedded-profile:
+    name: Embedded Profile Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-action@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-embedded-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Build with embedded-profile
+        run: cargo build --features embedded-profile -p kernel_bpf
+
+      - name: Run tests with embedded-profile
+        run: cargo test --features embedded-profile -p kernel_bpf
+
+      - name: Clippy with embedded-profile
+        run: cargo clippy --features embedded-profile -p kernel_bpf -- -D warnings
+
+  mutual-exclusion:
+    name: Profile Mutual Exclusion
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-action@stable
+
+      - name: Verify both profiles fail to compile together
+        run: |
+          if cargo build --features cloud-profile,embedded-profile -p kernel_bpf 2>&1; then
+            echo "ERROR: Both profiles should not compile together!"
+            exit 1
+          else
+            echo "OK: Mutual exclusion verified"
+          fi
+
+      - name: Verify no profile fails to compile
+        run: |
+          if cargo build -p kernel_bpf 2>&1; then
+            echo "ERROR: No profile should not compile!"
+            exit 1
+          else
+            echo "OK: Profile requirement verified"
+          fi
+
+  semantic-consistency:
+    name: Semantic Consistency
+    runs-on: ubuntu-latest
+    needs: [cloud-profile, embedded-profile]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-action@stable
+
+      - name: Run semantic tests with cloud-profile
+        run: cargo test --features cloud-profile -p kernel_bpf --test semantic_consistency
+
+      - name: Run semantic tests with embedded-profile
+        run: cargo test --features embedded-profile -p kernel_bpf --test semantic_consistency
+
+  format-check:
+    name: Format Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-action@stable
+        with:
+          components: rustfmt
+
+      - name: Check formatting
+        run: cargo fmt --check -p kernel_bpf

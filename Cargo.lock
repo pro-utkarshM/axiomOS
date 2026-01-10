@@ -581,6 +581,7 @@ dependencies = [
  "itertools",
  "jiff",
  "kernel_abi",
+ "kernel_bpf",
  "kernel_devfs",
  "kernel_device",
  "kernel_elfloader",
@@ -615,6 +616,13 @@ name = "kernel_abi"
 version = "0.1.0"
 dependencies = [
  "bitflags 2.10.0",
+]
+
+[[package]]
+name = "kernel_bpf"
+version = "0.1.0"
+dependencies = [
+ "spin",
 ]
 
 [[package]]

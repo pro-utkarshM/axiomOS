@@ -1,0 +1,12 @@
+[package]
+name = "kernel_bpf"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+spin.workspace = true
+
+[features]
+default = []
+cloud-profile = []
+embedded-profile = []
