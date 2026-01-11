@@ -5,6 +5,7 @@ pub mod exceptions;
 pub mod gic;
 pub mod interrupts;
 pub mod mem;
+pub mod mm;
 pub mod paging;
 pub mod phys;
 pub mod platform;
@@ -25,8 +26,8 @@ impl Architecture for Aarch64 {
     }
 
     fn init() {
-        // Initialize paging
-        paging::init();
+        // Initialize memory management (physical allocator + page tables)
+        mm::init();
 
         // Initialize interrupt controller (GIC)
         interrupts::init();
