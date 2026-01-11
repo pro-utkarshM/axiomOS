@@ -4,24 +4,83 @@
 //! is used for both cloud and embedded deployments. The difference between profiles is
 //! expressed through build-time selection and compile-time erasure, not code forks.
 //!
-//! # Profiles
-//!
-//! - **Cloud Profile**: Elastic resources, JIT compilation, soft latency bounds
-//! - **Embedded Profile**: Static resources, interpreter/AOT only, hard deadline enforcement
-//!
-//! # Usage
-//!
-//! Select a profile at build time:
-//! ```bash
-//! cargo build --features cloud-profile
-//! # or
-//! cargo build --features embedded-profile
-//! ```
-//!
 //! # Guiding Principle
 //!
 //! > "Cloud and embedded share one source code; the difference is not features,
 //! > but the physical assumptions the kernel is allowed to make at build time."
+//!
+//! # Profiles
+//!
+//! | Property | Cloud | Embedded |
+//! |----------|-------|----------|
+//! | Memory | Elastic (heap) | Static (64KB pool) |
+//! | Stack | 512 KB | 8 KB |
+//! | Instructions | 1,000,000 max | 100,000 max |
+//! | JIT | Available | Erased |
+//! | Scheduling | Throughput | Deadline (EDF) |
+//! | Map Resize | Available | Erased |
+//!
+//! # Build-Time Selection
+//!
+//! Select exactly one profile at build time:
+//!
+//! ```bash
+//! # Cloud profile - servers, VMs, containers
+//! cargo build --features cloud-profile
+//!
+//! # Embedded profile - RPi5, IoT, real-time systems
+//! cargo build --features embedded-profile
+//! ```
+//!
+//! # Modules
+//!
+//! - [`profile`] - Physical profile definitions and compile-time configuration
+//! - [`bytecode`] - BPF instruction set, registers, and program representation
+//! - [`verifier`] - Static safety verification with profile constraints
+//! - [`execution`] - Program execution engines (interpreter, JIT)
+//! - [`maps`] - BPF map implementations for data storage
+//! - [`scheduler`] - Profile-aware program scheduling
+//!
+//! # Quick Start
+//!
+//! ```ignore
+//! use kernel_bpf::bytecode::insn::BpfInsn;
+//! use kernel_bpf::bytecode::program::{BpfProgType, ProgramBuilder};
+//! use kernel_bpf::execution::{BpfContext, BpfExecutor, Interpreter};
+//! use kernel_bpf::profile::ActiveProfile;
+//!
+//! // Build a program that returns 42
+//! let program = ProgramBuilder::<ActiveProfile>::new(BpfProgType::SocketFilter)
+//!     .insn(BpfInsn::mov64_imm(0, 42))
+//!     .insn(BpfInsn::exit())
+//!     .build()
+//!     .expect("valid program");
+//!
+//! // Execute with interpreter
+//! let interp = Interpreter::<ActiveProfile>::new();
+//! let result = interp.execute(&program, &BpfContext::empty());
+//! assert_eq!(result, Ok(42));
+//! ```
+//!
+//! # Compile-Time Erasure
+//!
+//! Profile-inappropriate code is physically absent from builds:
+//!
+//! - **Cloud-only**: JIT compiler, map resize, throughput scheduler
+//! - **Embedded-only**: Static pool, deadline scheduler, WCET verification
+//!
+//! # Documentation
+//!
+//! See the `docs/` directory for detailed documentation:
+//!
+//! - `README.md` - Overview and quick start
+//! - `ARCHITECTURE.md` - System architecture
+//! - `PROFILES.md` - Profile guide
+//! - `BYTECODE.md` - Instruction reference
+//! - `VERIFICATION.md` - Verifier guide
+//! - `MAPS.md` - Map types and usage
+//! - `SCHEDULING.md` - Scheduler guide
+//! - `QUICKREF.md` - Quick reference
 
 #![no_std]
 
