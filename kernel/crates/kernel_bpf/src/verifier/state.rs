@@ -15,9 +15,10 @@ use crate::bytecode::registers::Register;
 ///
 /// The verifier tracks what type of value each register holds to ensure
 /// type-safe operations and memory access.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum RegType {
     /// Register has not been initialized
+    #[default]
     NotInit,
 
     /// Scalar value (integer)
@@ -77,13 +78,10 @@ impl RegType {
     /// Check if this type can be dereferenced for write.
     #[inline]
     pub const fn can_write(&self) -> bool {
-        matches!(self, Self::PtrToStack | Self::PtrToMapValue | Self::PtrToPacket)
-    }
-}
-
-impl Default for RegType {
-    fn default() -> Self {
-        Self::NotInit
+        matches!(
+            self,
+            Self::PtrToStack | Self::PtrToMapValue | Self::PtrToPacket
+        )
     }
 }
 
@@ -277,9 +275,10 @@ impl TnumValue {
 }
 
 /// State of a stack slot.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum StackSlot {
     /// Slot is invalid/uninitialized
+    #[default]
     Invalid,
 
     /// Slot contains spilled register
@@ -290,12 +289,6 @@ pub enum StackSlot {
 
     /// Slot contains zero
     Zero,
-}
-
-impl Default for StackSlot {
-    fn default() -> Self {
-        Self::Invalid
-    }
 }
 
 /// Stack state during verification.

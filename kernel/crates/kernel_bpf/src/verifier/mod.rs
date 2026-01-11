@@ -40,7 +40,8 @@ mod core;
 mod error;
 mod state;
 
-pub use cfg::ControlFlowGraph;
 pub use core::Verifier;
+
+pub use cfg::ControlFlowGraph;
 pub use error::VerifyError;
 pub use state::{RegState, RegType, StackSlot, VerifierState};

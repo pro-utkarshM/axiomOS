@@ -169,7 +169,11 @@ impl fmt::Display for VerifyError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::InvalidOpcode { insn_idx, opcode } => {
-                write!(f, "invalid opcode {:#04x} at instruction {}", opcode, insn_idx)
+                write!(
+                    f,
+                    "invalid opcode {:#04x} at instruction {}",
+                    opcode, insn_idx
+                )
             }
             Self::InvalidRegister { insn_idx, reg } => {
                 write!(f, "invalid register {} at instruction {}", reg, insn_idx)
@@ -214,7 +218,10 @@ impl fmt::Display for VerifyError {
             }
             Self::NoExit => write!(f, "program does not exit"),
             Self::EmptyProgram => write!(f, "program is empty"),
-            Self::InvalidHelper { insn_idx, helper_id } => {
+            Self::InvalidHelper {
+                insn_idx,
+                helper_id,
+            } => {
                 write!(
                     f,
                     "invalid helper function {} at instruction {}",

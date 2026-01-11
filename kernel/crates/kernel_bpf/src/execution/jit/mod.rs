@@ -25,7 +25,7 @@
 use core::marker::PhantomData;
 
 use crate::bytecode::program::BpfProgram;
-use crate::execution::{BpfContext, BpfError, BpfExecutor, BpfResult};
+use crate::execution::{BpfContext, BpfExecutor, BpfResult};
 use crate::profile::CloudProfile;
 
 /// JIT-compiled BPF program.

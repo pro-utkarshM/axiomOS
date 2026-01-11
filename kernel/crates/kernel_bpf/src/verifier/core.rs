@@ -9,15 +9,14 @@ extern crate alloc;
 use alloc::vec::Vec;
 use core::marker::PhantomData;
 
-use crate::bytecode::insn::BpfInsn;
-use crate::bytecode::opcode::{AluOp, JmpOp, MemSize, OpcodeClass};
-use crate::bytecode::program::{BpfProgType, BpfProgram};
-use crate::bytecode::registers::Register;
-use crate::profile::{ActiveProfile, PhysicalProfile};
-
 use super::cfg::ControlFlowGraph;
 use super::error::{VerifyError, VerifyResult};
 use super::state::{RegState, RegType, ScalarValue, StackSlot, VerifierState};
+use crate::bytecode::insn::BpfInsn;
+use crate::bytecode::opcode::{AluOp, OpcodeClass};
+use crate::bytecode::program::{BpfProgType, BpfProgram};
+use crate::bytecode::registers::Register;
+use crate::profile::{ActiveProfile, PhysicalProfile};
 
 /// BPF program verifier.
 ///
@@ -57,10 +56,7 @@ impl<P: PhysicalProfile> Verifier<P> {
     ///
     /// On success, returns a validated `BpfProgram`.
     /// On failure, returns a `VerifyError` describing the issue.
-    pub fn verify(
-        prog_type: BpfProgType,
-        insns: &[BpfInsn],
-    ) -> VerifyResult<BpfProgram<P>> {
+    pub fn verify(prog_type: BpfProgType, insns: &[BpfInsn]) -> VerifyResult<BpfProgram<P>> {
         let mut verifier = Self::new();
 
         // Phase 1: Basic checks
@@ -77,19 +73,18 @@ impl<P: PhysicalProfile> Verifier<P> {
         verifier.verify_profile_constraints(insns)?;
 
         // Build the verified program
-        BpfProgram::new(prog_type, insns.to_vec(), stack_size)
-            .map_err(|e| match e {
-                crate::bytecode::program::ProgramError::StackSizeExceeded { required, limit } => {
-                    VerifyError::StackExceeded {
-                        used: required,
-                        limit,
-                    }
+        BpfProgram::new(prog_type, insns.to_vec(), stack_size).map_err(|e| match e {
+            crate::bytecode::program::ProgramError::StackSizeExceeded { required, limit } => {
+                VerifyError::StackExceeded {
+                    used: required,
+                    limit,
                 }
-                crate::bytecode::program::ProgramError::InsnCountExceeded { count, limit } => {
-                    VerifyError::InsnCountExceeded { count, limit }
-                }
-                _ => VerifyError::EmptyProgram,
-            })
+            }
+            crate::bytecode::program::ProgramError::InsnCountExceeded { count, limit } => {
+                VerifyError::InsnCountExceeded { count, limit }
+            }
+            _ => VerifyError::EmptyProgram,
+        })
     }
 
     /// Perform basic structural checks.
@@ -230,7 +225,10 @@ impl<P: PhysicalProfile> Verifier<P> {
                     state.insn_idx = target;
                     state.insn_processed += 1;
                 }
-                InsnResult::Branch { fallthrough, target } => {
+                InsnResult::Branch {
+                    fallthrough,
+                    target,
+                } => {
                     // Verify both paths
                     let mut branch_state = state.clone();
                     branch_state.insn_idx = target;
@@ -528,7 +526,8 @@ impl<P: PhysicalProfile> Verifier<P> {
                 }
 
                 // Check stack bounds if stack pointer
-                if src_state.reg_type == RegType::PtrToStack || src_state.reg_type == RegType::PtrToFp
+                if src_state.reg_type == RegType::PtrToStack
+                    || src_state.reg_type == RegType::PtrToFp
                 {
                     let offset = src_state.ptr_offset + insn.offset as i64;
                     if !state.stack.is_valid_access(offset, size.size_bytes()) {
@@ -578,7 +577,8 @@ impl<P: PhysicalProfile> Verifier<P> {
                 }
 
                 // Update stack state if writing to stack
-                if dst_state.reg_type == RegType::PtrToStack || dst_state.reg_type == RegType::PtrToFp
+                if dst_state.reg_type == RegType::PtrToStack
+                    || dst_state.reg_type == RegType::PtrToFp
                 {
                     let offset = dst_state.ptr_offset + insn.offset as i64;
                     if !state.stack.is_valid_access(offset, size.size_bytes()) {
@@ -672,7 +672,7 @@ impl<P: PhysicalProfile> Verifier<P> {
             // In embedded profile, all loops must be bounded
             // For now, we simply reject programs with back edges
             // A more sophisticated analysis would compute loop bounds
-            for &(from, to) in cfg.back_edges() {
+            if let Some(&(from, _to)) = cfg.back_edges().first() {
                 return Err(VerifyError::UnboundedLoop { insn_idx: from });
             }
         }

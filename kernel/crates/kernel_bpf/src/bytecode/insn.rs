@@ -456,14 +456,9 @@ pub enum ParsedInsn {
         offset: i16,
     },
     /// Wide load (64-bit immediate)
-    LoadImm64 {
-        dst: Register,
-        imm: u64,
-    },
+    LoadImm64 { dst: Register, imm: u64 },
     /// Function call
-    Call {
-        helper_id: i32,
-    },
+    Call { helper_id: i32 },
     /// Program exit
     Exit,
 }
@@ -491,8 +486,9 @@ pub enum StoreSrc {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use alloc::format;
+
+    use super::*;
 
     #[test]
     fn instruction_size() {

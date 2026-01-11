@@ -175,11 +175,13 @@ impl<P: PhysicalProfile> BpfQueue<P> {
         let mut best_deadline = u64::MAX;
 
         for (idx, prog) in self.programs.iter().enumerate() {
-            if let Some(ref deadline) = prog.deadline {
-                if deadline.absolute_ns < best_deadline {
-                    best_deadline = deadline.absolute_ns;
-                    best_idx = Some(idx);
-                }
+            if let Some(deadline) = prog
+                .deadline
+                .as_ref()
+                .filter(|d| d.absolute_ns < best_deadline)
+            {
+                best_deadline = deadline.absolute_ns;
+                best_idx = Some(idx);
             }
         }
 

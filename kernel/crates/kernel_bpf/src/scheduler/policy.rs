@@ -7,22 +7,17 @@ use super::queue::{BpfQueue, QueuedProgram};
 use crate::profile::PhysicalProfile;
 
 /// Execution priority levels.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub enum ExecPriority {
     /// Lowest priority - background execution
     Low = 0,
     /// Default priority
+    #[default]
     Normal = 1,
     /// Elevated priority
     High = 2,
     /// Highest priority - critical execution
     Critical = 3,
-}
-
-impl Default for ExecPriority {
-    fn default() -> Self {
-        Self::Normal
-    }
 }
 
 /// Scheduling errors.

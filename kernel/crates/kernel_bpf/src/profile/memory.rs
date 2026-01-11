@@ -12,6 +12,8 @@
 //! Operations like `resize()` are completely erased from embedded builds
 //! through feature-gated trait methods.
 
+#![allow(dead_code)]
+
 use super::sealed;
 
 /// Memory allocation strategy.

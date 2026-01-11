@@ -16,13 +16,12 @@ extern crate alloc;
 use alloc::vec;
 use core::marker::PhantomData;
 
+use super::{BpfContext, BpfError, BpfExecutor, BpfResult};
 use crate::bytecode::insn::BpfInsn;
 use crate::bytecode::opcode::{AluOp, JmpOp, MemSize, OpcodeClass, SourceType};
 use crate::bytecode::program::BpfProgram;
 use crate::bytecode::registers::{Register, RegisterFile};
 use crate::profile::{ActiveProfile, PhysicalProfile};
-
-use super::{BpfContext, BpfError, BpfExecutor, BpfResult};
 
 /// BPF bytecode interpreter.
 ///
@@ -238,7 +237,7 @@ impl<P: PhysicalProfile> Interpreter<P> {
     }
 
     /// Call a helper function.
-    fn call_helper(&self, helper_id: i32, args: [u64; 5]) -> Result<u64, BpfError> {
+    fn call_helper(&self, helper_id: i32, _args: [u64; 5]) -> Result<u64, BpfError> {
         // Simplified helper implementation
         match helper_id {
             // bpf_ktime_get_ns - return 0 for now
@@ -268,11 +267,11 @@ impl<P: PhysicalProfile> Interpreter<P> {
         let size = MemSize::from_opcode(insn.opcode).ok_or(BpfError::InvalidInstruction)?;
 
         let base = regs.get(src);
-        let addr = base.wrapping_add(insn.offset as i64 as u64);
+        let _addr = base.wrapping_add(insn.offset as i64 as u64);
 
         // For stack access (src = R10)
         if src == Register::R10 {
-            let fp = base;
+            let _fp = base;
             let offset = insn.offset as i64;
             let stack_offset = -(offset + (size.size_bytes() as i64));
 
@@ -335,7 +334,7 @@ impl<P: PhysicalProfile> Interpreter<P> {
 
         // For stack access (dst = R10)
         if dst == Register::R10 {
-            let fp = regs.get(Register::R10);
+            let _fp = regs.get(Register::R10);
             let offset = insn.offset as i64;
             let stack_offset = -(offset + (size.size_bytes() as i64));
 
@@ -423,11 +422,9 @@ impl<P: PhysicalProfile> BpfExecutor<P> for Interpreter<P> {
                     return Err(BpfError::InvalidInstruction);
                 }
                 let next_insn = &insns[pc + 1];
-                let imm64 =
-                    (insn.imm as u32 as u64) | ((next_insn.imm as u32 as u64) << 32);
+                let imm64 = (insn.imm as u32 as u64) | ((next_insn.imm as u32 as u64) << 32);
 
-                let dst =
-                    Register::from_raw(insn.dst_reg()).ok_or(BpfError::InvalidInstruction)?;
+                let dst = Register::from_raw(insn.dst_reg()).ok_or(BpfError::InvalidInstruction)?;
                 regs.set(dst, imm64);
 
                 pc += 2;
@@ -490,9 +487,9 @@ mod tests {
     fn execute_arithmetic() {
         let program = ProgramBuilder::<ActiveProfile>::new(BpfProgType::SocketFilter)
             .insn(BpfInsn::mov64_imm(0, 10)) // r0 = 10
-            .insn(BpfInsn::add64_imm(0, 5))  // r0 += 5
-            .insn(BpfInsn::mov64_imm(1, 3))  // r1 = 3
-            .insn(BpfInsn::add64_reg(0, 1))  // r0 += r1
+            .insn(BpfInsn::add64_imm(0, 5)) // r0 += 5
+            .insn(BpfInsn::mov64_imm(1, 3)) // r1 = 3
+            .insn(BpfInsn::add64_reg(0, 1)) // r0 += r1
             .exit()
             .build()
             .expect("valid program");
@@ -508,11 +505,11 @@ mod tests {
     fn execute_conditional_jump() {
         // if r0 == 0, return 1, else return 2
         let program = ProgramBuilder::<ActiveProfile>::new(BpfProgType::SocketFilter)
-            .insn(BpfInsn::mov64_imm(0, 0))  // r0 = 0
+            .insn(BpfInsn::mov64_imm(0, 0)) // r0 = 0
             .insn(BpfInsn::jeq_imm(0, 0, 2)) // if r0 == 0, skip 2
-            .insn(BpfInsn::mov64_imm(0, 2))  // r0 = 2 (skipped)
-            .insn(BpfInsn::ja(1))            // skip next
-            .insn(BpfInsn::mov64_imm(0, 1))  // r0 = 1
+            .insn(BpfInsn::mov64_imm(0, 2)) // r0 = 2 (skipped)
+            .insn(BpfInsn::ja(1)) // skip next
+            .insn(BpfInsn::mov64_imm(0, 1)) // r0 = 1
             .exit()
             .build()
             .expect("valid program");
@@ -529,7 +526,7 @@ mod tests {
         // Infinite loop (would timeout)
         let program = ProgramBuilder::<ActiveProfile>::new(BpfProgType::SocketFilter)
             .insn(BpfInsn::mov64_imm(0, 0)) // r0 = 0
-            .insn(BpfInsn::ja(-1))          // infinite loop
+            .insn(BpfInsn::ja(-1)) // infinite loop
             .exit()
             .build()
             .expect("valid program");
@@ -544,9 +541,9 @@ mod tests {
     #[test]
     fn execute_division_by_zero() {
         let program = ProgramBuilder::<ActiveProfile>::new(BpfProgType::SocketFilter)
-            .insn(BpfInsn::mov64_imm(0, 10))       // r0 = 10
-            .insn(BpfInsn::mov64_imm(1, 0))        // r1 = 0
-            .insn(BpfInsn::new(0x3f, 0, 1, 0, 0))  // r0 /= r1
+            .insn(BpfInsn::mov64_imm(0, 10)) // r0 = 10
+            .insn(BpfInsn::mov64_imm(1, 0)) // r1 = 0
+            .insn(BpfInsn::new(0x3f, 0, 1, 0, 0)) // r0 /= r1
             .exit()
             .build()
             .expect("valid program");

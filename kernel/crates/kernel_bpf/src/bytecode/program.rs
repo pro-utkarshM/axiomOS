@@ -23,10 +23,11 @@ use crate::profile::{ActiveProfile, PhysicalProfile};
 ///
 /// Different program types have different entry points, context types,
 /// and allowed helper functions.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 #[repr(u32)]
 pub enum BpfProgType {
     /// Unspecified program type
+    #[default]
     Unspec = 0,
     /// Socket filter programs
     SocketFilter = 1,
@@ -58,7 +59,6 @@ pub enum BpfProgType {
     SkSkb = 14,
 
     // Profile-specific program types
-
     /// Real-time programs (embedded only)
     #[cfg(feature = "embedded-profile")]
     RealTime = 100,
@@ -120,12 +120,6 @@ impl BpfProgType {
     }
 }
 
-impl Default for BpfProgType {
-    fn default() -> Self {
-        Self::Unspec
-    }
-}
-
 /// Validated BPF program ready for execution.
 ///
 /// A `BpfProgram` represents a BPF program that has passed verification
@@ -135,7 +129,7 @@ impl Default for BpfProgType {
 /// # Type Parameter
 ///
 /// - `P`: The physical profile this program was validated against.
-///        Defaults to `ActiveProfile` (the build-time selected profile).
+///   Defaults to `ActiveProfile` (the build-time selected profile).
 ///
 /// # Compile-Time Constraints
 ///
@@ -323,11 +317,7 @@ impl fmt::Display for ProgramError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::StackSizeExceeded { required, limit } => {
-                write!(
-                    f,
-                    "stack size {} exceeds profile limit {}",
-                    required, limit
-                )
+                write!(f, "stack size {} exceeds profile limit {}", required, limit)
             }
             Self::InsnCountExceeded { count, limit } => {
                 write!(

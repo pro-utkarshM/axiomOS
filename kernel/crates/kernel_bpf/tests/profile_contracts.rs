@@ -41,21 +41,20 @@ fn embedded_profile_has_conservative_limits() {
 #[test]
 #[cfg(feature = "cloud-profile")]
 fn cloud_profile_is_active() {
-    use kernel_bpf::profile::CloudProfile;
     use core::any::TypeId;
 
+    use kernel_bpf::profile::CloudProfile;
+
     // ActiveProfile should be CloudProfile in cloud builds
-    assert_eq!(
-        TypeId::of::<ActiveProfile>(),
-        TypeId::of::<CloudProfile>()
-    );
+    assert_eq!(TypeId::of::<ActiveProfile>(), TypeId::of::<CloudProfile>());
 }
 
 #[test]
 #[cfg(feature = "embedded-profile")]
 fn embedded_profile_is_active() {
-    use kernel_bpf::profile::EmbeddedProfile;
     use core::any::TypeId;
+
+    use kernel_bpf::profile::EmbeddedProfile;
 
     // ActiveProfile should be EmbeddedProfile in embedded builds
     assert_eq!(

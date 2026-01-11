@@ -8,7 +8,6 @@ use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use crate::bytecode::insn::BpfInsn;
-use crate::bytecode::opcode::JmpOp;
 
 /// Control flow graph for a BPF program.
 #[derive(Debug, Clone)]
@@ -67,11 +66,9 @@ impl ControlFlowGraph {
 
                 if jmp_op.is_unconditional() {
                     // Unconditional jump: only goes to target
-                    if let Some(target) = target {
-                        if target < insns.len() {
-                            cfg.edges.push((idx, target));
-                            cfg.leaders.insert(target);
-                        }
+                    if let Some(target) = target.filter(|&t| t < insns.len()) {
+                        cfg.edges.push((idx, target));
+                        cfg.leaders.insert(target);
                     }
                 } else if jmp_op.is_conditional() {
                     // Conditional jump: can fall through or jump
@@ -79,11 +76,9 @@ impl ControlFlowGraph {
                         cfg.edges.push((idx, idx + 1));
                         cfg.leaders.insert(idx + 1);
                     }
-                    if let Some(target) = target {
-                        if target < insns.len() {
-                            cfg.edges.push((idx, target));
-                            cfg.leaders.insert(target);
-                        }
+                    if let Some(target) = target.filter(|&t| t < insns.len()) {
+                        cfg.edges.push((idx, target));
+                        cfg.leaders.insert(target);
                     }
                 }
             } else if insn.is_wide() {

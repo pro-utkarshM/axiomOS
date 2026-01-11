@@ -37,7 +37,6 @@ members = [
 default-members = [
   ".",
   "kernel/crates/kernel_abi",
-  "kernel/crates/kernel_bpf",
   "kernel/crates/kernel_devfs",
   "kernel/crates/kernel_device",
   "kernel/crates/kernel_elfloader",

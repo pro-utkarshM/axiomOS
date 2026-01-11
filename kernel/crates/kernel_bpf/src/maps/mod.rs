@@ -25,14 +25,12 @@ mod array;
 #[cfg(feature = "embedded-profile")]
 mod static_pool;
 
-pub use array::ArrayMap;
+use alloc::sync::Arc;
 
+pub use array::ArrayMap;
+use spin::RwLock;
 #[cfg(feature = "embedded-profile")]
 pub use static_pool::StaticPool;
-
-use alloc::sync::Arc;
-use core::marker::PhantomData;
-use spin::RwLock;
 
 use crate::profile::{ActiveProfile, PhysicalProfile};
 
@@ -88,12 +86,7 @@ pub struct MapDef {
 
 impl MapDef {
     /// Create a new map definition.
-    pub const fn new(
-        map_type: MapType,
-        key_size: u32,
-        value_size: u32,
-        max_entries: u32,
-    ) -> Self {
+    pub const fn new(map_type: MapType, key_size: u32, value_size: u32, max_entries: u32) -> Self {
         Self {
             map_type,
             key_size,

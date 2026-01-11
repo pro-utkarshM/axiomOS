@@ -7,7 +7,7 @@
 //!
 //! This module is only available in embedded profile builds.
 
-use super::policy::{BpfPolicy, ExecPriority, SchedError, SchedResult};
+use super::policy::{BpfPolicy, SchedError, SchedResult};
 use super::queue::{BpfQueue, QueuedProgram};
 use crate::profile::EmbeddedProfile;
 
@@ -60,6 +60,7 @@ impl Deadline {
 
 /// Energy budget for power-constrained execution.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
 pub struct EnergyBudget {
     /// Maximum energy in microjoules
     pub max_uj: u64,
@@ -67,6 +68,7 @@ pub struct EnergyBudget {
 
 impl EnergyBudget {
     /// Create a new energy budget.
+    #[allow(dead_code)]
     pub fn new(max_uj: u64) -> Self {
         Self { max_uj }
     }
@@ -121,11 +123,14 @@ impl DeadlinePolicy {
 
     /// Check if a program's deadline has already passed.
     fn check_deadline(&mut self, program: &QueuedProgram<EmbeddedProfile>) -> bool {
-        if let Some(ref deadline) = program.deadline {
-            if deadline.is_expired(self.current_time_ns) {
-                self.deadline_misses += 1;
-                return true;
-            }
+        if let Some(ref deadline) = program
+            .deadline
+            .as_ref()
+            .filter(|d| d.is_expired(self.current_time_ns))
+        {
+            let _ = deadline; // Acknowledge we checked the deadline
+            self.deadline_misses += 1;
+            return true;
         }
         false
     }
@@ -138,7 +143,10 @@ impl Default for DeadlinePolicy {
 }
 
 impl BpfPolicy<EmbeddedProfile> for DeadlinePolicy {
-    fn select(&mut self, queue: &mut BpfQueue<EmbeddedProfile>) -> Option<QueuedProgram<EmbeddedProfile>> {
+    fn select(
+        &mut self,
+        queue: &mut BpfQueue<EmbeddedProfile>,
+    ) -> Option<QueuedProgram<EmbeddedProfile>> {
         // Try to find program with earliest deadline
         let idx = queue.find_earliest_deadline()?;
         let program = queue.remove_at(idx)?;
@@ -150,16 +158,22 @@ impl BpfPolicy<EmbeddedProfile> for DeadlinePolicy {
         Some(program)
     }
 
-    fn admit(&self, queue: &BpfQueue<EmbeddedProfile>, program: &QueuedProgram<EmbeddedProfile>) -> SchedResult<()> {
+    fn admit(
+        &self,
+        queue: &BpfQueue<EmbeddedProfile>,
+        program: &QueuedProgram<EmbeddedProfile>,
+    ) -> SchedResult<()> {
         if queue.is_full() {
             return Err(SchedError::QueueFull);
         }
 
         // Reject programs with already-expired deadlines
-        if let Some(ref deadline) = program.deadline {
-            if deadline.is_expired(self.current_time_ns) {
-                return Err(SchedError::InvalidDeadline);
-            }
+        if program
+            .deadline
+            .as_ref()
+            .is_some_and(|d| d.is_expired(self.current_time_ns))
+        {
+            return Err(SchedError::InvalidDeadline);
         }
 
         Ok(())
@@ -168,12 +182,14 @@ impl BpfPolicy<EmbeddedProfile> for DeadlinePolicy {
 
 #[cfg(test)]
 mod tests {
+    use alloc::sync::Arc;
+
     use super::*;
     use crate::bytecode::insn::BpfInsn;
     use crate::bytecode::program::{BpfProgType, ProgramBuilder};
     use crate::execution::BpfContext;
+    use crate::scheduler::policy::ExecPriority;
     use crate::scheduler::{BpfExecRequest, ProgId};
-    use alloc::sync::Arc;
 
     fn create_test_program() -> Arc<crate::bytecode::program::BpfProgram<EmbeddedProfile>> {
         let program = ProgramBuilder::<EmbeddedProfile>::new(BpfProgType::SocketFilter)

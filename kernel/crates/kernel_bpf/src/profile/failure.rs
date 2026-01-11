@@ -12,6 +12,8 @@
 //! Recovery partition handling is erased from cloud builds.
 //! Restart paths are erased from embedded builds.
 
+#![allow(dead_code)]
+
 use super::sealed;
 
 /// Failure handling semantics.

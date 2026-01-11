@@ -11,11 +11,11 @@ extern crate alloc;
 use alloc::vec;
 use alloc::vec::Vec;
 use core::marker::PhantomData;
+
 use spin::RwLock;
 
-use crate::profile::{ActiveProfile, PhysicalProfile};
-
 use super::{BpfMap, MapDef, MapError, MapResult, MapType};
+use crate::profile::{ActiveProfile, PhysicalProfile};
 
 /// Array map implementation.
 ///
@@ -194,16 +194,14 @@ mod tests {
 
     #[test]
     fn create_array_map() {
-        let map = ArrayMap::<ActiveProfile>::with_entries(8, 100)
-            .expect("create map");
+        let map = ArrayMap::<ActiveProfile>::with_entries(8, 100).expect("create map");
         assert_eq!(map.def().max_entries, 100);
         assert_eq!(map.def().value_size, 8);
     }
 
     #[test]
     fn array_map_operations() {
-        let map = ArrayMap::<ActiveProfile>::with_entries(4, 10)
-            .expect("create map");
+        let map = ArrayMap::<ActiveProfile>::with_entries(4, 10).expect("create map");
 
         // Write to index 5
         let key = 5u32.to_ne_bytes();
@@ -226,8 +224,7 @@ mod tests {
 
     #[test]
     fn array_map_invalid_key() {
-        let map = ArrayMap::<ActiveProfile>::with_entries(4, 10)
-            .expect("create map");
+        let map = ArrayMap::<ActiveProfile>::with_entries(4, 10).expect("create map");
 
         // Wrong key size
         let bad_key = [1u8, 2, 3]; // 3 bytes instead of 4
@@ -242,8 +239,7 @@ mod tests {
 
     #[test]
     fn array_map_invalid_value() {
-        let map = ArrayMap::<ActiveProfile>::with_entries(4, 10)
-            .expect("create map");
+        let map = ArrayMap::<ActiveProfile>::with_entries(4, 10).expect("create map");
 
         let key = 0u32.to_ne_bytes();
         let bad_value = [1u8, 2, 3]; // 3 bytes instead of 4
@@ -257,8 +253,7 @@ mod tests {
     #[cfg(feature = "cloud-profile")]
     #[test]
     fn array_map_resize() {
-        let mut map = ArrayMap::<ActiveProfile>::with_entries(4, 10)
-            .expect("create map");
+        let mut map = ArrayMap::<ActiveProfile>::with_entries(4, 10).expect("create map");
 
         // Write to index 5
         let key = 5u32.to_ne_bytes();

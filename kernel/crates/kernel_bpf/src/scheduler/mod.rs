@@ -30,17 +30,14 @@ mod throughput;
 #[cfg(feature = "embedded-profile")]
 mod deadline;
 
-pub use policy::{BpfPolicy, ExecPriority, SchedResult};
-pub use queue::{BpfQueue, QueuedProgram};
-
-#[cfg(feature = "cloud-profile")]
-pub use throughput::ThroughputPolicy;
+use alloc::sync::Arc;
 
 #[cfg(feature = "embedded-profile")]
 pub use deadline::{Deadline, DeadlinePolicy};
-
-use alloc::sync::Arc;
-use core::marker::PhantomData;
+pub use policy::{BpfPolicy, ExecPriority, SchedResult};
+pub use queue::{BpfQueue, QueuedProgram};
+#[cfg(feature = "cloud-profile")]
+pub use throughput::ThroughputPolicy;
 
 use crate::bytecode::program::BpfProgram;
 use crate::execution::BpfContext;
@@ -143,6 +140,7 @@ impl BpfScheduler {
     /// Get the next program to execute.
     ///
     /// Returns `None` if the queue is empty.
+    #[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> Option<QueuedProgram<ActiveProfile>> {
         self.policy.select(&mut self.queue)
     }

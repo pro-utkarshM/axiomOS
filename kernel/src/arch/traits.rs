@@ -26,7 +26,7 @@ pub trait Architecture {
 }
 
 /// Architecture-specific context for task switching
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct TaskContext {
     /// Stack pointer
     pub stack_pointer: usize,
@@ -140,16 +140,6 @@ impl Default for ArchState {
                 ttbr0: 0,
                 ttbr1: 0,
             }
-        }
-    }
-}
-
-impl Default for TaskContext {
-    fn default() -> Self {
-        Self {
-            stack_pointer: 0,
-            instruction_pointer: 0,
-            arch_state: ArchState::default(),
         }
     }
 }

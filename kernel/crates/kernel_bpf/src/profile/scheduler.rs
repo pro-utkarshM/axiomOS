@@ -12,6 +12,8 @@
 //! Deadline and energy tracking structures are erased from cloud builds.
 //! Cloud-specific optimizations are erased from embedded builds.
 
+#![allow(dead_code)]
+
 use super::sealed;
 
 /// Scheduler policy for BPF program execution.

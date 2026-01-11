@@ -40,14 +40,21 @@ impl Default for ThroughputPolicy {
 }
 
 impl BpfPolicy<CloudProfile> for ThroughputPolicy {
-    fn select(&mut self, queue: &mut BpfQueue<CloudProfile>) -> Option<QueuedProgram<CloudProfile>> {
+    fn select(
+        &mut self,
+        queue: &mut BpfQueue<CloudProfile>,
+    ) -> Option<QueuedProgram<CloudProfile>> {
         let idx = queue.find_highest_priority()?;
         let program = queue.remove_at(idx)?;
         self.exec_count += 1;
         Some(program)
     }
 
-    fn admit(&self, queue: &BpfQueue<CloudProfile>, _program: &QueuedProgram<CloudProfile>) -> SchedResult<()> {
+    fn admit(
+        &self,
+        queue: &BpfQueue<CloudProfile>,
+        _program: &QueuedProgram<CloudProfile>,
+    ) -> SchedResult<()> {
         if queue.is_full() {
             return Err(super::policy::SchedError::QueueFull);
         }
@@ -57,12 +64,13 @@ impl BpfPolicy<CloudProfile> for ThroughputPolicy {
 
 #[cfg(test)]
 mod tests {
+    use alloc::sync::Arc;
+
     use super::*;
     use crate::bytecode::insn::BpfInsn;
     use crate::bytecode::program::{BpfProgType, ProgramBuilder};
     use crate::execution::BpfContext;
     use crate::scheduler::{BpfExecRequest, ExecPriority, ProgId};
-    use alloc::sync::Arc;
 
     fn create_test_program() -> Arc<crate::bytecode::program::BpfProgram<CloudProfile>> {
         let program = ProgramBuilder::<CloudProfile>::new(BpfProgType::SocketFilter)

@@ -26,7 +26,7 @@ impl PhysAddr {
     /// Check if address is aligned to given alignment
     #[inline]
     pub const fn is_aligned(self, align: u64) -> bool {
-        self.0 % align == 0
+        self.0.is_multiple_of(align)
     }
 
     /// Align down to given alignment
@@ -99,7 +99,7 @@ impl VirtAddr {
     /// Check if address is aligned to given alignment
     #[inline]
     pub const fn is_aligned(self, align: u64) -> bool {
-        self.0 % align == 0
+        self.0.is_multiple_of(align)
     }
 
     /// Align down to given alignment
