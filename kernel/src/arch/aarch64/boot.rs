@@ -32,6 +32,12 @@ pub unsafe extern "C" fn _start(dtb_addr: usize) -> ! {
     #[cfg(feature = "rpi5")]
     super::platform::rpi5::init();
 
+    // Parse device tree to get memory information
+    if let Err(e) = super::dtb::parse(dtb_addr) {
+        // Log error but continue - we can fall back to hardcoded values
+        log::warn!("Failed to parse DTB: {}", e);
+    }
+
     // Jump to kernel main
     unsafe extern "Rust" {
         fn kernel_main() -> !;

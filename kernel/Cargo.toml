@@ -38,6 +38,7 @@ virtio-drivers.workspace = true
 volatile.workspace = true
 riscv = { workspace = true, optional = true }
 aarch64-cpu = { workspace = true, optional = true }
+fdt = { workspace = true, optional = true }
 zerocopy.workspace = true
 
 [build-dependencies]
@@ -55,7 +56,7 @@ default = []
 backtrace = []
 x86_64_arch = []
 riscv64_arch = ["riscv"]
-aarch64_arch = ["aarch64-cpu"]
+aarch64_arch = ["aarch64-cpu", "fdt"]
 rpi5 = ["aarch64_arch"]
 
 # Physical reality profiles for eBPF subsystem

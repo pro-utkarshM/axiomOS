@@ -79,18 +79,154 @@ pub extern "C" fn handle_sync_exception() {
     }
 }
 
-fn handle_data_abort(elr: u64, far: u64, iss: u64) {
-    let is_write = (iss & (1 << 6)) != 0;
+/// Data Fault Status Code (DFSC) - bits [5:0] of ISS
+#[derive(Debug, Clone, Copy)]
+#[repr(u8)]
+enum DataFaultCode {
+    // Translation faults (page not mapped)
+    TranslationFaultL0 = 0b000100,
+    TranslationFaultL1 = 0b000101,
+    TranslationFaultL2 = 0b000110,
+    TranslationFaultL3 = 0b000111,
 
-    log::error!(
-        "Data abort at {:#x}, address: {:#x}, write: {}",
+    // Access flag faults
+    AccessFlagFaultL1 = 0b001001,
+    AccessFlagFaultL2 = 0b001010,
+    AccessFlagFaultL3 = 0b001011,
+
+    // Permission faults
+    PermissionFaultL1 = 0b001101,
+    PermissionFaultL2 = 0b001110,
+    PermissionFaultL3 = 0b001111,
+
+    // Alignment fault
+    AlignmentFault = 0b100001,
+}
+
+impl DataFaultCode {
+    fn from_iss(iss: u64) -> Option<Self> {
+        let dfsc = (iss & 0x3F) as u8;
+        match dfsc {
+            0b000100 => Some(Self::TranslationFaultL0),
+            0b000101 => Some(Self::TranslationFaultL1),
+            0b000110 => Some(Self::TranslationFaultL2),
+            0b000111 => Some(Self::TranslationFaultL3),
+            0b001001 => Some(Self::AccessFlagFaultL1),
+            0b001010 => Some(Self::AccessFlagFaultL2),
+            0b001011 => Some(Self::AccessFlagFaultL3),
+            0b001101 => Some(Self::PermissionFaultL1),
+            0b001110 => Some(Self::PermissionFaultL2),
+            0b001111 => Some(Self::PermissionFaultL3),
+            0b100001 => Some(Self::AlignmentFault),
+            _ => None,
+        }
+    }
+
+    fn is_translation_fault(&self) -> bool {
+        matches!(
+            self,
+            Self::TranslationFaultL0
+                | Self::TranslationFaultL1
+                | Self::TranslationFaultL2
+                | Self::TranslationFaultL3
+        )
+    }
+
+    fn is_permission_fault(&self) -> bool {
+        matches!(
+            self,
+            Self::PermissionFaultL1 | Self::PermissionFaultL2 | Self::PermissionFaultL3
+        )
+    }
+}
+
+fn handle_data_abort(elr: u64, far: u64, iss: u64) {
+    let is_write = (iss & (1 << 6)) != 0; // WnR bit
+    let is_cm = (iss & (1 << 8)) != 0; // Cache maintenance
+    let is_s1ptw = (iss & (1 << 7)) != 0; // Stage 1 page table walk
+
+    let fault_code = DataFaultCode::from_iss(iss);
+
+    log::debug!(
+        "Data abort: PC={:#x}, addr={:#x}, write={}, dfsc={:?}",
         elr,
         far,
-        is_write
+        is_write,
+        fault_code
     );
 
-    // TODO: Implement page fault handling
-    panic!("Data abort not yet implemented");
+    // Check if this is a kernel or user address
+    let is_kernel_addr = far >= 0xFFFF_0000_0000_0000;
+
+    match fault_code {
+        Some(code) if code.is_translation_fault() => {
+            // Page not mapped - this is a page fault
+            if is_kernel_addr {
+                // Kernel page fault - this is fatal
+                panic!(
+                    "Kernel page fault at PC={:#x}, address={:#x}, write={}",
+                    elr, far, is_write
+                );
+            } else {
+                // User page fault - could be demand paging
+                // For now, just panic as we don't have userspace yet
+                panic!(
+                    "User page fault at PC={:#x}, address={:#x}, write={}",
+                    elr, far, is_write
+                );
+
+                // TODO: Implement demand paging
+                // 1. Check if address is in valid VMA
+                // 2. Allocate physical page
+                // 3. Map page with appropriate permissions
+                // 4. Return to faulting instruction
+            }
+        }
+        Some(code) if code.is_permission_fault() => {
+            // Permission denied
+            if is_kernel_addr {
+                panic!(
+                    "Kernel permission fault at PC={:#x}, address={:#x}, write={}",
+                    elr, far, is_write
+                );
+            } else {
+                // Could be copy-on-write
+                panic!(
+                    "User permission fault at PC={:#x}, address={:#x}, write={}",
+                    elr, far, is_write
+                );
+
+                // TODO: Implement COW
+                // 1. Check if this is a COW page
+                // 2. If COW and write, copy page and remap as writable
+                // 3. Otherwise, send SIGSEGV to process
+            }
+        }
+        Some(DataFaultCode::AlignmentFault) => {
+            panic!(
+                "Alignment fault at PC={:#x}, address={:#x}",
+                elr, far
+            );
+        }
+        Some(code) => {
+            // Access flag faults - need to set AF bit
+            log::warn!(
+                "Access flag fault {:?} at PC={:#x}, address={:#x}",
+                code,
+                elr,
+                far
+            );
+            // For now, panic
+            panic!("Access flag fault not yet handled");
+        }
+        None => {
+            let dfsc = iss & 0x3F;
+            panic!(
+                "Unknown data abort: PC={:#x}, address={:#x}, DFSC={:#x}",
+                elr, far, dfsc
+            );
+        }
+    }
 }
 
 // IRQ handler is defined in interrupts.rs module
