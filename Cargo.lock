@@ -401,6 +401,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2acce4a10f12dc2fb14a218589d4f1f62ef011b2d0cc4b3cb1bba8e94da14649"
 
 [[package]]
+name = "fdt"
+version = "0.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "784a4df722dc6267a04af36895398f59d21d07dce47232adf31ec0ff2fa45e67"
+
+[[package]]
 name = "file_structure"
 version = "0.1.0"
 
@@ -578,6 +584,7 @@ dependencies = [
  "conquer-once",
  "cordyceps",
  "elf",
+ "fdt",
  "itertools",
  "jiff",
  "kernel_abi",

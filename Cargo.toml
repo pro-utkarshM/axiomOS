@@ -86,6 +86,7 @@ x86_64 = "0.15"
 riscv = "0.11"
 aarch64-cpu = "9.4"
 zerocopy = { version = "0.9.0-alpha.0", features = ["alloc", "derive"] }
+fdt = "0.1.5"
 
 [profile.dev]
 panic = "abort"
