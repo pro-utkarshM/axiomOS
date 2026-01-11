@@ -6,6 +6,7 @@ pub mod gic;
 pub mod interrupts;
 pub mod mem;
 pub mod paging;
+pub mod phys;
 pub mod platform;
 pub mod shutdown;
 pub mod syscall;
