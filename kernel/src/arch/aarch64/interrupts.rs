@@ -57,8 +57,8 @@ fn handle_timer_interrupt() {
     clear_timer_interrupt();
     set_next_timer();
 
-    // TODO: Implement scheduler integration for ARM64
-    // Scheduler not yet implemented for aarch64
+    // Trigger scheduler tick (may cause context switch)
+    super::cpu::timer_tick();
 }
 
 /// Clear timer interrupt
