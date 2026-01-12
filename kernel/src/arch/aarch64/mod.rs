@@ -1,5 +1,6 @@
 pub mod boot;
 pub mod context;
+pub mod cpu;
 pub mod dtb;
 pub mod exceptions;
 pub mod gic;

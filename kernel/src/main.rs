@@ -25,6 +25,9 @@ use spin::RwLock;
 #[cfg(target_arch = "x86_64")]
 use x86_64::instructions::hlt;
 
+#[cfg(target_arch = "aarch64")]
+use kernel::arch::traits::Architecture;
+
 #[cfg(not(target_arch = "x86_64"))]
 fn hlt() {
     #[cfg(target_arch = "riscv64")]
@@ -70,12 +73,39 @@ unsafe extern "C" fn main() -> ! {
     mcore::turn_idle()
 }
 
-#[cfg(not(target_arch = "x86_64"))]
+#[cfg(target_arch = "aarch64")]
 #[unsafe(export_name = "kernel_main")]
 unsafe extern "C" fn main() -> ! {
     kernel::init();
 
-    info!("ARM64/RISC-V kernel started");
+    info!("ARM64 kernel started");
+
+    // Initialize per-CPU context for CPU 0
+    kernel::arch::aarch64::cpu::init_current_cpu(0);
+
+    // Get scheduler and initialize with current stack as idle task
+    let ctx = kernel::arch::aarch64::cpu::current();
+    let sched = ctx.scheduler_mut();
+    let idle_sp = kernel::arch::aarch64::context::current_sp();
+    sched.init(idle_sp);
+
+    info!("Scheduler initialized, entering idle loop");
+
+    // Enable interrupts and enter idle loop
+    kernel::arch::aarch64::Aarch64::enable_interrupts();
+
+    loop {
+        // Wait for interrupt - timer will fire and potentially reschedule
+        hlt();
+    }
+}
+
+#[cfg(target_arch = "riscv64")]
+#[unsafe(export_name = "kernel_main")]
+unsafe extern "C" fn main() -> ! {
+    kernel::init();
+
+    info!("RISC-V kernel started");
     info!("Kernel initialization complete");
 
     loop {

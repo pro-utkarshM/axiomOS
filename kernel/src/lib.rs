@@ -16,7 +16,7 @@ use crate::limine::BOOT_TIME;
 mod acpi;
 #[cfg(target_arch = "x86_64")]
 mod apic;
-mod arch;
+pub mod arch;
 pub mod backtrace;
 pub mod driver;
 pub mod file;
@@ -68,13 +68,22 @@ pub fn init() {
     init_boot_time();
 
     log::init();
-    mem::init();
 
     #[cfg(target_arch = "x86_64")]
     {
+        mem::init();
         acpi::init();
         apic::init();
         hpet::init();
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    {
+        use arch::traits::Architecture;
+        // Early init (exception vectors)
+        arch::aarch64::Aarch64::early_init();
+        // Full init (memory, interrupts, syscalls)
+        arch::aarch64::Aarch64::init();
     }
 
     backtrace::init();
