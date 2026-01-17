@@ -235,7 +235,11 @@ cargo run -- --smp 4 --mem 512M
 Subsystems extracted into standalone crates can be tested on the host:
 
 ```bash
-cargo test
+# cloud-profile <kernel-bpf>
+axiom-ebpf main ❯ cargo test --features cloud-profile
+
+# embedded-profile <kernel-bpf>
+axiom-ebpf main ✗ cargo test --features embedded-profile
 ```
 
 The kernel binary itself cannot run standard unit tests due to bare-metal constraints.
