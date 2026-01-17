@@ -236,10 +236,10 @@ Subsystems extracted into standalone crates can be tested on the host:
 
 ```bash
 # cloud-profile <kernel-bpf>
-axiom-ebpf main ❯ cargo test --features cloud-profile
+cargo test --features cloud-profile
 
 # embedded-profile <kernel-bpf>
-axiom-ebpf main ✗ cargo test --features embedded-profile
+cargo test --features embedded-profile
 ```
 
 The kernel binary itself cannot run standard unit tests due to bare-metal constraints.
