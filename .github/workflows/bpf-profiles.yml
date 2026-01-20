@@ -37,13 +37,13 @@ jobs:
           key: ${{ runner.os }}-cargo-cloud-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Build with cloud-profile
-        run: cargo build --features cloud-profile -p kernel_bpf
+        run: cargo build --no-default-features --features cloud-profile -p kernel_bpf
 
       - name: Run tests with cloud-profile
-        run: cargo test --features cloud-profile -p kernel_bpf
+        run: cargo test --no-default-features --features cloud-profile -p kernel_bpf
 
       - name: Clippy with cloud-profile
-        run: cargo clippy --features cloud-profile -p kernel_bpf -- -D warnings
+        run: cargo clippy --no-default-features --features cloud-profile -p kernel_bpf -- -D warnings
 
   embedded-profile:
     name: Embedded Profile Tests
@@ -66,13 +66,13 @@ jobs:
           key: ${{ runner.os }}-cargo-embedded-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Build with embedded-profile
-        run: cargo build --features embedded-profile -p kernel_bpf
+        run: cargo build --no-default-features --features embedded-profile -p kernel_bpf
 
       - name: Run tests with embedded-profile
-        run: cargo test --features embedded-profile -p kernel_bpf
+        run: cargo test --no-default-features --features embedded-profile -p kernel_bpf
 
       - name: Clippy with embedded-profile
-        run: cargo clippy --features embedded-profile -p kernel_bpf -- -D warnings
+        run: cargo clippy --no-default-features --features embedded-profile -p kernel_bpf -- -D warnings
 
   mutual-exclusion:
     name: Profile Mutual Exclusion
@@ -85,7 +85,7 @@ jobs:
 
       - name: Verify both profiles fail to compile together
         run: |
-          if cargo build --features cloud-profile,embedded-profile -p kernel_bpf 2>&1; then
+          if cargo build --no-default-features --features cloud-profile,embedded-profile -p kernel_bpf 2>&1; then
             echo "ERROR: Both profiles should not compile together!"
             exit 1
           else
@@ -94,7 +94,7 @@ jobs:
 
       - name: Verify no profile fails to compile
         run: |
-          if cargo build -p kernel_bpf 2>&1; then
+          if cargo build --no-default-features -p kernel_bpf 2>&1; then
             echo "ERROR: No profile should not compile!"
             exit 1
           else
@@ -112,10 +112,10 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Run semantic tests with cloud-profile
-        run: cargo test --features cloud-profile -p kernel_bpf --test semantic_consistency
+        run: cargo test --no-default-features --features cloud-profile -p kernel_bpf --test semantic_consistency
 
       - name: Run semantic tests with embedded-profile
-        run: cargo test --features embedded-profile -p kernel_bpf --test semantic_consistency
+        run: cargo test --no-default-features --features embedded-profile -p kernel_bpf --test semantic_consistency
 
   format-check:
     name: Format Check

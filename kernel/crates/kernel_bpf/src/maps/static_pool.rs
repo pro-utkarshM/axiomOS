@@ -22,6 +22,7 @@
 //! ```
 
 use core::cell::UnsafeCell;
+
 use spin::Mutex;
 
 /// Default pool size for embedded systems (64KB).
