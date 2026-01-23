@@ -11,6 +11,7 @@ use core::marker::PhantomData;
 
 use super::cfg::ControlFlowGraph;
 use super::error::{VerifyError, VerifyResult};
+use super::helpers::{validate_helper_call, HelperValidation};
 use super::state::{RegState, RegType, ScalarValue, StackSlot, VerifierState};
 use crate::bytecode::insn::BpfInsn;
 use crate::bytecode::opcode::{AluOp, OpcodeClass};
@@ -449,30 +450,64 @@ impl<P: PhysicalProfile> Verifier<P> {
     ) -> VerifyResult<()> {
         let helper_id = insn.imm;
 
-        // Check if helper is valid (simplified - would need helper registry)
-        if helper_id < 0 {
-            return Err(VerifyError::InvalidHelper {
+        // Collect argument register types
+        let arg_types = [
+            state.reg(Register::R1).reg_type,
+            state.reg(Register::R2).reg_type,
+            state.reg(Register::R3).reg_type,
+            state.reg(Register::R4).reg_type,
+            state.reg(Register::R5).reg_type,
+        ];
+
+        // Validate helper call using the registry
+        match validate_helper_call(helper_id, &arg_types) {
+            HelperValidation::Valid(sig) => {
+                // Caller-saved registers are clobbered
+                for reg in [
+                    Register::R0,
+                    Register::R1,
+                    Register::R2,
+                    Register::R3,
+                    Register::R4,
+                    Register::R5,
+                ] {
+                    *state.reg_mut(reg) = RegState::uninit();
+                }
+
+                // R0 contains return value based on helper signature
+                *state.reg_mut(Register::R0) = sig.ret.to_reg_state();
+
+                Ok(())
+            }
+            HelperValidation::UnknownHelper(id) => Err(VerifyError::InvalidHelper {
                 insn_idx: idx,
-                helper_id,
-            });
+                helper_id: id,
+            }),
+            HelperValidation::NotAvailable(helper) => Err(VerifyError::HelperNotAvailable {
+                insn_idx: idx,
+                helper_name: helper.name(),
+            }),
+            HelperValidation::WrongArgCount {
+                helper,
+                expected,
+                got,
+            } => Err(VerifyError::HelperArgCount {
+                insn_idx: idx,
+                helper_name: helper.name(),
+                expected,
+                got,
+            }),
+            HelperValidation::ArgTypeMismatch {
+                helper,
+                arg_idx,
+                expected: _,
+                got: _,
+            } => Err(VerifyError::HelperArgType {
+                insn_idx: idx,
+                helper_name: helper.name(),
+                arg_idx,
+            }),
         }
-
-        // Caller-saved registers are clobbered
-        for reg in [
-            Register::R0,
-            Register::R1,
-            Register::R2,
-            Register::R3,
-            Register::R4,
-            Register::R5,
-        ] {
-            *state.reg_mut(reg) = RegState::uninit();
-        }
-
-        // R0 contains return value (scalar)
-        state.set_scalar(Register::R0, Some(ScalarValue::unknown()));
-
-        Ok(())
     }
 
     /// Verify a memory instruction.

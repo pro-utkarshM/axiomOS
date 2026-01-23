@@ -88,6 +88,36 @@ pub enum VerifyError {
         helper_id: i32,
     },
 
+    /// Helper not available in current profile
+    HelperNotAvailable {
+        /// Instruction index
+        insn_idx: usize,
+        /// Helper name
+        helper_name: &'static str,
+    },
+
+    /// Wrong number of arguments to helper
+    HelperArgCount {
+        /// Instruction index
+        insn_idx: usize,
+        /// Helper name
+        helper_name: &'static str,
+        /// Expected count
+        expected: usize,
+        /// Actual count
+        got: usize,
+    },
+
+    /// Wrong argument type for helper
+    HelperArgType {
+        /// Instruction index
+        insn_idx: usize,
+        /// Helper name
+        helper_name: &'static str,
+        /// Argument index (0-based, R1=0)
+        arg_idx: usize,
+    },
+
     /// Division by zero possible
     DivisionByZero {
         /// Instruction index
@@ -226,6 +256,41 @@ impl fmt::Display for VerifyError {
                     f,
                     "invalid helper function {} at instruction {}",
                     helper_id, insn_idx
+                )
+            }
+            Self::HelperNotAvailable {
+                insn_idx,
+                helper_name,
+            } => {
+                write!(
+                    f,
+                    "helper {} not available in current profile at instruction {}",
+                    helper_name, insn_idx
+                )
+            }
+            Self::HelperArgCount {
+                insn_idx,
+                helper_name,
+                expected,
+                got,
+            } => {
+                write!(
+                    f,
+                    "helper {} expects {} arguments, got {} at instruction {}",
+                    helper_name, expected, got, insn_idx
+                )
+            }
+            Self::HelperArgType {
+                insn_idx,
+                helper_name,
+                arg_idx,
+            } => {
+                write!(
+                    f,
+                    "helper {} argument {} has wrong type at instruction {}",
+                    helper_name,
+                    arg_idx + 1,
+                    insn_idx
                 )
             }
             Self::DivisionByZero { insn_idx } => {

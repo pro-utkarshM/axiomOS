@@ -1,0 +1,628 @@
+//! Helper Function Registry
+//!
+//! This module defines BPF helper function signatures and provides validation
+//! for helper calls during verification. Each helper has a defined signature
+//! specifying argument types and return type.
+//!
+//! # Helper Categories
+//!
+//! - **Core**: Basic operations (time, random, CPU ID)
+//! - **Map**: Map operations (lookup, update, delete)
+//! - **Probe**: Memory probing (probe_read)
+//! - **Process**: Process information (PID, UID, comm)
+//! - **Robotics**: rkBPF-specific helpers for robotics use cases
+//!
+//! # Profile Availability
+//!
+//! Some helpers are only available in certain profiles:
+//! - Cloud: All helpers available
+//! - Embedded: Restricted set (no dynamic allocation helpers)
+
+use super::state::{RegState, RegType};
+
+/// Helper function identifier.
+///
+/// These IDs match the standard BPF helper IDs where applicable,
+/// with rkBPF extensions starting at 1000.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(i32)]
+pub enum HelperId {
+    // ===== Core Helpers (1-10) =====
+    /// Get current time in nanoseconds
+    KtimeGetNs = 1,
+    /// Print debug message (debug builds only)
+    TracePrintk = 2,
+    /// Get pseudo-random u32
+    GetPrandomU32 = 3,
+    /// Get current CPU ID
+    GetSmpProcessorId = 4,
+
+    // ===== Map Helpers (5-10) =====
+    /// Look up element in map
+    MapLookupElem = 5,
+    /// Update element in map
+    MapUpdateElem = 6,
+    /// Delete element from map
+    MapDeleteElem = 7,
+
+    // ===== Memory Helpers (8-20) =====
+    /// Read from arbitrary memory (with safety checks)
+    ProbeRead = 8,
+
+    // ===== Process Helpers (9-20) =====
+    /// Get current PID and TGID
+    GetCurrentPidTgid = 9,
+    /// Get current UID and GID
+    GetCurrentUidGid = 10,
+    /// Get current process command name
+    GetCurrentComm = 11,
+
+    // ===== Ring Buffer Helpers (130-140) =====
+    /// Reserve space in ring buffer
+    RingbufReserve = 131,
+    /// Submit reserved ring buffer entry
+    RingbufSubmit = 132,
+    /// Discard reserved ring buffer entry
+    RingbufDiscard = 133,
+    /// Output to ring buffer (reserve + submit)
+    RingbufOutput = 134,
+
+    // ===== rkBPF Robotics Helpers (1000+) =====
+    /// Emergency stop all motors
+    MotorEmergencyStop = 1000,
+    /// Push value to time-series map
+    TimeseriesPush = 1001,
+    /// Get last timestamp from sensor
+    SensorLastTimestamp = 1002,
+    /// Set GPIO pin state
+    GpioSet = 1003,
+    /// Read GPIO pin state
+    GpioGet = 1004,
+    /// Write to PWM channel
+    PwmWrite = 1005,
+    /// Read IIO sensor value
+    IioRead = 1006,
+    /// Send CAN message
+    CanSend = 1007,
+}
+
+impl HelperId {
+    /// Try to convert from raw helper ID.
+    pub fn from_raw(id: i32) -> Option<Self> {
+        match id {
+            1 => Some(Self::KtimeGetNs),
+            2 => Some(Self::TracePrintk),
+            3 => Some(Self::GetPrandomU32),
+            4 => Some(Self::GetSmpProcessorId),
+            5 => Some(Self::MapLookupElem),
+            6 => Some(Self::MapUpdateElem),
+            7 => Some(Self::MapDeleteElem),
+            8 => Some(Self::ProbeRead),
+            9 => Some(Self::GetCurrentPidTgid),
+            10 => Some(Self::GetCurrentUidGid),
+            11 => Some(Self::GetCurrentComm),
+            131 => Some(Self::RingbufReserve),
+            132 => Some(Self::RingbufSubmit),
+            133 => Some(Self::RingbufDiscard),
+            134 => Some(Self::RingbufOutput),
+            1000 => Some(Self::MotorEmergencyStop),
+            1001 => Some(Self::TimeseriesPush),
+            1002 => Some(Self::SensorLastTimestamp),
+            1003 => Some(Self::GpioSet),
+            1004 => Some(Self::GpioGet),
+            1005 => Some(Self::PwmWrite),
+            1006 => Some(Self::IioRead),
+            1007 => Some(Self::CanSend),
+            _ => None,
+        }
+    }
+
+    /// Get the helper name for error messages.
+    pub const fn name(&self) -> &'static str {
+        match self {
+            Self::KtimeGetNs => "bpf_ktime_get_ns",
+            Self::TracePrintk => "bpf_trace_printk",
+            Self::GetPrandomU32 => "bpf_get_prandom_u32",
+            Self::GetSmpProcessorId => "bpf_get_smp_processor_id",
+            Self::MapLookupElem => "bpf_map_lookup_elem",
+            Self::MapUpdateElem => "bpf_map_update_elem",
+            Self::MapDeleteElem => "bpf_map_delete_elem",
+            Self::ProbeRead => "bpf_probe_read",
+            Self::GetCurrentPidTgid => "bpf_get_current_pid_tgid",
+            Self::GetCurrentUidGid => "bpf_get_current_uid_gid",
+            Self::GetCurrentComm => "bpf_get_current_comm",
+            Self::RingbufReserve => "bpf_ringbuf_reserve",
+            Self::RingbufSubmit => "bpf_ringbuf_submit",
+            Self::RingbufDiscard => "bpf_ringbuf_discard",
+            Self::RingbufOutput => "bpf_ringbuf_output",
+            Self::MotorEmergencyStop => "bpf_motor_emergency_stop",
+            Self::TimeseriesPush => "bpf_timeseries_push",
+            Self::SensorLastTimestamp => "bpf_sensor_last_timestamp",
+            Self::GpioSet => "bpf_gpio_set",
+            Self::GpioGet => "bpf_gpio_get",
+            Self::PwmWrite => "bpf_pwm_write",
+            Self::IioRead => "bpf_iio_read",
+            Self::CanSend => "bpf_can_send",
+        }
+    }
+
+    /// Check if this helper is available in embedded profile.
+    #[cfg(feature = "embedded-profile")]
+    pub const fn available_in_embedded(&self) -> bool {
+        match self {
+            // Core helpers - all available
+            Self::KtimeGetNs => true,
+            Self::GetPrandomU32 => true,
+            Self::GetSmpProcessorId => true,
+
+            // Map helpers - all available
+            Self::MapLookupElem => true,
+            Self::MapUpdateElem => true,
+            Self::MapDeleteElem => true,
+
+            // Debug helpers - disabled in embedded
+            Self::TracePrintk => false,
+
+            // Probe helpers - available but restricted
+            Self::ProbeRead => true,
+
+            // Process helpers - available
+            Self::GetCurrentPidTgid => true,
+            Self::GetCurrentUidGid => true,
+            Self::GetCurrentComm => true,
+
+            // Ring buffer - reserve disabled (dynamic alloc)
+            Self::RingbufReserve => false,
+            Self::RingbufSubmit => true,
+            Self::RingbufDiscard => true,
+            Self::RingbufOutput => true,
+
+            // Robotics helpers - all available
+            Self::MotorEmergencyStop => true,
+            Self::TimeseriesPush => true,
+            Self::SensorLastTimestamp => true,
+            Self::GpioSet => true,
+            Self::GpioGet => true,
+            Self::PwmWrite => true,
+            Self::IioRead => true,
+            Self::CanSend => true,
+        }
+    }
+
+    /// Check if this helper is available in cloud profile.
+    #[cfg(feature = "cloud-profile")]
+    pub const fn available_in_cloud(&self) -> bool {
+        // All helpers available in cloud profile
+        true
+    }
+
+    /// Check if helper is available in the current profile.
+    pub const fn is_available(&self) -> bool {
+        #[cfg(feature = "embedded-profile")]
+        {
+            self.available_in_embedded()
+        }
+        #[cfg(feature = "cloud-profile")]
+        {
+            self.available_in_cloud()
+        }
+    }
+}
+
+/// Argument type for helper functions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ArgType {
+    /// Any scalar value (integer)
+    Scalar,
+    /// Pointer to map
+    PtrToMap,
+    /// Pointer to map key (read-only)
+    PtrToMapKey,
+    /// Pointer to map value
+    PtrToMapValue,
+    /// Pointer to stack memory
+    PtrToStack,
+    /// Pointer to memory (generic, with size)
+    PtrToMem,
+    /// Pointer to memory or null
+    PtrToMemOrNull,
+    /// Size of memory buffer (paired with PtrToMem)
+    MemSize,
+    /// Pointer to context
+    PtrToCtx,
+    /// Any pointer type
+    AnyPtr,
+    /// Constant value (flags, etc.)
+    Const,
+    /// Ring buffer pointer
+    PtrToRingbuf,
+    /// Reserved ring buffer entry
+    PtrToRingbufSample,
+}
+
+impl ArgType {
+    /// Check if a register type is compatible with this argument type.
+    pub fn is_compatible(&self, reg_type: RegType) -> bool {
+        match self {
+            Self::Scalar | Self::MemSize | Self::Const => {
+                matches!(reg_type, RegType::Scalar)
+            }
+            Self::PtrToMap => matches!(reg_type, RegType::ConstPtrToMap),
+            Self::PtrToMapKey => {
+                matches!(reg_type, RegType::PtrToMapKey | RegType::PtrToStack)
+            }
+            Self::PtrToMapValue => {
+                matches!(reg_type, RegType::PtrToMapValue | RegType::PtrToStack)
+            }
+            Self::PtrToStack => matches!(reg_type, RegType::PtrToStack | RegType::PtrToFp),
+            Self::PtrToMem => {
+                matches!(
+                    reg_type,
+                    RegType::PtrToStack
+                        | RegType::PtrToMapValue
+                        | RegType::PtrToPacket
+                        | RegType::PtrToCtx
+                )
+            }
+            Self::PtrToMemOrNull => {
+                matches!(
+                    reg_type,
+                    RegType::PtrToStack
+                        | RegType::PtrToMapValue
+                        | RegType::PtrToPacket
+                        | RegType::PtrToCtx
+                        | RegType::NullPtr
+                        | RegType::Scalar // Allow scalar 0 as null
+                )
+            }
+            Self::PtrToCtx => matches!(reg_type, RegType::PtrToCtx),
+            Self::AnyPtr => reg_type.is_pointer(),
+            Self::PtrToRingbuf => {
+                // Ring buffer map pointer
+                matches!(reg_type, RegType::ConstPtrToMap | RegType::PtrToMapValue)
+            }
+            Self::PtrToRingbufSample => {
+                // Reserved sample pointer (returned by ringbuf_reserve)
+                matches!(reg_type, RegType::PtrToMapValue)
+            }
+        }
+    }
+}
+
+/// Return type for helper functions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReturnType {
+    /// Returns an integer/scalar
+    Integer,
+    /// Returns pointer to map value (may be NULL)
+    PtrToMapValueOrNull,
+    /// Returns pointer to allocated memory (may be NULL)
+    PtrToAllocMemOrNull,
+    /// Returns void (always 0)
+    Void,
+}
+
+impl ReturnType {
+    /// Convert return type to register state.
+    pub fn to_reg_state(&self) -> RegState {
+        match self {
+            Self::Integer | Self::Void => {
+                RegState::scalar(Some(super::state::ScalarValue::unknown()))
+            }
+            Self::PtrToMapValueOrNull => {
+                // Could be NULL or valid pointer - for now treat as scalar
+                // A full implementation would track this as a maybe-null pointer
+                RegState::scalar(Some(super::state::ScalarValue::unknown()))
+            }
+            Self::PtrToAllocMemOrNull => {
+                RegState::scalar(Some(super::state::ScalarValue::unknown()))
+            }
+        }
+    }
+}
+
+/// Helper function signature.
+#[derive(Debug, Clone)]
+pub struct HelperSignature {
+    /// Helper ID
+    pub id: HelperId,
+    /// Argument types (up to 5 arguments, R1-R5)
+    pub args: &'static [ArgType],
+    /// Return type
+    pub ret: ReturnType,
+}
+
+impl HelperSignature {
+    /// Create a new helper signature.
+    const fn new(id: HelperId, args: &'static [ArgType], ret: ReturnType) -> Self {
+        Self { id, args, ret }
+    }
+
+    /// Number of arguments.
+    pub fn arg_count(&self) -> usize {
+        self.args.len()
+    }
+}
+
+/// Get the signature for a helper function.
+pub fn get_helper_signature(id: HelperId) -> HelperSignature {
+    match id {
+        // Core helpers
+        HelperId::KtimeGetNs => HelperSignature::new(id, &[], ReturnType::Integer),
+
+        HelperId::TracePrintk => HelperSignature::new(
+            id,
+            &[ArgType::PtrToMem, ArgType::MemSize],
+            ReturnType::Integer,
+        ),
+
+        HelperId::GetPrandomU32 => HelperSignature::new(id, &[], ReturnType::Integer),
+
+        HelperId::GetSmpProcessorId => HelperSignature::new(id, &[], ReturnType::Integer),
+
+        // Map helpers
+        HelperId::MapLookupElem => HelperSignature::new(
+            id,
+            &[ArgType::PtrToMap, ArgType::PtrToMapKey],
+            ReturnType::PtrToMapValueOrNull,
+        ),
+
+        HelperId::MapUpdateElem => HelperSignature::new(
+            id,
+            &[
+                ArgType::PtrToMap,
+                ArgType::PtrToMapKey,
+                ArgType::PtrToMapValue,
+                ArgType::Const,
+            ],
+            ReturnType::Integer,
+        ),
+
+        HelperId::MapDeleteElem => HelperSignature::new(
+            id,
+            &[ArgType::PtrToMap, ArgType::PtrToMapKey],
+            ReturnType::Integer,
+        ),
+
+        // Memory helpers
+        HelperId::ProbeRead => HelperSignature::new(
+            id,
+            &[ArgType::PtrToStack, ArgType::MemSize, ArgType::AnyPtr],
+            ReturnType::Integer,
+        ),
+
+        // Process helpers
+        HelperId::GetCurrentPidTgid => HelperSignature::new(id, &[], ReturnType::Integer),
+
+        HelperId::GetCurrentUidGid => HelperSignature::new(id, &[], ReturnType::Integer),
+
+        HelperId::GetCurrentComm => {
+            HelperSignature::new(id, &[ArgType::PtrToStack, ArgType::MemSize], ReturnType::Integer)
+        }
+
+        // Ring buffer helpers
+        HelperId::RingbufReserve => HelperSignature::new(
+            id,
+            &[ArgType::PtrToRingbuf, ArgType::Scalar, ArgType::Const],
+            ReturnType::PtrToAllocMemOrNull,
+        ),
+
+        HelperId::RingbufSubmit => {
+            HelperSignature::new(id, &[ArgType::PtrToRingbufSample, ArgType::Const], ReturnType::Void)
+        }
+
+        HelperId::RingbufDiscard => {
+            HelperSignature::new(id, &[ArgType::PtrToRingbufSample, ArgType::Const], ReturnType::Void)
+        }
+
+        HelperId::RingbufOutput => HelperSignature::new(
+            id,
+            &[
+                ArgType::PtrToRingbuf,
+                ArgType::PtrToMem,
+                ArgType::MemSize,
+                ArgType::Const,
+            ],
+            ReturnType::Integer,
+        ),
+
+        // Robotics helpers
+        HelperId::MotorEmergencyStop => {
+            HelperSignature::new(id, &[ArgType::Scalar], ReturnType::Integer)
+        }
+
+        HelperId::TimeseriesPush => HelperSignature::new(
+            id,
+            &[ArgType::PtrToMap, ArgType::PtrToMapKey, ArgType::PtrToMem],
+            ReturnType::Integer,
+        ),
+
+        HelperId::SensorLastTimestamp => {
+            HelperSignature::new(id, &[ArgType::Scalar], ReturnType::Integer)
+        }
+
+        HelperId::GpioSet => {
+            HelperSignature::new(id, &[ArgType::Scalar, ArgType::Scalar], ReturnType::Integer)
+        }
+
+        HelperId::GpioGet => HelperSignature::new(id, &[ArgType::Scalar], ReturnType::Integer),
+
+        HelperId::PwmWrite => HelperSignature::new(
+            id,
+            &[ArgType::Scalar, ArgType::Scalar, ArgType::Scalar],
+            ReturnType::Integer,
+        ),
+
+        HelperId::IioRead => HelperSignature::new(
+            id,
+            &[ArgType::Scalar, ArgType::PtrToStack, ArgType::MemSize],
+            ReturnType::Integer,
+        ),
+
+        HelperId::CanSend => HelperSignature::new(
+            id,
+            &[ArgType::Scalar, ArgType::PtrToMem, ArgType::MemSize],
+            ReturnType::Integer,
+        ),
+    }
+}
+
+/// Result of helper validation.
+#[derive(Debug, Clone)]
+pub enum HelperValidation {
+    /// Helper call is valid
+    Valid(HelperSignature),
+    /// Unknown helper ID
+    UnknownHelper(i32),
+    /// Helper not available in current profile
+    NotAvailable(HelperId),
+    /// Wrong number of arguments
+    WrongArgCount {
+        helper: HelperId,
+        expected: usize,
+        got: usize,
+    },
+    /// Argument type mismatch
+    ArgTypeMismatch {
+        helper: HelperId,
+        arg_idx: usize,
+        expected: ArgType,
+        got: RegType,
+    },
+}
+
+/// Validate a helper call.
+///
+/// # Arguments
+///
+/// * `helper_id` - Raw helper ID from the call instruction
+/// * `arg_types` - Register types for R1-R5 (only used args need valid types)
+///
+/// # Returns
+///
+/// `HelperValidation::Valid` with signature if valid, or specific error.
+pub fn validate_helper_call(helper_id: i32, arg_types: &[RegType; 5]) -> HelperValidation {
+    // Check if helper ID is known
+    let Some(id) = HelperId::from_raw(helper_id) else {
+        return HelperValidation::UnknownHelper(helper_id);
+    };
+
+    // Check profile availability
+    if !id.is_available() {
+        return HelperValidation::NotAvailable(id);
+    }
+
+    // Get signature
+    let sig = get_helper_signature(id);
+
+    // Validate arguments
+    for (idx, expected_type) in sig.args.iter().enumerate() {
+        let got_type = arg_types[idx];
+        if !expected_type.is_compatible(got_type) {
+            return HelperValidation::ArgTypeMismatch {
+                helper: id,
+                arg_idx: idx,
+                expected: *expected_type,
+                got: got_type,
+            };
+        }
+    }
+
+    HelperValidation::Valid(sig)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn helper_id_from_raw() {
+        assert_eq!(HelperId::from_raw(1), Some(HelperId::KtimeGetNs));
+        assert_eq!(HelperId::from_raw(5), Some(HelperId::MapLookupElem));
+        assert_eq!(HelperId::from_raw(1000), Some(HelperId::MotorEmergencyStop));
+        assert_eq!(HelperId::from_raw(9999), None);
+    }
+
+    #[test]
+    fn helper_signature_ktime() {
+        let sig = get_helper_signature(HelperId::KtimeGetNs);
+        assert_eq!(sig.args.len(), 0);
+        assert_eq!(sig.ret, ReturnType::Integer);
+    }
+
+    #[test]
+    fn helper_signature_map_lookup() {
+        let sig = get_helper_signature(HelperId::MapLookupElem);
+        assert_eq!(sig.args.len(), 2);
+        assert_eq!(sig.args[0], ArgType::PtrToMap);
+        assert_eq!(sig.args[1], ArgType::PtrToMapKey);
+        assert_eq!(sig.ret, ReturnType::PtrToMapValueOrNull);
+    }
+
+    #[test]
+    fn validate_ktime_get_ns() {
+        let args = [RegType::NotInit; 5];
+        let result = validate_helper_call(1, &args);
+        assert!(matches!(result, HelperValidation::Valid(_)));
+    }
+
+    #[test]
+    fn validate_map_lookup_valid() {
+        let mut args = [RegType::NotInit; 5];
+        args[0] = RegType::ConstPtrToMap; // R1 = map
+        args[1] = RegType::PtrToStack; // R2 = key on stack
+
+        let result = validate_helper_call(5, &args);
+        assert!(matches!(result, HelperValidation::Valid(_)));
+    }
+
+    #[test]
+    fn validate_map_lookup_invalid_arg() {
+        let mut args = [RegType::NotInit; 5];
+        args[0] = RegType::Scalar; // Wrong! Should be map pointer
+        args[1] = RegType::PtrToStack;
+
+        let result = validate_helper_call(5, &args);
+        assert!(matches!(
+            result,
+            HelperValidation::ArgTypeMismatch {
+                arg_idx: 0,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn validate_unknown_helper() {
+        let args = [RegType::NotInit; 5];
+        let result = validate_helper_call(9999, &args);
+        assert!(matches!(result, HelperValidation::UnknownHelper(9999)));
+    }
+
+    #[test]
+    fn arg_type_compatibility() {
+        // Scalar accepts scalar
+        assert!(ArgType::Scalar.is_compatible(RegType::Scalar));
+        assert!(!ArgType::Scalar.is_compatible(RegType::PtrToStack));
+
+        // PtrToMem accepts various pointer types
+        assert!(ArgType::PtrToMem.is_compatible(RegType::PtrToStack));
+        assert!(ArgType::PtrToMem.is_compatible(RegType::PtrToMapValue));
+        assert!(!ArgType::PtrToMem.is_compatible(RegType::Scalar));
+
+        // PtrToMemOrNull accepts null
+        assert!(ArgType::PtrToMemOrNull.is_compatible(RegType::NullPtr));
+        assert!(ArgType::PtrToMemOrNull.is_compatible(RegType::PtrToStack));
+    }
+
+    #[test]
+    fn robotics_helpers_available() {
+        // Robotics helpers should be defined
+        assert!(HelperId::from_raw(1000).is_some());
+        assert!(HelperId::from_raw(1001).is_some());
+
+        let sig = get_helper_signature(HelperId::MotorEmergencyStop);
+        assert_eq!(sig.args.len(), 1);
+        assert_eq!(sig.args[0], ArgType::Scalar);
+    }
+}
