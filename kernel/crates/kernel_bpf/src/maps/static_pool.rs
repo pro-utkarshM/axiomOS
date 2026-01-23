@@ -172,7 +172,10 @@ impl StaticPool {
         metadata.watermark = 0;
         metadata.alloc_count = 0;
         // Zero the buffer
-        (*buffer_ptr) = [0u8; DEFAULT_POOL_SIZE];
+        // Safety: We hold the metadata lock, ensuring exclusive access
+        unsafe {
+            (*buffer_ptr) = [0u8; DEFAULT_POOL_SIZE];
+        }
     }
 }
 
