@@ -6,7 +6,22 @@ edition = "2024"
 [dependencies]
 spin.workspace = true
 
+[dev-dependencies]
+criterion = { version = "0.5", default-features = false }
+
 [features]
 default = ["embedded-profile"]
 cloud-profile = []
 embedded-profile = []
+
+[[bench]]
+name = "interpreter"
+harness = false
+
+[[bench]]
+name = "verifier"
+harness = false
+
+[[bench]]
+name = "maps"
+harness = false
