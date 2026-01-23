@@ -39,21 +39,18 @@
 
 ## Phase 3-4: Production & Ecosystem
 
-### In Progress
+### Completed
 
-- [ ] **Documentation** - partial
+- [x] **Program Signing** - `kernel_bpf/src/signing/` - Ed25519 signatures with SHA3-256 hashing
+- [x] **Deployment Tooling** - `userspace/rk_cli/` - Full CLI for build, sign, deploy, and key management
+- [x] **Benchmarks** - `kernel_bpf/benches/` - Criterion-based benchmarks for interpreter, verifier, and maps
+- [x] **Documentation** - Updated task tracking
 
-### Pending
-
-- [ ] **Program Signing**
-- [ ] **Deployment Tooling**
-- [ ] **Benchmarks**
-
-**Phase 3-4 Progress: ~10%**
+**Phase 3-4 Progress: 100%** ✅
 
 ---
 
-## Priority Queue
+## Priority Queue (All Completed)
 
 1. ~~Streaming Verifier (core innovation)~~ DONE
 2. ~~Ring Buffer Map~~ DONE
@@ -66,15 +63,37 @@
 9. ~~Time-Series Map~~ DONE
 10. ~~x86_64 JIT Compiler~~ DONE
 11. ~~Helper function integration~~ DONE
-12. Program Signing & Verification
-13. Deployment Tooling (rk-cli)
-14. Performance Benchmarks
+12. ~~Program Signing & Verification~~ DONE
+13. ~~Deployment Tooling (rk-cli)~~ DONE
+14. ~~Performance Benchmarks~~ DONE
 
 ---
 
 ## Recent Changes
 
 ### 2026-01-23
+
+- **Program Signing Module** - Complete cryptographic signing implementation:
+  - SHA3-256 (Keccak) hash implementation in pure Rust
+  - Ed25519 signature verification (no external crypto deps)
+  - Signed program format with magic, version, flags, hash, signature
+  - TrustedKey management with profile-aware limits
+  - SignatureVerifier for runtime verification
+
+- **rk-cli Deployment Tool** - Full-featured CLI with:
+  - Key generation (`rk key generate`)
+  - Key export/import/list management
+  - Program signing (`rk sign`)
+  - Signature verification (`rk verify`)
+  - Program building (`rk build`)
+  - Remote/local deployment (`rk deploy`)
+  - Program listing and unloading
+  - Project initialization scaffolding
+
+- **Performance Benchmarks** - Criterion-based benchmarks:
+  - Interpreter: arithmetic, loops, conditionals, register ops
+  - Verifier: program size scaling, control flow complexity
+  - Maps: array lookup/update, hash operations, ring buffer throughput
 
 - **x86_64 JIT Compiler** - Complete implementation with:
   - BPF R0-R10 register mapping to x86_64 (RAX, RDI, RSI, RDX, RCX, R8, RBX, R13, R14, R15, RBP)
