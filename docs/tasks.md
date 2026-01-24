@@ -1,121 +1,230 @@
 # rkBPF Task Tracking
 
-## Phase 1: Core Runtime (Proposal Weeks 1-6)
+## Implementation Status Overview
 
-### Completed
+rkBPF currently exists as a **complete userspace library/framework** implementing all core algorithms and data structures. The next milestone is **kernel integration** to make it a working kernel instrumentation tool.
+
+| Layer | Status | Description |
+|-------|--------|-------------|
+| Algorithms & Data Structures | ✅ Complete | Verifier, JIT, maps, loader |
+| Userspace Tooling | ✅ Complete | rk-cli, rk-bridge, signing |
+| Kernel Module | ❌ Not Started | Linux kernel integration |
+| Example Programs | ❌ Not Started | .bpf.c programs |
+| Platform Validation | ❌ Not Started | RPi4, Jetson testing |
+
+---
+
+## Phase 1: Core Runtime ✅
+
+### Completed (Userspace Library)
 
 - [x] **Profile System** - `kernel_bpf/src/profile/`
+  - Dual-profile architecture (embedded vs cloud)
+  - Compile-time feature selection
+  - Profile-specific limits and capabilities
+
 - [x] **Bytecode Module** - `kernel_bpf/src/bytecode/`
+  - BPF instruction encoding/decoding
+  - Opcode classes (ALU, JMP, MEM, etc.)
+  - Register file abstraction
+
+- [x] **Streaming Verifier** - `kernel_bpf/src/verifier/streaming.rs`
+  - O(registers × basic_block_depth) memory complexity
+  - Single-pass verification algorithm
+  - CFG analysis and path tracking
+
 - [x] **Interpreter** - `kernel_bpf/src/execution/interpreter.rs`
-- [x] **Array Map** - `kernel_bpf/src/maps/array.rs`
-- [x] **Scheduler** - `kernel_bpf/src/scheduler/`
-- [x] **Streaming Verifier** - `kernel_bpf/src/verifier/streaming.rs` - O(registers × basic_block_depth) algorithm
-- [x] **Ring Buffer Map** - `kernel_bpf/src/maps/ringbuf.rs` - Lock-free kernel-to-userspace streaming
-- [x] **Hash Map** - `kernel_bpf/src/maps/hash.rs` - O(1) lookup with linear probing
-- [x] **libbpf-free Loader** - `kernel_bpf/src/loader/` - Minimal ELF64 parser (~50KB)
+  - Full BPF instruction set execution
+  - Bounded execution with instruction limits
+
+- [x] **x86_64 JIT Compiler** - `kernel_bpf/src/execution/jit/`
+  - Full instruction encoding
+  - Register allocation (BPF R0-R10 → x86_64)
+  - Jump patching, prologue/epilogue
+
 - [x] **ARM64 JIT Compiler** - `kernel_bpf/src/execution/jit_aarch64.rs`
-- [x] **x86_64 JIT Compiler** - `kernel_bpf/src/execution/jit/mod.rs` - Full instruction set support
-- [x] **Verifier Helper Integration** - `kernel_bpf/src/verifier/helpers.rs` - Type-safe helper validation
+  - ARM64 instruction encoding
+  - Register mapping for embedded targets
 
-**Phase 1 Progress: 100%** ✅
+- [x] **Maps** - `kernel_bpf/src/maps/`
+  - Array map with O(1) access
+  - Hash map with linear probing
+  - Ring buffer (lock-free)
+  - Time-series map (circular buffer)
+  - Static pool (embedded profile)
 
----
+- [x] **ELF Loader** - `kernel_bpf/src/loader/`
+  - Minimal ELF64 parser (~50KB, no libbpf dependency)
+  - Section parsing, relocation handling
+  - Helper resolution
 
-## Phase 2: Robotics Integration (Weeks 7-10)
-
-### Completed
-
-- [x] **Attach Point Abstraction** - `kernel_bpf/src/attach/mod.rs`
-- [x] **IIO Subsystem Attach Points** - `kernel_bpf/src/attach/iio.rs`
-- [x] **GPIO Event Hooks** - `kernel_bpf/src/attach/gpio.rs`
-- [x] **PWM Observation Points** - `kernel_bpf/src/attach/pwm.rs`
-- [x] **Kprobe/Tracepoint Attach** - `kernel_bpf/src/attach/kprobe.rs`, `tracepoint.rs`
-- [x] **Time-Series Map Type** - `kernel_bpf/src/maps/timeseries.rs` - Circular buffer for sensor data
-- [x] **ROS2 Bridge** - `userspace/rk_bridge/` - Event bridge with ring buffer consumer
-
-**Phase 2 Progress: 100%** ✅
-
----
-
-## Phase 3-4: Production & Ecosystem
-
-### Completed
-
-- [x] **Program Signing** - `kernel_bpf/src/signing/` - Ed25519 signatures with SHA3-256 hashing
-- [x] **Deployment Tooling** - `userspace/rk_cli/` - Full CLI for build, sign, deploy, and key management
-- [x] **Benchmarks** - `kernel_bpf/benches/` - Criterion-based benchmarks for interpreter, verifier, and maps
-- [x] **Documentation** - Updated task tracking
-
-**Phase 3-4 Progress: 100%** ✅
+- [x] **Helper Registry** - `kernel_bpf/src/verifier/helpers.rs`
+  - Core helpers (map ops, ringbuf, time)
+  - Robotics helpers (motor, gpio, pwm, iio, can)
+  - Type-safe signature validation
 
 ---
 
-## Priority Queue (All Completed)
+## Phase 2: Robotics Integration ✅
 
-1. ~~Streaming Verifier (core innovation)~~ DONE
-2. ~~Ring Buffer Map~~ DONE
-3. ~~Hash Map~~ DONE
-4. ~~libbpf-free Loader~~ DONE
-5. ~~ARM64 JIT Compiler~~ DONE
-6. ~~Attach Point Abstraction~~ DONE
-7. ~~IIO/GPIO/PWM Integration~~ DONE
-8. ~~ROS2 Bridge~~ DONE
-9. ~~Time-Series Map~~ DONE
-10. ~~x86_64 JIT Compiler~~ DONE
-11. ~~Helper function integration~~ DONE
-12. ~~Program Signing & Verification~~ DONE
-13. ~~Deployment Tooling (rk-cli)~~ DONE
-14. ~~Performance Benchmarks~~ DONE
+### Completed (Framework/Stubs)
 
----
+- [x] **Attach Point Abstraction** - `kernel_bpf/src/attach/`
+  - Generic `AttachPoint` trait
+  - Attach ID tracking, lifecycle management
 
-## Recent Changes
+- [x] **IIO Attach** - `kernel_bpf/src/attach/iio.rs`
+  - IIO channel/device abstraction
+  - Event filtering structures
+  - ⚠️ **Stub only** - no actual kernel IIO hooks
 
-### 2026-01-23
+- [x] **GPIO Attach** - `kernel_bpf/src/attach/gpio.rs`
+  - Edge detection (rising/falling/both)
+  - GPIO chip/line abstraction
+  - ⚠️ **Stub only** - no actual kernel GPIO hooks
 
-- **Program Signing Module** - Complete cryptographic signing implementation:
-  - SHA3-256 (Keccak) hash implementation in pure Rust
-  - Ed25519 signature verification (no external crypto deps)
-  - Signed program format with magic, version, flags, hash, signature
-  - TrustedKey management with profile-aware limits
-  - SignatureVerifier for runtime verification
+- [x] **PWM Attach** - `kernel_bpf/src/attach/pwm.rs`
+  - PWM chip/channel abstraction
+  - Duty cycle event structures
+  - ⚠️ **Stub only** - no actual kernel PWM hooks
 
-- **rk-cli Deployment Tool** - Full-featured CLI with:
-  - Key generation (`rk key generate`)
-  - Key export/import/list management
-  - Program signing (`rk sign`)
-  - Signature verification (`rk verify`)
-  - Program building (`rk build`)
-  - Remote/local deployment (`rk deploy`)
-  - Program listing and unloading
-  - Project initialization scaffolding
+- [x] **Kprobe/Tracepoint** - `kernel_bpf/src/attach/kprobe.rs`, `tracepoint.rs`
+  - Function entry/return probes
+  - Tracepoint subsystem/event model
+  - ⚠️ **Stub only** - no actual kernel registration
 
-- **Performance Benchmarks** - Criterion-based benchmarks:
-  - Interpreter: arithmetic, loops, conditionals, register ops
-  - Verifier: program size scaling, control flow complexity
-  - Maps: array lookup/update, hash operations, ring buffer throughput
-
-- **x86_64 JIT Compiler** - Complete implementation with:
-  - BPF R0-R10 register mapping to x86_64 (RAX, RDI, RSI, RDX, RCX, R8, RBX, R13, R14, R15, RBP)
-  - Full instruction encoding (MOV, ADD, SUB, MUL, DIV, AND, OR, XOR, shifts, jumps, loads/stores)
-  - Byte swap operations (LE/BE 16/32/64-bit)
-  - Jump patching for forward references
-  - Proper prologue/epilogue with callee-saved registers
-
-- **Helper Function Registry** - Type-safe helper validation with:
-  - Core helpers (map operations, ringbuf, time, printing)
-  - Robotics-specific helpers (motor_emergency_stop, timeseries_push, gpio, pwm, iio, can)
-  - Profile-aware availability checking
-  - Argument type validation
-
-- **Time-Series Map** - Circular buffer for robotics sensor data with:
-  - Automatic old entry eviction
-  - Time-window queries
-  - Statistics tracking (min/max/avg/count)
-  - Profile-aware limits (4K embedded, 1M cloud)
-
-- **ROS2 Bridge** - Userspace event bridge with:
+- [x] **ROS2 Bridge** - `userspace/rk_bridge/`
   - Ring buffer consumer via mmap
-  - Event types: IMU, Motor, Safety, GPIO, TimeSeries, Trace
+  - Event types (IMU, Motor, Safety, GPIO, TimeSeries)
   - Publisher backends (stdout, ROS2 placeholder)
-  - CLI tool with demo mode
+
+---
+
+## Phase 3: Production Hardening ✅
+
+### Completed
+
+- [x] **Program Signing** - `kernel_bpf/src/signing/`
+  - SHA3-256 (Keccak) pure Rust implementation
+  - Ed25519 signature verification
+  - Signed program format (magic, version, hash, signature)
+  - TrustedKey management with profile limits
+
+- [x] **Deployment CLI** - `userspace/rk_cli/`
+  - Key management (generate, export, import, list)
+  - Program signing and verification
+  - Build integration (clang wrapper)
+  - Deploy commands (local/remote)
+  - Project scaffolding (`rk init`)
+
+- [x] **Benchmarks** - `kernel_bpf/benches/`
+  - Interpreter benchmarks (arithmetic, loops, conditionals)
+  - Verifier benchmarks (scaling, control flow)
+  - Map benchmarks (array, hash, ringbuf)
+
+---
+
+## Phase 4: Ecosystem ❌
+
+### Not Started
+
+- [ ] **Example BPF Programs**
+  - Sensor filtering example (IIO)
+  - Safety interlock example (GPIO)
+  - Motor tracing example (PWM)
+  - End-to-end demo programs
+
+- [ ] **Kernel Module**
+  - Linux kernel module for program loading
+  - Syscall/ioctl interface
+  - Actual kprobe/tracepoint registration
+  - IIO/GPIO/PWM subsystem hooks
+
+- [ ] **Platform Validation**
+  - Raspberry Pi 4 testing
+  - Jetson Nano testing
+  - Memory footprint measurement
+  - Control loop overhead benchmarks
+
+- [ ] **Demo Scenarios** (from proposal)
+  - Live Safety Patching demo
+  - Production Debugging demo
+  - Unified Timeline demo
+
+- [ ] **Academic Publication**
+  - AgenticOS2026 Workshop paper
+  - Benchmark results documentation
+
+---
+
+## Architecture Notes
+
+### What Works Today
+
+```
+┌──────────────────────────────────────────────────────────┐
+│                    Userspace                              │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────┐   │
+│  │  rk-cli     │  │  rk-bridge  │  │  Your Tool      │   │
+│  │  (sign,     │  │  (events →  │  │  (uses          │   │
+│  │   deploy)   │  │   ROS2)     │  │   kernel_bpf)   │   │
+│  └──────┬──────┘  └──────┬──────┘  └────────┬────────┘   │
+│         │                │                   │            │
+│         └────────────────┼───────────────────┘            │
+│                          │                                │
+│              ┌───────────▼───────────┐                    │
+│              │     kernel_bpf        │  ← You are here    │
+│              │  (Rust library)       │                    │
+│              │                       │                    │
+│              │  • Verifier           │                    │
+│              │  • JIT (x86/ARM64)    │                    │
+│              │  • Maps               │                    │
+│              │  • Loader             │                    │
+│              │  • Signing            │                    │
+│              └───────────────────────┘                    │
+└──────────────────────────────────────────────────────────┘
+                          │
+                          │ NOT YET CONNECTED
+                          ▼
+┌──────────────────────────────────────────────────────────┐
+│                     Linux Kernel                          │
+│                                                          │
+│   kprobes │ tracepoints │ IIO │ GPIO │ PWM               │
+│                                                          │
+└──────────────────────────────────────────────────────────┘
+```
+
+### Next Steps for Full Functionality
+
+1. **Kernel Module** - Write a loadable kernel module that:
+   - Exposes ioctl interface for loading verified programs
+   - Registers programs with kprobe/tracepoint infrastructure
+   - Hooks into IIO/GPIO/PWM subsystems for robotics events
+
+2. **Example Programs** - Create `.bpf.c` files demonstrating:
+   - Sensor data filtering
+   - Safety interlocks
+   - Motor control tracing
+
+3. **Integration Testing** - Validate on target platforms:
+   - Memory footprint (<10MB target)
+   - Verification time (<100ms for 1K instructions)
+   - Runtime overhead (<1% on control loops)
+
+---
+
+## File Index
+
+| Path | Description |
+|------|-------------|
+| `kernel/crates/kernel_bpf/` | Core library |
+| `kernel/crates/kernel_bpf/src/verifier/` | Streaming verifier |
+| `kernel/crates/kernel_bpf/src/execution/` | Interpreter + JIT |
+| `kernel/crates/kernel_bpf/src/maps/` | Map implementations |
+| `kernel/crates/kernel_bpf/src/loader/` | ELF loader |
+| `kernel/crates/kernel_bpf/src/attach/` | Attach point stubs |
+| `kernel/crates/kernel_bpf/src/signing/` | Cryptographic signing |
+| `userspace/rk_cli/` | Deployment CLI |
+| `userspace/rk_bridge/` | ROS2 event bridge |
+| `docs/proposal.md` | Full project proposal |
+| `docs/howto.md` | Usage guide |

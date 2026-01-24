@@ -349,6 +349,86 @@ $ ros2 run rk_bridge rk_to_ros --map motor_events --topic /rk/motor
 
 ---
 
+## Implementation Status (January 2026)
+
+### What's Built
+
+The core rkBPF infrastructure exists as a **complete Rust library** with all algorithms and data structures implemented:
+
+| Component | Status | Notes |
+|-----------|--------|-------|
+| Streaming Verifier | ✅ Complete | O(registers × basic_block_depth) as designed |
+| ELF Loader | ✅ Complete | ~50KB, no libbpf dependency |
+| Maps (Array, Hash, Ring Buffer) | ✅ Complete | Profile-aware limits |
+| Time-Series Map | ✅ Complete | Circular buffer with windowed queries |
+| x86_64 JIT | ✅ Complete | Full instruction set |
+| ARM64 JIT | ✅ Complete | Embedded target support |
+| Interpreter | ✅ Complete | Fallback execution engine |
+| Helper Registry | ✅ Complete | Core + robotics helpers defined |
+| Attach Point Framework | ✅ Complete | IIO, GPIO, PWM, Kprobe, Tracepoint abstractions |
+| Program Signing | ✅ Complete | Ed25519 + SHA3-256, pure Rust |
+| Deployment CLI (rk-cli) | ✅ Complete | Key mgmt, signing, build, deploy |
+| ROS2 Bridge (rk-bridge) | ✅ Complete | Ring buffer consumer, event types |
+| Benchmarks | ✅ Complete | Criterion-based suite |
+
+### What's Remaining
+
+| Component | Status | Required For |
+|-----------|--------|--------------|
+| Linux Kernel Module | ❌ Not Started | Actual kernel integration |
+| Kernel Attach Hooks | ❌ Not Started | Real kprobe/IIO/GPIO/PWM hooks |
+| Example BPF Programs | ❌ Not Started | Demonstrations |
+| Platform Validation | ❌ Not Started | RPi4/Jetson testing |
+| Demo Scenarios | ❌ Not Started | Investor/user demos |
+
+### Architecture Diagram
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                  Userspace (IMPLEMENTED)                 │
+│                                                         │
+│  rk-cli ──► kernel_bpf library ◄── rk-bridge            │
+│              │                                          │
+│              ├── Verifier (streaming)                   │
+│              ├── JIT (x86_64 + ARM64)                   │
+│              ├── Maps (array, hash, ringbuf, timeseries)│
+│              ├── Loader (ELF parser)                    │
+│              ├── Signing (Ed25519)                      │
+│              └── Attach abstractions (stubs)            │
+└─────────────────────────────────────────────────────────┘
+                         │
+                         │ ← GAP: Kernel module needed
+                         ▼
+┌─────────────────────────────────────────────────────────┐
+│              Linux Kernel (NOT CONNECTED)                │
+│                                                         │
+│   kprobes │ tracepoints │ IIO │ GPIO │ PWM              │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Repository Structure
+
+```
+axiom-ebpf/
+├── kernel/crates/kernel_bpf/     # Core Rust library
+│   ├── src/verifier/             # Streaming verifier
+│   ├── src/execution/            # Interpreter + JIT
+│   ├── src/maps/                 # Map implementations
+│   ├── src/loader/               # ELF loader
+│   ├── src/attach/               # Attach point stubs
+│   ├── src/signing/              # Cryptographic signing
+│   └── benches/                  # Criterion benchmarks
+├── userspace/
+│   ├── rk_cli/                   # Deployment CLI
+│   └── rk_bridge/                # ROS2 event bridge
+└── docs/
+    ├── proposal.md               # This document
+    ├── tasks.md                  # Task tracking
+    └── howto.md                  # Usage guide
+```
+
+---
+
 ## Validation Strategy
 
 ### Technical Validation
