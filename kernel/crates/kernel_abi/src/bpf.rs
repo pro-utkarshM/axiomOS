@@ -78,11 +78,11 @@ pub struct BpfAttr {
     // In Linux this is a union. We implement the "prog_load" variant fields here.
     pub prog_type: u32,
     pub insn_cnt: u32,
-    pub insns: u64,      // pointer to instructions
-    pub license: u64,    // pointer to license string
+    pub insns: u64,   // pointer to instructions
+    pub license: u64, // pointer to license string
     pub log_level: u32,
     pub log_size: u32,
-    pub log_buf: u64,    // pointer to log buffer
+    pub log_buf: u64, // pointer to log buffer
     pub kern_version: u32,
     pub prog_flags: u32,
     pub prog_name: [u8; 16],

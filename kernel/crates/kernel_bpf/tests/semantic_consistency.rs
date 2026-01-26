@@ -25,6 +25,17 @@ fn context_with_data(data: &[u8]) -> BpfContext {
     BpfContext::from_slice(data)
 }
 
+// Stubs for resolving linker errors during integration testing
+#[unsafe(no_mangle)]
+pub extern "C" fn bpf_ktime_get_ns() -> u64 {
+    0
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn bpf_trace_printk(_fmt: *const u8, _len: u32) -> i32 {
+    0
+}
+
 #[test]
 fn semantic_return_constant() {
     // Program: return 42

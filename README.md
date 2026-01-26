@@ -74,8 +74,9 @@ Axiom is a **bare-metal operating system kernel** written in Rust, designed from
 | x86_64 | ✅ Complete | ACPI, APIC, full boot |
 | AArch64 | ✅ Complete | GIC, DTB, RPi5 platform |
 | RISC-V | ⚠️ Partial | Boot sequence works |
+| **BPF Integration** | ✅ Complete | Syscall, attach points, helpers |
 
-**Next milestone:** Wire BPF subsystem into the running kernel (syscall, attach points, helpers).
+**BPF is now wired into the kernel!** Load programs via `sys_bpf`, attach to Timer (type=1) or Syscall (type=2) events.
 
 ---
 

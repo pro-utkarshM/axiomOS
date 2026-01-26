@@ -57,6 +57,12 @@ fn handle_timer_interrupt() {
     clear_timer_interrupt();
     set_next_timer();
 
+    // Run BPF hooks (AttachType::Timer = 1)
+    if let Some(manager) = crate::BPF_MANAGER.get() {
+        let ctx = kernel_bpf::execution::BpfContext::empty();
+        manager.lock().execute_hooks(1, &ctx);
+    }
+
     // Trigger scheduler tick (may cause context switch)
     super::cpu::timer_tick();
 }

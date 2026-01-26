@@ -160,12 +160,12 @@ extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFr
     unsafe {
         end_of_interrupt();
     }
-    
+
     // 2. Run BPF hooks (AttachType::Timer = 1)
     if let Some(manager) = crate::BPF_MANAGER.get() {
         // We use an empty context for timer for now, or could pass time?
         let ctx = kernel_bpf::execution::BpfContext::empty();
-        // unsafe { crate::serial_print!("."); } 
+        // unsafe { crate::serial_print!("."); }
         manager.lock().execute_hooks(1, &ctx);
     }
 
