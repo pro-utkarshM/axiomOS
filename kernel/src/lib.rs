@@ -6,6 +6,7 @@ extern crate alloc;
 
 use ::log::info;
 use conquer_once::spin::OnceCell;
+use spin::Mutex; // Added
 
 #[cfg(target_arch = "x86_64")]
 use crate::driver::pci;
@@ -29,6 +30,7 @@ mod log;
 pub mod mcore;
 pub mod mem;
 mod serial;
+pub mod bpf; // Added
 
 // Provide a dummy allocator for non-x86_64 targets
 #[cfg(not(target_arch = "x86_64"))]
@@ -54,6 +56,7 @@ pub mod syscall;
 pub mod time;
 
 static BOOT_TIME_SECONDS: OnceCell<u64> = OnceCell::uninit();
+pub static BPF_MANAGER: OnceCell<Mutex<bpf::BpfManager>> = OnceCell::uninit(); // Added
 
 /// # Panics
 /// Panics if there was no boot time provided by limine.
@@ -76,6 +79,46 @@ pub fn init() {
         apic::init();
         hpet::init();
     }
+    
+    // Initialize BPF
+    info!("Initializing BPF subsystem");
+    BPF_MANAGER.init_once(|| {
+        let mut manager = bpf::BpfManager::new();
+
+        // Milestone 1: Verify BPF execution with hardcoded program
+        // Program: bpf_trace_printk("Hello from BPF!", ...)
+        use kernel_bpf::bytecode::insn::{BpfInsn, WideInsn};
+        use kernel_bpf::execution::BpfContext;
+
+        static HELLO: &[u8] = b"Hello from BPF!\0";
+        let ptr = HELLO.as_ptr() as u64;
+
+        // r1 = ptr (wide load)
+        let wide = WideInsn::ld_dw_imm(1, ptr);
+
+        let insns = alloc::vec![
+            wide.insn,
+            wide.next,
+            BpfInsn::mov64_imm(2, HELLO.len() as i32), // r2 = len
+            BpfInsn::call(2),                          // call bpf_trace_printk
+            BpfInsn::exit()
+        ];
+
+        if let Ok(id) = manager.load_raw_program(insns) {
+            info!("Test BPF program loaded (id={})", id);
+            
+            // Execute immediately to verify
+            let ctx = BpfContext::empty();
+            match manager.execute(id, &ctx) {
+                Ok(res) => info!("Test BPF program executed successfully (res={})", res),
+                Err(e) => info!("Test BPF program execution failed: {}", e),
+            }
+        } else {
+            info!("Failed to load test BPF program");
+        }
+
+        Mutex::new(manager)
+    });
 
     #[cfg(target_arch = "aarch64")]
     {

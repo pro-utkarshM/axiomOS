@@ -237,20 +237,18 @@ impl<P: PhysicalProfile> Interpreter<P> {
     }
 
     /// Call a helper function.
-    fn call_helper(&self, helper_id: i32, _args: [u64; 5]) -> Result<u64, BpfError> {
-        // Simplified helper implementation
-        match helper_id {
-            // bpf_ktime_get_ns - return 0 for now
-            1 => Ok(0),
+    fn call_helper(&self, helper_id: i32, args: [u64; 5]) -> Result<u64, BpfError> {
+        unsafe {
+            match helper_id {
+                // bpf_ktime_get_ns
+                1 => Ok(bpf_ktime_get_ns()),
+                
+                // bpf_trace_printk
+                2 => Ok(bpf_trace_printk(args[0] as *const u8, args[1] as u32) as u64),
 
-            // bpf_get_prandom_u32 - return 0 for now
-            3 => Ok(0),
-
-            // bpf_get_smp_processor_id - return 0
-            4 => Ok(0),
-
-            // Unknown helper
-            _ => Err(BpfError::InvalidHelper(helper_id)),
+                // Unknown helper
+                _ => Err(BpfError::InvalidHelper(helper_id)),
+            }
         }
     }
 
@@ -461,6 +459,25 @@ enum InsnResult {
     Exit,
     /// Wide load (64-bit immediate)
     WideLoad,
+}
+
+unsafe extern "C" {
+    fn bpf_ktime_get_ns() -> u64;
+    fn bpf_trace_printk(fmt: *const u8, len: u32) -> i32;
+}
+
+#[cfg(test)]
+#[allow(clippy::missing_safety_doc)]
+mod helpers_stub {
+    #[unsafe(no_mangle)]
+    pub extern "C" fn bpf_ktime_get_ns() -> u64 {
+        0
+    }
+    
+    #[unsafe(no_mangle)]
+    pub extern "C" fn bpf_trace_printk(_fmt: *const u8, _len: u32) -> i32 {
+        0
+    }
 }
 
 #[cfg(test)]

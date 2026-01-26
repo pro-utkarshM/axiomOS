@@ -34,3 +34,8 @@ impl TimestampExt for Timestamp {
         .unwrap()
     }
 }
+
+pub fn get_kernel_time_ns() -> u64 {
+    let now = Timestamp::now();
+    now.as_nanosecond().try_into().unwrap_or(0)
+}
