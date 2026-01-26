@@ -242,7 +242,7 @@ impl<P: PhysicalProfile> Interpreter<P> {
             match helper_id {
                 // bpf_ktime_get_ns
                 1 => Ok(bpf_ktime_get_ns()),
-                
+
                 // bpf_trace_printk
                 2 => Ok(bpf_trace_printk(args[0] as *const u8, args[1] as u32) as u64),
 
@@ -473,7 +473,7 @@ mod helpers_stub {
     pub extern "C" fn bpf_ktime_get_ns() -> u64 {
         0
     }
-    
+
     #[unsafe(no_mangle)]
     pub extern "C" fn bpf_trace_printk(_fmt: *const u8, _len: u32) -> i32 {
         0

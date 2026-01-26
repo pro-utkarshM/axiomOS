@@ -179,6 +179,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "bpf_loader"
+version = "0.1.0"
+dependencies = [
+ "kernel_abi",
+ "minilib",
+]
+
+[[package]]
 name = "byteorder"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -616,6 +624,7 @@ dependencies = [
 name = "init"
 version = "0.1.0"
 dependencies = [
+ "kernel_abi",
  "minilib",
  "x86_64",
 ]
