@@ -7,9 +7,7 @@ use core::ffi::c_int;
 pub fn exit(code: i32) -> ! {
     syscall1(1, code as usize);
     loop {
-        unsafe {
-            _mm_pause();
-        }
+        unsafe { _mm_pause() }
     }
 }
 
@@ -19,6 +17,10 @@ pub fn read(fd: c_int, buf: &mut [u8]) -> c_int {
 
 pub fn write(fd: c_int, buf: &[u8]) -> c_int {
     syscall3(37, fd as usize, buf.as_ptr() as usize, buf.len()) as i32
+}
+
+pub fn bpf(cmd: c_int, attr: *const u8, size: c_int) -> c_int {
+    syscall3(50, cmd as usize, attr as usize, size as usize) as i32
 }
 
 pub fn syscall0(n: usize) -> usize {
