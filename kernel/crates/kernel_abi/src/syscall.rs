@@ -54,4 +54,5 @@ n! {
     SYS_LSEEK = 39,
     SYS_CLOSE = 40,
     SYS_MMAP = 41,
+    SYS_BPF = 50,
 }
