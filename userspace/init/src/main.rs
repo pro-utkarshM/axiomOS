@@ -1,7 +1,7 @@
 #![no_std]
 #![no_main]
 
-use minilib::{exit, write};
+use minilib::write;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn _start() -> ! {
@@ -133,10 +133,12 @@ pub extern "C" fn _start() -> ! {
         },
     ];
 
-    let mut attr = BpfAttr::default();
-    attr.prog_type = 1;
-    attr.insn_cnt = 8;
-    attr.insns = insns.as_ptr() as u64;
+    let attr = BpfAttr {
+        prog_type: 1,
+        insn_cnt: 8,
+        insns: insns.as_ptr() as u64,
+        ..Default::default()
+    };
 
     let attr_ptr = &attr as *const BpfAttr as *const u8;
 
@@ -146,9 +148,11 @@ pub extern "C" fn _start() -> ! {
     if prog_id >= 0 {
         write(1, b"BPF program loaded. Attaching to Timer...\n");
 
-        let mut attach_attr = BpfAttr::default();
-        attach_attr.attach_btf_id = 1; // Timer
-        attach_attr.attach_prog_fd = prog_id as u32;
+        let attach_attr = BpfAttr {
+            attach_btf_id: 1, // Timer
+            attach_prog_fd: prog_id as u32,
+            ..Default::default()
+        };
 
         let attach_ptr = &attach_attr as *const BpfAttr as *const u8;
         let res = bpf(8, attach_ptr, core::mem::size_of::<BpfAttr>() as i32);
