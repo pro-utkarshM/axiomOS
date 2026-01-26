@@ -188,6 +188,7 @@ mod tests {
         unsafe { StaticPool::reset() };
     }
 
+    // Note: These tests must be run with --test-threads=1 due to shared global state
     #[test]
     fn allocate_basic() {
         setup();
