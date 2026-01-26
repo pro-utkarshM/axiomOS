@@ -19,6 +19,7 @@ mod acpi;
 mod apic;
 pub mod arch;
 pub mod backtrace;
+pub mod bpf;
 pub mod driver;
 pub mod file;
 #[cfg(target_arch = "x86_64")]
@@ -29,8 +30,7 @@ mod log;
 #[cfg(target_arch = "x86_64")]
 pub mod mcore;
 pub mod mem;
-mod serial;
-pub mod bpf; // Added
+mod serial; // Added
 
 // Provide a dummy allocator for non-x86_64 targets
 #[cfg(not(target_arch = "x86_64"))]
@@ -79,7 +79,7 @@ pub fn init() {
         apic::init();
         hpet::init();
     }
-    
+
     // Initialize BPF
     info!("Initializing BPF subsystem");
     BPF_MANAGER.init_once(|| {
@@ -106,7 +106,7 @@ pub fn init() {
 
         if let Ok(id) = manager.load_raw_program(insns) {
             info!("Test BPF program loaded (id={})", id);
-            
+
             // Execute immediately to verify
             let ctx = BpfContext::empty();
             match manager.execute(id, &ctx) {
@@ -131,13 +131,13 @@ pub fn init() {
 
     backtrace::init();
 
+    file::init();
+
     #[cfg(target_arch = "x86_64")]
     {
         mcore::init();
         pci::init();
     }
-
-    file::init();
 
     info!("kernel initialized");
 }

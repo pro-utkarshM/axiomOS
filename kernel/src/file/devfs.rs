@@ -38,13 +38,7 @@ pub fn init() {
             })
             .expect("should be able to register stderr");
 
-        guard
-            .register_file(AbsolutePath::try_new("/null").unwrap(), || Ok(Null))
-            .expect("should be able to register /null");
 
-        guard
-            .register_file(AbsolutePath::try_new("/zero").unwrap(), || Ok(Zero))
-            .expect("should be able to register /zero");
     }
     DEVFS.init_once(|| devfs);
 }
