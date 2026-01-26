@@ -44,6 +44,13 @@ pub fn dispatch_syscall(
         syscall_name(n)
     );
 
+    // Run BPF hooks (AttachType::Syscall = 2) at syscall entry
+    #[cfg(target_arch = "x86_64")]
+    if let Some(manager) = crate::BPF_MANAGER.get() {
+        let ctx = kernel_bpf::execution::BpfContext::empty();
+        manager.lock().execute_hooks(2, &ctx);
+    }
+
     let result: Result<usize, Errno> = match n {
         #[cfg(target_arch = "x86_64")]
         kernel_abi::SYS_EXIT => {
