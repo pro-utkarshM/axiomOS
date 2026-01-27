@@ -217,7 +217,7 @@ pub extern "C" fn _start() -> ! {
         loop_count += 1;
 
         // Read counter every ~1 million iterations
-        if loop_count % 1_000_000 == 0 {
+        if loop_count.is_multiple_of(1_000_000) {
             let lookup_attr = BpfAttr {
                 map_fd: map_id as u32,
                 key: &key as *const u32 as u64,
