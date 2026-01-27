@@ -36,6 +36,26 @@ pub extern "C" fn bpf_trace_printk(_fmt: *const u8, _len: u32) -> i32 {
     0
 }
 
+#[unsafe(no_mangle)]
+pub extern "C" fn bpf_map_lookup_elem(_map_id: u32, _key: *const u8) -> *mut u8 {
+    core::ptr::null_mut()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn bpf_map_update_elem(
+    _map_id: u32,
+    _key: *const u8,
+    _value: *const u8,
+    _flags: u64,
+) -> i32 {
+    0
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn bpf_map_delete_elem(_map_id: u32, _key: *const u8) -> i32 {
+    0
+}
+
 #[test]
 fn semantic_return_constant() {
     // Program: return 42

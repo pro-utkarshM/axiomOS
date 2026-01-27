@@ -488,6 +488,11 @@ enum InsnResult {
 #[cfg(test)]
 #[allow(clippy::missing_safety_doc)]
 mod helpers_stub {
+    use core::sync::atomic::{AtomicU64, Ordering};
+
+    // Simple test map: single u64 value at key 0
+    static TEST_MAP_VALUE: AtomicU64 = AtomicU64::new(0);
+
     #[unsafe(no_mangle)]
     pub extern "C" fn bpf_ktime_get_ns() -> u64 {
         0
@@ -496,6 +501,41 @@ mod helpers_stub {
     #[unsafe(no_mangle)]
     pub extern "C" fn bpf_trace_printk(_fmt: *const u8, _len: u32) -> i32 {
         0
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn bpf_map_lookup_elem(_map_id: u32, _key: *const u8) -> *mut u8 {
+        // Return pointer to our test value
+        TEST_MAP_VALUE.as_ptr() as *mut u8
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn bpf_map_update_elem(
+        _map_id: u32,
+        _key: *const u8,
+        value: *const u8,
+        _flags: u64,
+    ) -> i32 {
+        // Update test value from the 8-byte value pointer (handle null for tests)
+        if !value.is_null() {
+            let val = unsafe { *(value as *const u64) };
+            TEST_MAP_VALUE.store(val, Ordering::SeqCst);
+        }
+        0
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn bpf_map_delete_elem(_map_id: u32, _key: *const u8) -> i32 {
+        TEST_MAP_VALUE.store(0, Ordering::SeqCst);
+        0
+    }
+
+    pub fn get_test_map_value() -> u64 {
+        TEST_MAP_VALUE.load(Ordering::SeqCst)
+    }
+
+    pub fn reset_test_map() {
+        TEST_MAP_VALUE.store(0, Ordering::SeqCst);
     }
 }
 
@@ -591,4 +631,77 @@ mod tests {
         let result = interpreter.execute(&program, &ctx);
         assert_eq!(result, Err(BpfError::DivisionByZero));
     }
+
+    #[test]
+    fn execute_map_lookup_helper() {
+        // Test that calling bpf_map_lookup_elem helper works
+        // Helper 3 = bpf_map_lookup_elem(map_id, key_ptr) -> value_ptr
+        helpers_stub::reset_test_map();
+
+        let program = ProgramBuilder::<ActiveProfile>::new(BpfProgType::SocketFilter)
+            .insn(BpfInsn::mov64_imm(1, 0)) // r1 = map_id (0)
+            .insn(BpfInsn::mov64_imm(2, 0)) // r2 = key_ptr (dummy)
+            .insn(BpfInsn::call(3))         // r0 = bpf_map_lookup_elem(r1, r2)
+            .exit()
+            .build()
+            .expect("valid program");
+
+        let interpreter = Interpreter::<ActiveProfile>::new();
+        let ctx = BpfContext::empty();
+
+        let result = interpreter.execute(&program, &ctx);
+        // Result should be a non-null pointer (the address of TEST_MAP_VALUE)
+        assert!(result.is_ok());
+        assert_ne!(result.unwrap(), 0);
+    }
+
+    #[test]
+    fn execute_map_update_helper() {
+        // Test that calling bpf_map_update_elem helper works
+        // Helper 4 = bpf_map_update_elem(map_id, key_ptr, value_ptr, flags) -> result
+        helpers_stub::reset_test_map();
+        assert_eq!(helpers_stub::get_test_map_value(), 0);
+
+        // We need to put a value on the stack and pass its pointer
+        // For this test, we'll just verify the helper is called and returns 0
+        let program = ProgramBuilder::<ActiveProfile>::new(BpfProgType::SocketFilter)
+            .insn(BpfInsn::mov64_imm(1, 0)) // r1 = map_id (0)
+            .insn(BpfInsn::mov64_imm(2, 0)) // r2 = key_ptr (dummy)
+            .insn(BpfInsn::mov64_imm(3, 0)) // r3 = value_ptr (dummy)
+            .insn(BpfInsn::mov64_imm(4, 0)) // r4 = flags (0)
+            .insn(BpfInsn::call(4))         // r0 = bpf_map_update_elem(r1, r2, r3, r4)
+            .exit()
+            .build()
+            .expect("valid program");
+
+        let interpreter = Interpreter::<ActiveProfile>::new();
+        let ctx = BpfContext::empty();
+
+        let result = interpreter.execute(&program, &ctx);
+        // Helper should return 0 on success
+        assert_eq!(result, Ok(0));
+    }
+
+    #[test]
+    fn execute_map_delete_helper() {
+        // Test that calling bpf_map_delete_elem helper works
+        // Helper 5 = bpf_map_delete_elem(map_id, key_ptr) -> result
+        helpers_stub::reset_test_map();
+
+        let program = ProgramBuilder::<ActiveProfile>::new(BpfProgType::SocketFilter)
+            .insn(BpfInsn::mov64_imm(1, 0)) // r1 = map_id (0)
+            .insn(BpfInsn::mov64_imm(2, 0)) // r2 = key_ptr (dummy)
+            .insn(BpfInsn::call(5))         // r0 = bpf_map_delete_elem(r1, r2)
+            .exit()
+            .build()
+            .expect("valid program");
+
+        let interpreter = Interpreter::<ActiveProfile>::new();
+        let ctx = BpfContext::empty();
+
+        let result = interpreter.execute(&program, &ctx);
+        // Helper should return 0 on success
+        assert_eq!(result, Ok(0));
+    }
 }
+
