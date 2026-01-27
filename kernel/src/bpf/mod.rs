@@ -140,6 +140,12 @@ impl BpfManager {
         self.maps.get(map_id as usize)?.lookup(key)
     }
 
+    /// Look up a value by key and return a raw pointer.
+    pub unsafe fn map_lookup_ptr(&self, map_id: u32, key: &[u8]) -> Option<*mut u8> {
+        // Safety: caller ensures map will not be resized or deleted while pointer is in use
+        unsafe { self.maps.get(map_id as usize)?.lookup_ptr(key) }
+    }
+
     pub fn map_update(&self, map_id: u32, key: &[u8], value: &[u8], flags: u64) -> Result<(), BpfError> {
         let map = self.maps.get(map_id as usize).ok_or(BpfError::NotLoaded)?;
         map.update(key, value, flags).map_err(|_| BpfError::OutOfMemory)
@@ -148,6 +154,10 @@ impl BpfManager {
     pub fn map_delete(&self, map_id: u32, key: &[u8]) -> Result<(), BpfError> {
         let map = self.maps.get(map_id as usize).ok_or(BpfError::NotLoaded)?;
         map.delete(key).map_err(|_| BpfError::NotLoaded)
+    }
+
+    pub fn get_map_def(&self, map_id: u32) -> Option<&kernel_bpf::maps::MapDef> {
+        self.maps.get(map_id as usize).map(|m| m.def())
     }
 }
 

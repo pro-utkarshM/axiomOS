@@ -23,6 +23,14 @@ use crate::bytecode::program::BpfProgram;
 use crate::bytecode::registers::{Register, RegisterFile};
 use crate::profile::{ActiveProfile, PhysicalProfile};
 
+unsafe extern "C" {
+    fn bpf_ktime_get_ns() -> u64;
+    fn bpf_trace_printk(fmt: *const u8, size: u32) -> i32;
+    fn bpf_map_lookup_elem(map_id: u32, key: *const u8) -> *mut u8;
+    fn bpf_map_update_elem(map_id: u32, key: *const u8, value: *const u8, flags: u64) -> i32;
+    fn bpf_map_delete_elem(map_id: u32, key: *const u8) -> i32;
+}
+
 /// BPF bytecode interpreter.
 ///
 /// The interpreter executes BPF programs instruction by instruction.
@@ -246,6 +254,20 @@ impl<P: PhysicalProfile> Interpreter<P> {
                 // bpf_trace_printk
                 2 => Ok(bpf_trace_printk(args[0] as *const u8, args[1] as u32) as u64),
 
+                // bpf_map_lookup_elem
+                3 => Ok(bpf_map_lookup_elem(args[0] as u32, args[1] as *const u8) as u64),
+
+                // bpf_map_update_elem
+                4 => Ok(bpf_map_update_elem(
+                    args[0] as u32,
+                    args[1] as *const u8,
+                    args[2] as *const u8,
+                    args[3],
+                ) as u64),
+
+                // bpf_map_delete_elem
+                5 => Ok(bpf_map_delete_elem(args[0] as u32, args[1] as *const u8) as u64),
+
                 // Unknown helper
                 _ => Err(BpfError::InvalidHelper(helper_id)),
             }
@@ -461,10 +483,7 @@ enum InsnResult {
     WideLoad,
 }
 
-unsafe extern "C" {
-    fn bpf_ktime_get_ns() -> u64;
-    fn bpf_trace_printk(fmt: *const u8, len: u32) -> i32;
-}
+
 
 #[cfg(test)]
 #[allow(clippy::missing_safety_doc)]

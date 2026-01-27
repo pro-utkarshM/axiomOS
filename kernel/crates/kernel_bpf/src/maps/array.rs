@@ -179,6 +179,13 @@ impl<P: PhysicalProfile> BpfMap<P> for ArrayMap<P> {
         &self.def
     }
 
+    unsafe fn lookup_ptr(&self, key: &[u8]) -> Option<*mut u8> {
+        let index = Self::parse_key(key)? as usize;
+        let guard = self.data.read();
+        let slice = guard.get(index)?;
+        Some(slice.as_ptr() as *mut u8)
+    }
+
     #[cfg(feature = "cloud-profile")]
     fn resize(&mut self, new_max_entries: u32) -> MapResult<()> {
         let mut guard = self.data.write();

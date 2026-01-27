@@ -184,6 +184,15 @@ pub trait BpfMap<P: PhysicalProfile = ActiveProfile>: Send + Sync {
     /// Get the map definition.
     fn def(&self) -> &MapDef;
 
+    /// Look up a value by key and return a raw pointer.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the map is not resized or deleted while the pointer is in use.
+    unsafe fn lookup_ptr(&self, _key: &[u8]) -> Option<*mut u8> {
+        None
+    }
+
     /// Resize the map (cloud profile only).
     ///
     /// This method is completely erased from embedded builds.
