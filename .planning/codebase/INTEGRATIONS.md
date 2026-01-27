@@ -135,8 +135,16 @@
 - Bytecode: `kernel/crates/kernel_bpf/src/bytecode/`
 - Verifier: `kernel/crates/kernel_bpf/src/verifier/`
 - Execution: `kernel/crates/kernel_bpf/src/execution/` (Interpreter + JIT)
-- Maps: `kernel/crates/kernel_bpf/src/maps/`
+- Maps: `kernel/crates/kernel_bpf/src/maps/` (Array, HashMap)
 - Scheduler: `kernel/crates/kernel_bpf/src/scheduler/`
+- Helpers: `kernel/src/bpf/helpers.rs` (ktime, trace_printk, map_lookup/update/delete)
+
+**BPF Maps Syscalls (Phase 4):**
+- `BPF_MAP_CREATE` - Create array/hash maps
+- `BPF_MAP_LOOKUP_ELEM` - Read from userspace
+- `BPF_MAP_UPDATE_ELEM` - Write from userspace
+- `BPF_MAP_DELETE_ELEM` - Delete from userspace
+- Helper functions allow BPF programs to access maps directly
 
 ## Boot & Firmware
 
