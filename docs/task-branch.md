@@ -31,7 +31,8 @@ gitGraph
     commit id: "safety comments"
     checkout main
     merge security/syscall-validation
-    merge feature/gpio-bpf-wiring
+    checkout feature/gpio-bpf-wiring
+    commit id: "gpio attach wiring"
     merge feature/arm64-jit-complete
     merge feature/syscall-close-stat
     merge test/bpf-syscall-tests
@@ -42,8 +43,9 @@ gitGraph
 
 ## Parallel Branches
 
-### 1. `security/syscall-validation` — CRITICAL
+### 1. `security/syscall-validation` — CRITICAL ✅ DO NOT USE (MERGED)
 **Owner:** Agent A  
+**Status:** Merged to main (2026-01-28)
 **Priority:** P0  
 **Est. Effort:** 2 weeks  
 **Dependencies:** None (independent)
