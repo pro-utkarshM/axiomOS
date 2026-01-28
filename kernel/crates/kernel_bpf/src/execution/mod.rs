@@ -22,12 +22,12 @@ mod interpreter;
 #[cfg(all(feature = "cloud-profile", target_arch = "x86_64"))]
 pub mod jit;
 
-// ARM64 JIT is available for both profiles (primary target for robotics)
-#[cfg(target_arch = "aarch64")]
+// ARM64 JIT is available for aarch64 target or for testing on any platform
+#[cfg(any(target_arch = "aarch64", test))]
 pub mod jit_aarch64;
 
 pub use interpreter::Interpreter;
-#[cfg(target_arch = "aarch64")]
+#[cfg(any(target_arch = "aarch64", test))]
 pub use jit_aarch64::{Arm64JitCompiler, Arm64JitExecutor};
 
 use crate::bytecode::program::BpfProgram;
