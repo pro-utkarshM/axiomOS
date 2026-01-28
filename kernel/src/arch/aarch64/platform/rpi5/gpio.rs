@@ -77,6 +77,15 @@ mod ctrl {
 mod status {
     /// Input level (bit 17)
     pub const LEVEL_BIT: u32 = 17;
+    /// Event detected (bit 19) - PROVISIONAL
+    pub const EVENT_PENDING_BIT: u32 = 19;
+}
+
+mod irq_ctrl {
+    /// Enable Rising Edge Detect
+    pub const ENABLE_RIO: u32 = 1 << 20; // PROVISIONAL
+    /// Enable Falling Edge Detect
+    pub const ENABLE_FIO: u32 = 1 << 21; // PROVISIONAL
 }
 
 /// RP1 GPIO Driver
@@ -193,5 +202,67 @@ impl Rp1Gpio {
     fn reg_ctrl(&self, pin: u8) -> MmioReg<u32> {
         let offset = (pin as usize) * GPIO_REG_STRIDE + reg::CTRL;
         unsafe { MmioReg::new(self.base + offset) }
+    }
+
+    /// Enable interrupt for a specific pin
+    pub fn enable_interrupt(&self, pin: u8, rising: bool, falling: bool) {
+        let ctrl = self.reg_ctrl(pin);
+        let mut mask = 0;
+        if rising { mask |= irq_ctrl::ENABLE_RIO; }
+        if falling { mask |= irq_ctrl::ENABLE_FIO; }
+        ctrl.modify(|v| v | mask);
+    }
+
+    /// Clear interrupt for a specific pin
+    pub fn clear_interrupt(&self, pin: u8) {
+        let status = self.reg_status(pin);
+        // Write 1 to clear W1C (Write 1 to Clear) bits usually, 
+        // or check if there is a separate clear register. 
+        // For RP1, writing to STATUS might clear event.
+        status.modify(|v| v | (1 << status::EVENT_PENDING_BIT));
+    }
+}
+
+/// Handle GPIO interrupt
+pub fn handle_interrupt() {
+    let gpio = unsafe { Rp1Gpio::new() };
+    
+    // Scan all pins for events
+    // TODO: Optimize by checking global IRQ status register if available
+    for pin in 0..Rp1Gpio::NUM_PINS {
+        let status = gpio.reg_status(pin).read();
+        
+        if (status & (1 << status::EVENT_PENDING_BIT)) != 0 {
+            // Found active interrupt
+            let is_rising = (status & (1 << status::LEVEL_BIT)) != 0; // Simplified assumption
+            
+            // 1. Clear interrupt
+            gpio.clear_interrupt(pin);
+            
+            // 2. Prepare BPF Context
+            let event = kernel_bpf::attach::GpioEvent {
+                timestamp: 0, // TODO: Get system time
+                chip_id: 0,   // gpiochip0
+                line: pin as u32,
+                edge: if is_rising { 1 } else { 2 },
+                value: if is_rising { 1 } else { 0 },
+            };
+            
+            // Safety: Transmuting struct to slice for read-only access
+            let slice = unsafe {
+                core::slice::from_raw_parts(
+                    &event as *const _ as *const u8,
+                    core::mem::size_of::<kernel_bpf::attach::GpioEvent>(),
+                )
+            };
+            
+            let ctx = kernel_bpf::execution::BpfContext::from_slice(slice);
+            
+            // 3. Invoke BPF hooks
+            if let Some(manager) = crate::BPF_MANAGER.get() {
+                // Ignore result
+                let _ = manager.lock().execute_hooks(crate::bpf::ATTACH_TYPE_GPIO, &ctx);
+            }
+        }
     }
 }

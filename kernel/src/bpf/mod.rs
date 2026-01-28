@@ -11,6 +11,9 @@ use kernel_bpf::loader::BpfLoader;
 use kernel_bpf::maps::{ArrayMap, BpfMap, HashMap as BpfHashMap};
 use kernel_bpf::profile::ActiveProfile;
 
+pub const ATTACH_TYPE_TIMER: u32 = 1;
+pub const ATTACH_TYPE_GPIO: u32 = 2;
+
 pub struct BpfManager {
     programs: Vec<BpfProgram<ActiveProfile>>,
     attachments: BTreeMap<u32, Vec<u32>>,

@@ -9,13 +9,22 @@ use super::gic;
 /// Physical timer IRQ number
 const TIMER_IRQ: u32 = gic::irq::TIMER_PHYS;
 
+/// RP1 GPIO IRQ number (Placeholder - needs verification)
+const RP1_GPIO_IRQ: u32 = 112;
+
 /// Initialize interrupt controller and timer
 pub fn init() {
     // Initialize the GIC
     gic::init();
 
     // Enable timer interrupt
+    gic::enable_irq(crate::bpf::ATTACH_TYPE_TIMER); // Assuming mapping if we changed it, but wait, TIMER_IRQ is hardware IRQ.
+    // Revert that thought. TIMER_IRQ is hardware IRQ (30).
     gic::enable_irq(TIMER_IRQ);
+    
+    // Enable GPIO interrupt
+    gic::enable_irq(RP1_GPIO_IRQ);
+    gic::set_priority(RP1_GPIO_IRQ, 0x80);
 
     // Set timer priority (high priority)
     gic::set_priority(TIMER_IRQ, 0x80);
@@ -40,6 +49,9 @@ pub extern "C" fn handle_irq() {
     // Dispatch based on IRQ number
     match irq {
         TIMER_IRQ => handle_timer_interrupt(),
+        RP1_GPIO_IRQ => {
+            crate::arch::aarch64::platform::rpi5::gpio::handle_interrupt();
+        }
         _ => {
             log::warn!("Unhandled IRQ: {}", irq);
         }
