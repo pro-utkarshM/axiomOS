@@ -19,7 +19,7 @@ fn hlt() {
     unsafe {
         riscv::asm::wfi();
     }
-    #[cfg(target_arch = "aarch64")]
+    #[cfg(all(target_arch = "aarch64", feature = "aarch64_arch"))]
     unsafe {
         core::arch::asm!("wfi");
     }

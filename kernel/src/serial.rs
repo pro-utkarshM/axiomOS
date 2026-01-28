@@ -29,7 +29,7 @@ mod x86_64_impl {
 }
 
 // aarch64 serial implementation
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(target_arch = "aarch64", feature = "aarch64_arch"))]
 mod aarch64_impl {
     pub fn internal_print(args: core::fmt::Arguments) {
         use core::fmt::Write;
@@ -55,9 +55,16 @@ mod aarch64_impl {
     }
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(target_arch = "aarch64", feature = "aarch64_arch"))]
 #[doc(hidden)]
 pub use aarch64_impl::internal_print;
+
+// Stub for aarch64 without aarch64_arch feature
+#[cfg(all(target_arch = "aarch64", not(feature = "aarch64_arch")))]
+#[doc(hidden)]
+pub fn internal_print(_args: core::fmt::Arguments) {
+    // No-op when aarch64_arch feature is not enabled
+}
 #[cfg(target_arch = "x86_64")]
 #[doc(hidden)]
 pub use x86_64_impl::internal_print;

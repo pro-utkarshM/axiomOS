@@ -120,7 +120,7 @@ pub fn init() {
         Mutex::new(manager)
     });
 
-    #[cfg(target_arch = "aarch64")]
+    #[cfg(all(target_arch = "aarch64", feature = "aarch64_arch"))]
     {
         use arch::traits::Architecture;
         // Early init (exception vectors)

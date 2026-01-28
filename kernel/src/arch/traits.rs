@@ -68,7 +68,7 @@ pub struct ArchState {
     pub satp: usize, // page table base
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(target_arch = "aarch64", feature = "aarch64_arch"))]
 #[derive(Debug, Clone)]
 pub struct ArchState {
     pub x19: u64, // callee-saved registers
@@ -87,6 +87,23 @@ pub struct ArchState {
     pub ttbr1: u64, // page table base (kernel)
 }
 
+// Stub for aarch64 without aarch64_arch feature
+#[cfg(all(target_arch = "aarch64", not(feature = "aarch64_arch")))]
+#[derive(Debug, Clone)]
+pub struct ArchState;
+
+#[cfg(all(target_arch = "aarch64", not(feature = "aarch64_arch")))]
+impl Default for ArchState {
+    fn default() -> Self {
+        Self
+    }
+}
+
+#[cfg(any(
+    target_arch = "x86_64",
+    target_arch = "riscv64",
+    all(target_arch = "aarch64", feature = "aarch64_arch")
+))]
 impl Default for ArchState {
     fn default() -> Self {
         #[cfg(target_arch = "x86_64")]
@@ -122,7 +139,7 @@ impl Default for ArchState {
             }
         }
 
-        #[cfg(target_arch = "aarch64")]
+        #[cfg(all(target_arch = "aarch64", feature = "aarch64_arch"))]
         {
             Self {
                 x19: 0,

@@ -8,7 +8,7 @@ use core::error::Error;
 use core::panic::PanicInfo;
 
 use ext2::Ext2Fs;
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(target_arch = "aarch64", feature = "aarch64_arch"))]
 use kernel::arch::traits::Architecture;
 use kernel::driver::KernelDeviceId;
 use kernel::driver::block::BlockDevices;
@@ -33,7 +33,7 @@ fn hlt() {
     unsafe {
         riscv::asm::wfi();
     }
-    #[cfg(target_arch = "aarch64")]
+    #[cfg(all(target_arch = "aarch64", feature = "aarch64_arch"))]
     unsafe {
         core::arch::asm!("wfi");
     }
@@ -72,7 +72,7 @@ unsafe extern "C" fn main() -> ! {
     mcore::turn_idle()
 }
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(target_arch = "aarch64", feature = "aarch64_arch"))]
 #[unsafe(export_name = "kernel_main")]
 unsafe extern "C" fn main() -> ! {
     kernel::init();
