@@ -31,8 +31,8 @@ pub extern "C" fn syscall_handler_with_context(
     x3: usize,
     x4: usize,
     x5: usize,
-    x6: usize,
-    x7: usize,
+    _x6: usize,
+    _x7: usize,
     x8: usize,
 ) -> usize {
     // x8 contains syscall number

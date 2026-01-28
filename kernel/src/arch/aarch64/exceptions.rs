@@ -142,8 +142,8 @@ impl DataFaultCode {
 
 fn handle_data_abort(elr: u64, far: u64, iss: u64) {
     let is_write = (iss & (1 << 6)) != 0; // WnR bit
-    let is_cm = (iss & (1 << 8)) != 0; // Cache maintenance
-    let is_s1ptw = (iss & (1 << 7)) != 0; // Stage 1 page table walk
+    let _is_cm = (iss & (1 << 8)) != 0; // Cache maintenance
+    let _is_s1ptw = (iss & (1 << 7)) != 0; // Stage 1 page table walk
 
     let fault_code = DataFaultCode::from_iss(iss);
 

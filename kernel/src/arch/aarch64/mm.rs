@@ -54,7 +54,7 @@ pub fn init() {
 ///
 /// Creates identity mapping for low memory and higher-half mapping for kernel.
 unsafe fn setup_kernel_page_tables(total_memory: usize) {
-    let boot_tables = &mut *(&raw mut BOOT_TABLES);
+    let boot_tables = unsafe { &mut *(&raw mut BOOT_TABLES) };
 
     // Clear all tables
     boot_tables.l0.zero();
@@ -96,14 +96,20 @@ unsafe fn setup_kernel_page_tables(total_memory: usize) {
     }
 
     // Configure MAIR (memory attributes)
-    paging::configure_mair();
+    unsafe {
+        paging::configure_mair();
+    }
 
     // Configure TCR (translation control)
-    paging::configure_tcr();
+    unsafe {
+        paging::configure_tcr();
+    }
 
     // Set TTBR0 (user/identity mapping) and TTBR1 (kernel mapping)
-    paging::set_ttbr0(l0_phys);
-    paging::set_ttbr1(l0_phys);
+    unsafe {
+        paging::set_ttbr0(l0_phys);
+        paging::set_ttbr1(l0_phys);
+    }
 
     log::info!(
         "Page tables configured: L0={:#x}, mapped {}GB",

@@ -48,7 +48,7 @@ use core::marker::PhantomData;
 use crate::bytecode::insn::BpfInsn;
 use crate::bytecode::opcode::{AluOp, JmpOp, MemSize, OpcodeClass, SourceType};
 use crate::bytecode::program::BpfProgram;
-use crate::execution::{BpfContext, BpfError, BpfExecutor, BpfResult};
+use crate::execution::{BpfContext, BpfExecutor, BpfResult};
 use crate::profile::{ActiveProfile, PhysicalProfile};
 
 // ARM64 register numbers
@@ -424,7 +424,7 @@ impl<P: PhysicalProfile> Arm64JitCompiler<P> {
 
     /// Compile a BPF program to ARM64 machine code.
     pub fn compile(&self, program: &BpfProgram<P>) -> Result<Arm64JitProgram, Arm64JitError> {
-        let insns = program.insns();
+        let insns = program.instructions();
 
         // Estimate code size (roughly 4 ARM64 instructions per BPF instruction)
         let estimated_size = insns.len() * 16 + 256; // Extra for prologue/epilogue
@@ -500,7 +500,7 @@ impl<P: PhysicalProfile> Arm64JitCompiler<P> {
         let class = insn.class().ok_or(Arm64JitError::UnsupportedInstruction)?;
 
         match class {
-            OpcodeClass::Alu64 | OpcodeClass::Alu => {
+            OpcodeClass::Alu64 | OpcodeClass::Alu32 => {
                 self.compile_alu(emitter, insn)?;
             }
             OpcodeClass::Jmp | OpcodeClass::Jmp32 => {

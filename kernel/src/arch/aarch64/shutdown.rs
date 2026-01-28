@@ -32,10 +32,12 @@ unsafe fn psci_system_off() {
     // PSCI 0.2+ function ID for SYSTEM_OFF
     let function_id: u32 = 0x84000008;
 
-    core::arch::asm!(
-        "hvc #0",
-        in("w0") function_id,
-    );
+    unsafe {
+        core::arch::asm!(
+            "hvc #0",
+            in("w0") function_id,
+        );
+    }
 }
 
 /// PSCI system reset
@@ -44,8 +46,10 @@ unsafe fn psci_system_reset() {
     // PSCI 0.2+ function ID for SYSTEM_RESET
     let function_id: u32 = 0x84000009;
 
-    core::arch::asm!(
-        "hvc #0",
-        in("w0") function_id,
-    );
+    unsafe {
+        core::arch::asm!(
+            "hvc #0",
+            in("w0") function_id,
+        );
+    }
 }

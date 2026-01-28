@@ -253,7 +253,7 @@ impl PageTableWalker {
     }
 
     /// Get existing table at index (mutable)
-    fn get_table(&self, table: &mut PageTable, index: usize) -> Option<&mut PageTable> {
+    fn get_table<'a>(&self, table: &'a mut PageTable, index: usize) -> Option<&'a mut PageTable> {
         let entry = table.entry(index);
         if entry.is_valid() && entry.is_table() {
             let next_table = entry.addr() as *mut PageTable;

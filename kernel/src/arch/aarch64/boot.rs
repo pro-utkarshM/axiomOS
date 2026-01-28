@@ -19,7 +19,9 @@ pub fn boot_info() -> &'static BootInfo {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn _start(dtb_addr: usize) -> ! {
     // Initialize boot info
-    init_boot_info(dtb_addr);
+    unsafe {
+        init_boot_info(dtb_addr);
+    }
 
     // BSS is already cleared by assembly, but we define the symbols
     // for reference
@@ -33,7 +35,7 @@ pub unsafe extern "C" fn _start(dtb_addr: usize) -> ! {
     super::platform::rpi5::init();
 
     // Parse device tree to get memory information
-    if let Err(e) = super::dtb::parse(dtb_addr) {
+    if let Err(e) = unsafe { super::dtb::parse(dtb_addr) } {
         // Log error but continue - we can fall back to hardcoded values
         log::warn!("Failed to parse DTB: {}", e);
     }
@@ -43,5 +45,7 @@ pub unsafe extern "C" fn _start(dtb_addr: usize) -> ! {
         fn kernel_main() -> !;
     }
 
-    kernel_main()
+    unsafe {
+        kernel_main()
+    }
 }
