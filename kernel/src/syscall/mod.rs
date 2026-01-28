@@ -17,10 +17,16 @@ use x86_64::instructions::hlt;
 #[cfg(not(target_arch = "x86_64"))]
 fn hlt() {
     #[cfg(target_arch = "riscv64")]
+    // SAFETY: wfi (wait for interrupt) is a privileged instruction that halts the CPU
+    // until an interrupt occurs. We are in kernel context with interrupts properly
+    // configured, so this is safe to execute.
     unsafe {
         riscv::asm::wfi();
     }
     #[cfg(all(target_arch = "aarch64", feature = "aarch64_arch"))]
+    // SAFETY: wfi (wait for interrupt) is a privileged instruction that halts the CPU
+    // until an interrupt occurs. We are in kernel context with interrupts properly
+    // configured, so this is safe to execute.
     unsafe {
         core::arch::asm!("wfi");
     }
@@ -101,18 +107,42 @@ pub fn dispatch_syscall(
     }
 }
 
+/// Create a slice from a raw pointer and length.
+///
+/// # Safety
+///
+/// The caller must ensure:
+/// - `ptr` points to valid, initialized memory for `len` elements of type `T`
+/// - The memory is properly aligned for type `T`
+/// - The memory remains valid for the lifetime `'a`
+/// - No mutable references to the memory exist during the slice's lifetime
 unsafe fn slice_from_ptr_and_len<'a, T>(ptr: usize, len: usize) -> Result<&'a [T], Errno> {
     if ptr == 0 || len == 0 {
         return Err(EINVAL);
     }
+    // SAFETY: Caller guarantees ptr points to valid memory for len elements of T,
+    // is properly aligned, and no mutable references exist. The null check above
+    // ensures ptr is non-null.
     let slice = unsafe { from_raw_parts(ptr as *mut T, len) };
     Ok(slice)
 }
 
+/// Create a mutable slice from a raw pointer and length.
+///
+/// # Safety
+///
+/// The caller must ensure:
+/// - `ptr` points to valid, initialized memory for `len` elements of type `T`
+/// - The memory is properly aligned for type `T`
+/// - The memory remains valid for the lifetime `'a`
+/// - No other references (mutable or immutable) to the memory exist
 unsafe fn slice_from_ptr_and_len_mut<'a, T>(ptr: usize, len: usize) -> Result<&'a mut [T], Errno> {
     if ptr == 0 || len == 0 {
         return Err(EINVAL);
     }
+    // SAFETY: Caller guarantees ptr points to valid memory for len elements of T,
+    // is properly aligned, and no other references exist. The null check above
+    // ensures ptr is non-null.
     let slice = unsafe { from_raw_parts_mut(ptr as *mut T, len) };
     Ok(slice)
 }
@@ -121,6 +151,8 @@ unsafe fn slice_from_ptr_and_len_mut<'a, T>(ptr: usize, len: usize) -> Result<&'
 fn dispatch_sys_getcwd(path: usize, size: usize) -> Result<usize, Errno> {
     let cx = KernelAccess::new();
 
+    // SAFETY: path comes from userspace syscall arguments. UserspaceMutPtr::try_from_usize
+    // validates that the address is in the userspace address range (canonical lower half).
     let path = unsafe { UserspaceMutPtr::try_from_usize(path)? };
     sys_getcwd(&cx, path, size)
 }
@@ -136,6 +168,8 @@ fn dispatch_sys_mmap(
 ) -> Result<usize, Errno> {
     let cx = KernelAccess::new();
 
+    // SAFETY: addr comes from userspace syscall arguments. UserspacePtr::try_from_usize
+    // validates that the address is in the userspace address range (canonical lower half).
     let addr = unsafe { UserspacePtr::try_from_usize(addr)? };
     let prot = i32::try_from(prot)?;
     let flags = i32::try_from(flags)?;
@@ -152,6 +186,8 @@ fn dispatch_sys_open(
 ) -> Result<usize, Errno> {
     let cx = KernelAccess::new();
 
+    // SAFETY: path comes from userspace syscall arguments. UserspacePtr::try_from_usize
+    // validates that the address is in the userspace address range (canonical lower half).
     let path = unsafe { UserspacePtr::try_from_usize(path)? };
     sys_open(&cx, path, path_len, oflag as i32, mode as i32)
 }
@@ -163,6 +199,9 @@ fn dispatch_sys_read(fd: usize, buf: usize, nbyte: usize) -> Result<usize, Errno
     let fd = i32::try_from(fd).map_err(|_| EINVAL)?;
     let fd = <KernelAccess as FileAccess>::Fd::from(fd);
 
+    // SAFETY: buf comes from userspace syscall arguments. The slice_from_ptr_and_len_mut
+    // function validates that buf is non-null. The caller (userspace) is responsible for
+    // ensuring the buffer is valid and writable for nbyte bytes.
     let slice = unsafe { slice_from_ptr_and_len_mut(buf, nbyte) }?;
     sys_read(&cx, fd, slice)
 }
@@ -174,6 +213,9 @@ fn dispatch_sys_write(fd: usize, buf: usize, nbyte: usize) -> Result<usize, Errn
     let fd = i32::try_from(fd).map_err(|_| EINVAL)?;
     let fd = <KernelAccess as FileAccess>::Fd::from(fd);
 
+    // SAFETY: buf comes from userspace syscall arguments. The slice_from_ptr_and_len
+    // function validates that buf is non-null. The caller (userspace) is responsible for
+    // ensuring the buffer is valid and readable for nbyte bytes.
     let slice = unsafe { slice_from_ptr_and_len(buf, nbyte) }?;
     sys_write(&cx, fd, slice)
 }
@@ -214,6 +256,9 @@ fn dispatch_sys_fstat(fd: usize, statbuf: usize) -> Result<usize, Errno> {
 
     let fd = i32::try_from(fd).map_err(|_| EINVAL)?;
     let fd = <KernelAccess as FileAccess>::Fd::from(fd);
+    // SAFETY: statbuf comes from userspace syscall arguments. UserspaceMutPtr::try_from_usize
+    // validates that the address is in the userspace address range (canonical lower half).
+    // The caller (userspace) is responsible for providing a valid, writable buffer.
     let buf = unsafe { UserspaceMutPtr::<UserStat>::try_from_usize(statbuf)? };
 
     sys_fstat::<KernelAccess>(&cx, fd, buf)

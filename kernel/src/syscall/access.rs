@@ -170,11 +170,13 @@ impl StatAccess for KernelAccess<'_> {
         ofd.stat(&mut vfs_stat).map_err(|_| ())?;
 
         // Convert VFS stat to userspace stat structure
-        let mut user_stat = UserStat::default();
-        user_stat.st_size = vfs_stat.size as i64;
-        user_stat.st_mode = mode::S_IFREG | 0o644; // Regular file with rw-r--r-- permissions
-        user_stat.st_blksize = 4096; // Common block size
-        user_stat.st_blocks = (vfs_stat.size as i64 + 511) / 512; // Number of 512B blocks
+        let user_stat = UserStat {
+            st_size: vfs_stat.size as i64,
+            st_mode: mode::S_IFREG | 0o644, // Regular file with rw-r--r-- permissions
+            st_blksize: 4096,               // Common block size
+            st_blocks: (vfs_stat.size as i64 + 511) / 512, // Number of 512B blocks
+            ..Default::default()
+        };
 
         Ok(user_stat)
     }
