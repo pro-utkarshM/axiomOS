@@ -57,7 +57,10 @@ const X1: u8 = 1;
 const X2: u8 = 2;
 const X3: u8 = 3;
 const X4: u8 = 4;
+const X5: u8 = 5;
+const X6: u8 = 6;
 const X7: u8 = 7;
+const X9: u8 = 9;  // Scratch register for helper addresses
 const X19: u8 = 19;
 const X20: u8 = 20;
 const X21: u8 = 21;
@@ -90,6 +93,8 @@ struct Arm64Emitter {
     jump_patches: Vec<(usize, usize)>,
     /// Instruction offsets (BPF insn index -> code offset)
     insn_offsets: Vec<usize>,
+    /// Stack size used in prologue (for matching epilogue)
+    stack_size: usize,
 }
 
 impl Arm64Emitter {
@@ -98,6 +103,7 @@ impl Arm64Emitter {
             code: Vec::with_capacity(capacity),
             jump_patches: Vec::new(),
             insn_offsets: Vec::new(),
+            stack_size: 0,
         }
     }
 
@@ -366,6 +372,55 @@ impl Arm64Emitter {
         self.emit(0xD65F03C0);
     }
 
+    /// Branch with link to register: BLR Xn
+    fn emit_blr(&mut self, rn: u8) {
+        // BLR Xn
+        let insn = 0xD63F0000 | ((rn as u32) << 5);
+        self.emit(insn);
+    }
+
+    /// TST (test bits): flags = Rn & Rm
+    fn emit_tst_reg(&mut self, rn: u8, rm: u8) {
+        // ANDS XZR, Xn, Xm
+        let insn = 0xEA00001F | ((rm as u32) << 16) | ((rn as u32) << 5);
+        self.emit(insn);
+    }
+
+    /// REV (reverse bytes 64-bit): Rd = byte_reverse(Rn)
+    fn emit_rev64(&mut self, rd: u8, rn: u8) {
+        // REV Xd, Xn
+        let insn = 0xDAC00C00 | ((rn as u32) << 5) | ((rd as u32) & 0x1f);
+        self.emit(insn);
+    }
+
+    /// REV32 (reverse bytes in each 32-bit word): Rd = rev32(Rn)
+    fn emit_rev32(&mut self, rd: u8, rn: u8) {
+        // REV32 Xd, Xn (alias for REV with opc=10)
+        let insn = 0xDAC00800 | ((rn as u32) << 5) | ((rd as u32) & 0x1f);
+        self.emit(insn);
+    }
+
+    /// REV16 (reverse bytes in each 16-bit halfword): Rd = rev16(Rn)
+    fn emit_rev16(&mut self, rd: u8, rn: u8) {
+        // REV16 Xd, Xn
+        let insn = 0xDAC00400 | ((rn as u32) << 5) | ((rd as u32) & 0x1f);
+        self.emit(insn);
+    }
+
+    /// UXTH (zero-extend halfword): Rd = Rn & 0xFFFF
+    fn emit_uxth(&mut self, rd: u8, rn: u8) {
+        // UBFM Wd, Wn, #0, #15 (32-bit zero extend)
+        let insn = 0x53003C00 | ((rn as u32) << 5) | ((rd as u32) & 0x1f);
+        self.emit(insn);
+    }
+
+    /// UXTW (zero-extend word): clear upper 32 bits
+    fn emit_uxtw(&mut self, rd: u8, rn: u8) {
+        // MOV Wd, Wn (implicitly zero-extends)
+        let insn = 0x2A0003E0 | ((rn as u32) << 16) | ((rd as u32) & 0x1f);
+        self.emit(insn);
+    }
+
     /// STP (store pair): store two registers
     fn emit_stp(&mut self, rt1: u8, rt2: u8, rn: u8, offset: i16) {
         let imm7 = ((offset >> 3) as u32) & 0x7F;
@@ -434,9 +489,25 @@ impl<P: PhysicalProfile> Arm64JitCompiler<P> {
         self.emit_prologue(&mut emitter, P::MAX_STACK_SIZE);
 
         // Compile each BPF instruction
-        for (idx, insn) in insns.iter().enumerate() {
+        let mut idx = 0;
+        while idx < insns.len() {
+            let insn = &insns[idx];
             emitter.mark_insn();
-            self.compile_insn(&mut emitter, insn, idx)?;
+
+            // Check for wide instruction (LD_IMM64)
+            if insn.is_wide() {
+                if idx + 1 >= insns.len() {
+                    return Err(Arm64JitError::UnsupportedInstruction);
+                }
+                let next_insn = &insns[idx + 1];
+                self.compile_ld_wide(&mut emitter, insn, next_insn)?;
+                // Mark the second instruction slot (for jump target purposes)
+                emitter.mark_insn();
+                idx += 2;
+            } else {
+                self.compile_insn(&mut emitter, insn, idx)?;
+                idx += 1;
+            }
         }
 
         // Patch jumps
@@ -450,6 +521,9 @@ impl<P: PhysicalProfile> Arm64JitCompiler<P> {
 
     /// Emit function prologue.
     fn emit_prologue(&self, emitter: &mut Arm64Emitter, stack_size: usize) {
+        // Store stack size for epilogue
+        emitter.stack_size = stack_size;
+
         // Save frame pointer and link register
         emitter.emit_stp(X29, X30, SP, -16);
 
@@ -472,7 +546,8 @@ impl<P: PhysicalProfile> Arm64JitCompiler<P> {
     }
 
     /// Emit function epilogue.
-    fn emit_epilogue(&self, emitter: &mut Arm64Emitter, stack_size: usize) {
+    fn emit_epilogue(&self, emitter: &mut Arm64Emitter) {
+        let stack_size = emitter.stack_size;
         let stack_alloc = ((stack_size + 15) & !15) as u16;
 
         // Deallocate stack
@@ -500,8 +575,11 @@ impl<P: PhysicalProfile> Arm64JitCompiler<P> {
         let class = insn.class().ok_or(Arm64JitError::UnsupportedInstruction)?;
 
         match class {
-            OpcodeClass::Alu64 | OpcodeClass::Alu32 => {
-                self.compile_alu(emitter, insn)?;
+            OpcodeClass::Alu64 => {
+                self.compile_alu(emitter, insn, true)?;
+            }
+            OpcodeClass::Alu32 => {
+                self.compile_alu(emitter, insn, false)?;
             }
             OpcodeClass::Jmp | OpcodeClass::Jmp32 => {
                 self.compile_jmp(emitter, insn, idx)?;
@@ -521,7 +599,12 @@ impl<P: PhysicalProfile> Arm64JitCompiler<P> {
     }
 
     /// Compile ALU instruction.
-    fn compile_alu(&self, emitter: &mut Arm64Emitter, insn: &BpfInsn) -> Result<(), Arm64JitError> {
+    fn compile_alu(
+        &self,
+        emitter: &mut Arm64Emitter,
+        insn: &BpfInsn,
+        is_64bit: bool,
+    ) -> Result<(), Arm64JitError> {
         let dst = BPF_TO_ARM64[insn.dst_reg() as usize];
         let alu_op = insn.alu_op().ok_or(Arm64JitError::UnsupportedInstruction)?;
 
@@ -534,16 +617,16 @@ impl<P: PhysicalProfile> Arm64JitCompiler<P> {
                             emitter.emit_add_imm(dst, dst, insn.imm as u16);
                         } else {
                             // Load immediate to temp register
-                            emitter.emit_mov64_imm(X7, insn.imm as i64);
-                            emitter.emit_add_reg(dst, dst, X7);
+                            emitter.emit_mov64_imm(X9, insn.imm as i64);
+                            emitter.emit_add_reg(dst, dst, X9);
                         }
                     }
                     AluOp::Sub => {
                         if insn.imm >= 0 && insn.imm < 4096 {
                             emitter.emit_sub_imm(dst, dst, insn.imm as u16);
                         } else {
-                            emitter.emit_mov64_imm(X7, insn.imm as i64);
-                            emitter.emit_sub_reg(dst, dst, X7);
+                            emitter.emit_mov64_imm(X9, insn.imm as i64);
+                            emitter.emit_sub_reg(dst, dst, X9);
                         }
                     }
                     AluOp::Mov => {
@@ -559,15 +642,33 @@ impl<P: PhysicalProfile> Arm64JitCompiler<P> {
                     | AluOp::Rsh
                     | AluOp::Arsh => {
                         // Load immediate to temp, then do reg op
-                        emitter.emit_mov64_imm(X7, insn.imm as i64);
-                        self.emit_alu_reg(emitter, alu_op, dst, X7)?;
+                        emitter.emit_mov64_imm(X9, insn.imm as i64);
+                        self.emit_alu_reg(emitter, alu_op, dst, X9)?;
                     }
                     AluOp::Neg => {
                         emitter.emit_neg(dst, dst);
                     }
                     AluOp::End => {
-                        // Endian conversion - not commonly used
-                        return Err(Arm64JitError::UnsupportedInstruction);
+                        // Byte swap based on immediate value (16, 32, or 64 bits)
+                        match insn.imm {
+                            16 => {
+                                // Swap bytes in 16-bit value
+                                emitter.emit_rev16(dst, dst);
+                                // Zero-extend to clear upper bits
+                                emitter.emit_uxth(dst, dst);
+                            }
+                            32 => {
+                                // Swap bytes in 32-bit value
+                                emitter.emit_rev32(dst, dst);
+                                // Zero-extend to clear upper bits
+                                emitter.emit_uxtw(dst, dst);
+                            }
+                            64 => {
+                                // Swap all bytes in 64-bit value
+                                emitter.emit_rev64(dst, dst);
+                            }
+                            _ => return Err(Arm64JitError::UnsupportedInstruction),
+                        }
                     }
                 }
             }
@@ -585,6 +686,11 @@ impl<P: PhysicalProfile> Arm64JitCompiler<P> {
                     }
                 }
             }
+        }
+
+        // For 32-bit ALU, zero-extend the result to clear upper 32 bits
+        if !is_64bit {
+            emitter.emit_uxtw(dst, dst);
         }
 
         Ok(())
@@ -605,9 +711,9 @@ impl<P: PhysicalProfile> Arm64JitCompiler<P> {
             AluOp::Div => emitter.emit_udiv(dst, dst, src),
             AluOp::Mod => {
                 // ARM64 doesn't have MOD, compute: dst = dst - (dst/src)*src
-                emitter.emit_udiv(X7, dst, src); // X7 = dst / src
-                emitter.emit_mul(X7, X7, src); // X7 = X7 * src
-                emitter.emit_sub_reg(dst, dst, X7); // dst = dst - X7
+                emitter.emit_udiv(X9, dst, src); // X9 = dst / src
+                emitter.emit_mul(X9, X9, src); // X9 = X9 * src
+                emitter.emit_sub_reg(dst, dst, X9); // dst = dst - X9
             }
             AluOp::And => emitter.emit_and_reg(dst, dst, src),
             AluOp::Or => emitter.emit_orr_reg(dst, dst, src),
@@ -631,11 +737,17 @@ impl<P: PhysicalProfile> Arm64JitCompiler<P> {
         if insn.is_exit() {
             // Move return value from BPF R0 (X7) to ARM64 return register (X0)
             emitter.emit_mov_reg(X0, X7);
-            self.emit_epilogue(emitter, 512); // TODO: use actual stack size
+            self.emit_epilogue(emitter);
             return Ok(());
         }
 
         let jmp_op = insn.jmp_op().ok_or(Arm64JitError::UnsupportedInstruction)?;
+
+        // Handle CALL instruction
+        if jmp_op.is_call() {
+            return self.compile_call(emitter, insn);
+        }
+
         let target = insn.offset; // Will be patched later
 
         if jmp_op.is_unconditional() {
@@ -646,10 +758,28 @@ impl<P: PhysicalProfile> Arm64JitCompiler<P> {
             // Conditional jump
             let dst = BPF_TO_ARM64[insn.dst_reg() as usize];
 
+            // JSET uses TST instead of CMP
+            if matches!(jmp_op, JmpOp::Jset) {
+                match insn.source_type() {
+                    SourceType::Imm => {
+                        emitter.emit_mov64_imm(X9, insn.imm as i64);
+                        emitter.emit_tst_reg(dst, X9);
+                    }
+                    SourceType::Reg => {
+                        let src = BPF_TO_ARM64[insn.src_reg() as usize];
+                        emitter.emit_tst_reg(dst, src);
+                    }
+                }
+                // JSET jumps if (dst & src) != 0, i.e., NE condition
+                emitter.emit_b_cond(1, target as i32 * 4); // NE = 1
+                emitter.record_jump((insn.offset as usize).wrapping_add(_idx).wrapping_add(1));
+                return Ok(());
+            }
+
             match insn.source_type() {
                 SourceType::Imm => {
-                    emitter.emit_mov64_imm(X7, insn.imm as i64);
-                    emitter.emit_cmp_reg(dst, X7);
+                    emitter.emit_mov64_imm(X9, insn.imm as i64);
+                    emitter.emit_cmp_reg(dst, X9);
                 }
                 SourceType::Reg => {
                     let src = BPF_TO_ARM64[insn.src_reg() as usize];
@@ -669,11 +799,6 @@ impl<P: PhysicalProfile> Arm64JitCompiler<P> {
                 JmpOp::Jsge => 10, // GE (signed greater or equal)
                 JmpOp::Jslt => 11, // LT (signed less)
                 JmpOp::Jsle => 13, // LE (signed less or equal)
-                JmpOp::Jset => {
-                    // Test bits: use TST instead of CMP
-                    // This is a simplification - real impl would need TST
-                    return Err(Arm64JitError::UnsupportedInstruction);
-                }
                 _ => return Err(Arm64JitError::UnsupportedInstruction),
             };
 
@@ -682,6 +807,58 @@ impl<P: PhysicalProfile> Arm64JitCompiler<P> {
         }
 
         Ok(())
+    }
+
+    /// Compile a helper call instruction.
+    fn compile_call(
+        &self,
+        emitter: &mut Arm64Emitter,
+        insn: &BpfInsn,
+    ) -> Result<(), Arm64JitError> {
+        let helper_id = insn.imm;
+
+        // Get the helper function address based on helper_id
+        // BPF R1-R5 are already in ARM64 X0-X4 due to our register mapping
+        // so arguments are already in the right place for ARM64 calling convention
+
+        // Get helper address and load it into X9
+        let helper_addr = self.get_helper_address(helper_id)?;
+        emitter.emit_mov64_imm(X9, helper_addr as i64);
+
+        // Save caller-saved BPF registers before call
+        // BPF R0 (X7) may be clobbered by the helper
+        // X5, X6 are not in our mapping and can be clobbered
+
+        // Call the helper function
+        emitter.emit_blr(X9);
+
+        // Move result from X0 to BPF R0 (X7)
+        emitter.emit_mov_reg(X7, X0);
+
+        Ok(())
+    }
+
+    /// Get the address of a BPF helper function.
+    fn get_helper_address(&self, helper_id: i32) -> Result<u64, Arm64JitError> {
+        // These are the same helper IDs used in the interpreter
+        unsafe extern "C" {
+            fn bpf_ktime_get_ns() -> u64;
+            fn bpf_trace_printk(fmt: *const u8, size: u32) -> i32;
+            fn bpf_map_lookup_elem(map_id: u32, key: *const u8) -> *mut u8;
+            fn bpf_map_update_elem(map_id: u32, key: *const u8, value: *const u8, flags: u64) -> i32;
+            fn bpf_map_delete_elem(map_id: u32, key: *const u8) -> i32;
+            fn bpf_ringbuf_output(map_id: u32, data: *const u8, size: u64, flags: u64) -> i64;
+        }
+
+        match helper_id {
+            1 => Ok(bpf_ktime_get_ns as u64),
+            2 => Ok(bpf_trace_printk as u64),
+            3 => Ok(bpf_map_lookup_elem as u64),
+            4 => Ok(bpf_map_update_elem as u64),
+            5 => Ok(bpf_map_delete_elem as u64),
+            6 => Ok(bpf_ringbuf_output as u64),
+            _ => Err(Arm64JitError::UnsupportedInstruction),
+        }
     }
 
     /// Compile load instruction (LDX).
@@ -720,13 +897,31 @@ impl<P: PhysicalProfile> Arm64JitCompiler<P> {
         Ok(())
     }
 
-    /// Compile LD (wide immediate load).
-    fn compile_ld(&self, emitter: &mut Arm64Emitter, insn: &BpfInsn) -> Result<(), Arm64JitError> {
-        // LD_IMM64: load 64-bit immediate (uses two instructions)
+    /// Compile LD_IMM64 (wide immediate load).
+    fn compile_ld_wide(
+        &self,
+        emitter: &mut Arm64Emitter,
+        insn: &BpfInsn,
+        next_insn: &BpfInsn,
+    ) -> Result<(), Arm64JitError> {
         let dst = BPF_TO_ARM64[insn.dst_reg() as usize];
 
-        // The full 64-bit value comes from imm (low 32) and next instruction's imm (high 32)
-        // For now, just load the low 32 bits sign-extended
+        // Combine the two 32-bit immediates into a 64-bit value
+        let imm64 = (insn.imm as u32 as u64) | ((next_insn.imm as u32 as u64) << 32);
+
+        // Load the full 64-bit immediate
+        emitter.emit_mov64_imm(dst, imm64 as i64);
+
+        Ok(())
+    }
+
+    /// Compile LD (legacy, single instruction - should not be reached for wide loads).
+    fn compile_ld(&self, emitter: &mut Arm64Emitter, insn: &BpfInsn) -> Result<(), Arm64JitError> {
+        // This handles the case where compile_insn is called on a LD instruction
+        // Wide loads are handled separately in compile()
+        let dst = BPF_TO_ARM64[insn.dst_reg() as usize];
+
+        // Just load the low 32 bits sign-extended (fallback behavior)
         emitter.emit_mov64_imm(dst, insn.imm as i64);
 
         Ok(())
@@ -822,6 +1017,8 @@ impl<P: PhysicalProfile> BpfExecutor<P> for Arm64JitExecutor<P> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bytecode::insn::BpfInsn;
+    use crate::bytecode::program::{BpfProgType, ProgramBuilder};
 
     #[test]
     fn test_register_mapping() {
@@ -847,5 +1044,178 @@ mod tests {
         let mut emitter = Arm64Emitter::new(64);
         emitter.emit_add_reg(X0, X1, X2);
         assert_eq!(emitter.code.len(), 4);
+    }
+
+    #[test]
+    fn test_emitter_blr() {
+        let mut emitter = Arm64Emitter::new(64);
+        emitter.emit_blr(X9);
+        assert_eq!(emitter.code.len(), 4);
+        // BLR X9 = 0xD63F0120
+        let insn = u32::from_le_bytes(emitter.code[0..4].try_into().unwrap());
+        assert_eq!(insn, 0xD63F0120);
+    }
+
+    #[test]
+    fn test_emitter_tst_reg() {
+        let mut emitter = Arm64Emitter::new(64);
+        emitter.emit_tst_reg(X0, X1);
+        assert_eq!(emitter.code.len(), 4);
+    }
+
+    #[test]
+    fn test_emitter_rev64() {
+        let mut emitter = Arm64Emitter::new(64);
+        emitter.emit_rev64(X0, X1);
+        assert_eq!(emitter.code.len(), 4);
+    }
+
+    #[test]
+    fn test_emitter_rev32() {
+        let mut emitter = Arm64Emitter::new(64);
+        emitter.emit_rev32(X0, X1);
+        assert_eq!(emitter.code.len(), 4);
+    }
+
+    #[test]
+    fn test_emitter_rev16() {
+        let mut emitter = Arm64Emitter::new(64);
+        emitter.emit_rev16(X0, X1);
+        assert_eq!(emitter.code.len(), 4);
+    }
+
+    #[test]
+    fn test_compile_simple_program() {
+        let program = ProgramBuilder::<ActiveProfile>::new(BpfProgType::SocketFilter)
+            .insn(BpfInsn::mov64_imm(0, 42)) // r0 = 42
+            .exit()
+            .build()
+            .expect("valid program");
+
+        let compiler = Arm64JitCompiler::<ActiveProfile>::new();
+        let result = compiler.compile(&program);
+        assert!(result.is_ok());
+        let jit_prog = result.unwrap();
+        // Should have generated some code
+        assert!(!jit_prog.code.is_empty());
+    }
+
+    #[test]
+    fn test_compile_arithmetic() {
+        let program = ProgramBuilder::<ActiveProfile>::new(BpfProgType::SocketFilter)
+            .insn(BpfInsn::mov64_imm(0, 10)) // r0 = 10
+            .insn(BpfInsn::add64_imm(0, 5)) // r0 += 5
+            .insn(BpfInsn::mov64_imm(1, 3)) // r1 = 3
+            .insn(BpfInsn::add64_reg(0, 1)) // r0 += r1
+            .exit()
+            .build()
+            .expect("valid program");
+
+        let compiler = Arm64JitCompiler::<ActiveProfile>::new();
+        let result = compiler.compile(&program);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_compile_conditional_jump() {
+        let program = ProgramBuilder::<ActiveProfile>::new(BpfProgType::SocketFilter)
+            .insn(BpfInsn::mov64_imm(0, 0)) // r0 = 0
+            .insn(BpfInsn::jeq_imm(0, 0, 2)) // if r0 == 0, skip 2
+            .insn(BpfInsn::mov64_imm(0, 2)) // r0 = 2 (skipped)
+            .insn(BpfInsn::ja(1)) // skip next
+            .insn(BpfInsn::mov64_imm(0, 1)) // r0 = 1
+            .exit()
+            .build()
+            .expect("valid program");
+
+        let compiler = Arm64JitCompiler::<ActiveProfile>::new();
+        let result = compiler.compile(&program);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_compile_helper_call() {
+        // Test that CALL instructions compile without error
+        let program = ProgramBuilder::<ActiveProfile>::new(BpfProgType::SocketFilter)
+            .insn(BpfInsn::call(1)) // call bpf_ktime_get_ns
+            .exit()
+            .build()
+            .expect("valid program");
+
+        let compiler = Arm64JitCompiler::<ActiveProfile>::new();
+        let result = compiler.compile(&program);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_compile_jset() {
+        // Test JSET instruction compilation
+        let program = ProgramBuilder::<ActiveProfile>::new(BpfProgType::SocketFilter)
+            .insn(BpfInsn::mov64_imm(0, 0xFF)) // r0 = 0xFF
+            .insn(BpfInsn::new(0x45, 0, 0, 1, 0x0F)) // jset r0, 0x0F, +1
+            .insn(BpfInsn::mov64_imm(0, 0)) // r0 = 0 (skipped if bits set)
+            .exit()
+            .build()
+            .expect("valid program");
+
+        let compiler = Arm64JitCompiler::<ActiveProfile>::new();
+        let result = compiler.compile(&program);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_compile_32bit_alu() {
+        // Test 32-bit ALU operation (should zero-extend result)
+        let program = ProgramBuilder::<ActiveProfile>::new(BpfProgType::SocketFilter)
+            .insn(BpfInsn::new(0xb4, 0, 0, 0, 100)) // mov32 r0, 100
+            .insn(BpfInsn::new(0x04, 0, 0, 0, 50)) // add32 r0, 50
+            .exit()
+            .build()
+            .expect("valid program");
+
+        let compiler = Arm64JitCompiler::<ActiveProfile>::new();
+        let result = compiler.compile(&program);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_stack_size_from_profile() {
+        // Verify that the emitter records the correct stack size
+        let mut emitter = Arm64Emitter::new(256);
+        let compiler = Arm64JitCompiler::<ActiveProfile>::new();
+
+        compiler.emit_prologue(&mut emitter, 8192);
+        assert_eq!(emitter.stack_size, 8192);
+    }
+
+    #[test]
+    fn test_compile_all_conditional_jumps() {
+        // Test all conditional jump types compile correctly
+        let jmp_opcodes = [
+            (0x15, "jeq"),  // JEQ
+            (0x55, "jne"),  // JNE
+            (0x25, "jgt"),  // JGT
+            (0x35, "jge"),  // JGE
+            (0xa5, "jlt"),  // JLT
+            (0xb5, "jle"),  // JLE
+            (0x65, "jsgt"), // JSGT
+            (0x75, "jsge"), // JSGE
+            (0xc5, "jslt"), // JSLT
+            (0xd5, "jsle"), // JSLE
+        ];
+
+        for (opcode, name) in jmp_opcodes {
+            let program = ProgramBuilder::<ActiveProfile>::new(BpfProgType::SocketFilter)
+                .insn(BpfInsn::mov64_imm(0, 10))
+                .insn(BpfInsn::new(opcode, 0, 0, 1, 5)) // jmp_op r0, 5, +1
+                .insn(BpfInsn::mov64_imm(0, 0))
+                .exit()
+                .build()
+                .expect("valid program");
+
+            let compiler = Arm64JitCompiler::<ActiveProfile>::new();
+            let result = compiler.compile(&program);
+            assert!(result.is_ok(), "Failed to compile {}", name);
+        }
     }
 }
