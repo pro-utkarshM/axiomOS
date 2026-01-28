@@ -1,24 +1,25 @@
 # Work Remaining for Industry Deployment
 
 **Analysis Date:** 2026-01-28
-**Overall Completion:** ~35-40%
-**Remaining Work:** ~60-65%
+**Overall Completion:** ~40-45%
+**Remaining Work:** ~55-60%
 
 ---
 
 ## Executive Summary
 
-Axiom has a solid foundation—the kernel boots on real hardware, and the BPF subsystem works in isolation. However, the critical work of connecting BPF to hardware, hardening security, and building robotics-specific drivers remains.
+Axiom has a solid foundation—the kernel boots on real hardware, **and BPF programs execute on timer/syscall hooks**. The RPi5 GPIO driver exists. The main work is connecting BPF to hardware attach points, hardening security, and building remaining drivers.
 
 ```
 What's Done                          What's Left
 ───────────                          ──────────
-✅ Bootable kernel (x86_64, ARM64)   🔴 BPF wired to real hardware
+✅ Bootable kernel (x86_64, ARM64)   🔴 GPIO/PWM/IIO BPF attach wiring
 ✅ Memory management                 🔴 Security hardening
-✅ BPF verifier + interpreter        🔴 Robotics drivers (GPIO/PWM/IIO)
-✅ x86_64 JIT                        🔴 Real-time guarantees
-✅ BPF maps                          🔴 33 more syscalls
-✅ Basic VFS + Ext2                  🔴 Production validation
+✅ BPF verifier + interpreter        🔴 PWM/IIO hardware drivers
+✅ x86_64 JIT + BPF maps             🔴 Real-time guarantees
+✅ Timer hooks (BPF executes!)       🔴 35 more syscalls
+✅ Syscall hooks (BPF executes!)     🔴 Production validation
+✅ RPi5 GPIO driver (MMIO)           🔴 Kprobe/tracepoint infrastructure
 ```
 
 ---
@@ -69,51 +70,61 @@ What's Done                          What's Left
 
 ---
 
-### 3. BPF-Kernel Integration — 30% Complete 🔴
+### 3. BPF-Kernel Integration — 60% Complete ⚠️
 
-This is the critical gap—the BPF subsystem exists but isn't fully wired into the running kernel.
+The core BPF-kernel integration is **working**. Timer and syscall hooks execute BPF programs.
 
 | Component | Status | Notes |
 |-----------|--------|-------|
-| BpfManager singleton | ✅ Done | Global program registry |
-| bpf() syscall | ✅ Done | PROG_LOAD, MAP_CREATE, etc. |
-| Timer attach point | ⚠️ Partial | attach_type=1 |
-| Syscall entry attach | ⚠️ Partial | attach_type=2 |
-| **GPIO attach points** | 🔴 Abstraction only | Not connected to hardware |
-| **PWM attach points** | 🔴 Abstraction only | Not connected to hardware |
-| **IIO sensor attach** | 🔴 Abstraction only | Not connected to hardware |
-| **Kprobe** | 🔴 Not implemented | |
-| **Tracepoint** | 🔴 Not implemented | |
-| **Scheduler hooks** | 🔴 Not implemented | |
+| BpfManager singleton | ✅ Done | Global program registry in `kernel/src/bpf/mod.rs` |
+| bpf() syscall | ✅ Done | 6 operations: PROG_LOAD, PROG_ATTACH, MAP_CREATE/LOOKUP/UPDATE/DELETE |
+| **Timer hooks** | ✅ Working | `execute_hooks(1, ctx)` in `idt.rs:169` and `interrupts.rs:63` |
+| **Syscall hooks** | ✅ Working | `execute_hooks(2, ctx)` in `syscall/mod.rs:51` |
+| BPF helpers | ✅ Done | `bpf_ktime_get_ns`, `bpf_trace_printk`, `bpf_map_*` |
+| **GPIO attach** | 🔴 Abstraction only | Not wired to RPi5 GPIO driver |
+| **PWM attach** | 🔴 Abstraction only | No hardware driver |
+| **IIO sensor attach** | 🔴 Abstraction only | No hardware driver |
+| **Kprobe** | 🔴 Abstraction only | No kernel infrastructure |
+| **Tracepoint** | 🔴 Abstraction only | No kernel infrastructure |
+
+**What's working today:**
+```
+Userspace → bpf(BPF_PROG_LOAD) → program stored
+         → bpf(BPF_PROG_ATTACH, type=1) → attached to timer
+         → Timer interrupt fires → BPF program executes!
+```
 
 **Remaining Work:**
-- Wire timer interrupt → BPF execution (~1 week)
-- Implement GPIO attach with real hardware (~2-3 weeks)
-- Implement PWM observation (~2 weeks)
-- Implement IIO sensor filtering (~2 weeks)
-- Kprobe/tracepoint infrastructure (~3-4 weeks)
+- Wire GPIO attach → RPi5 GPIO driver (~1 week)
+- PWM hardware driver + BPF wiring (~2-3 weeks)
+- IIO sensor driver + BPF wiring (~2-3 weeks)
+- Kprobe/tracepoint kernel infrastructure (~3-4 weeks)
+- Fix hardcoded key_size=4, value_size=8 in syscall handler (~1 day)
 
 ---
 
-### 4. Syscall Interface — 20% Complete 🔴
+### 4. Syscall Interface — 17% Complete 🔴
 
-| Implemented (8) | Missing (33+) |
-|-----------------|---------------|
-| read | fork, exec, wait |
-| write | mmap, munmap, mprotect |
+**7 of 42 syscalls implemented** (x86_64 only, stubs on other archs)
+
+| Implemented (7) | Missing (35) |
+|-----------------|--------------|
+| exit | fork, exec, wait, clone |
+| read | close, dup, dup2, pipe |
+| write, writev | lseek, stat, fstat |
 | open | socket, bind, listen, accept |
-| close | pipe, dup, dup2 |
-| exit | kill, signal handling |
-| bpf | clock_gettime, nanosleep |
-| mmap (basic) | ioctl |
-| getpid | stat, fstat, lstat |
+| mmap | munmap, mprotect |
+| getcwd | chdir, mkdir, rmdir |
+| bpf | kill, signal, sigaction |
+| | clock_gettime, nanosleep |
+| | ioctl, fcntl, poll |
 
 **Remaining Work:**
-- Process lifecycle syscalls (~2 weeks)
-- Memory management syscalls (~1 week)
-- File system syscalls (~1 week)
+- close syscall (critical, ~1 day)
+- Process lifecycle: fork, exec, wait (~2 weeks)
+- File operations: lseek, stat, fstat, close (~1 week)
 - Signal handling (~2 weeks)
-- Networking syscalls (if needed) (~3-4 weeks)
+- Remaining memory syscalls (~1 week)
 
 ---
 
@@ -226,41 +237,42 @@ This is the critical gap—the BPF subsystem exists but isn't fully wired into t
 |----------|--------|-------------------|
 | Kernel infrastructure | 85% | 2-3 weeks |
 | BPF engine | 75% | 4-5 weeks |
-| **BPF-kernel wiring** | **30%** | **4-6 weeks** |
-| **Syscalls** | **20%** | **6-8 weeks** |
+| **BPF-kernel wiring** | **60%** | **3-5 weeks** |
+| **Syscalls** | **17%** | **6-8 weeks** |
 | **Security hardening** | **15%** | **4-6 weeks** |
 | **Hardware drivers** | **25%** | **6-10 weeks** |
 | Testing | 25% | 6-8 weeks |
 | Production readiness | 10% | 8-12 weeks |
 
-**Note:** Hardware drivers improved from 5% to 25% because:
-- GPIO abstraction complete + RPi5 hardware driver exists
-- PWM/IIO/Kprobe/Tracepoint abstractions complete (just need wiring)
-- Only actual hardware drivers + wiring remain
+**Key findings:**
+- BPF-kernel wiring improved from 30% to 60% because timer and syscall hooks are WORKING
+- GPIO abstraction + RPi5 hardware driver both exist (just need to connect them)
+- PWM/IIO/Kprobe/Tracepoint abstractions complete (need HW drivers + wiring)
 
 ---
 
 ## Critical Path to MVP
 
 ```
-Phase 1: BPF Integration (Weeks 1-3)
-├── Wire timer interrupt to BPF execution
-├── End-to-end demo: load program → executes on tick
-└── Serial output visible
+Phase 1: BPF Integration (MOSTLY DONE ✅)
+├── ✅ Wire timer interrupt to BPF execution (WORKING)
+├── ✅ bpf() syscall with PROG_LOAD, ATTACH, MAP ops (WORKING)
+├── ✅ BPF helpers: ktime, trace_printk, map_* (WORKING)
+└── 🔴 Fix hardcoded key/value sizes in syscall handler (~1 day)
 
-Phase 2: Hardware Attach Points (Weeks 4-8)
-├── Wire BPF GpioAttach → existing RPi5 GPIO driver (driver exists!)
-├── Button press → BPF program → LED toggle
-├── PWM hardware driver + BPF wiring
-└── Basic IIO sensor support
+Phase 2: Hardware Attach Points (Weeks 1-5)
+├── Wire BPF GpioAttach → existing RPi5 GPIO driver (~1 week)
+├── Button press → BPF program → LED toggle demo
+├── PWM hardware driver + BPF wiring (~2-3 weeks)
+└── Basic IIO sensor support (~2 weeks)
 
-Phase 3: Security Hardening (Weeks 5-10, parallel)
+Phase 3: Security Hardening (Weeks 3-8, parallel)
 ├── Syscall pointer validation
 ├── Address space verification
 ├── Unsafe block documentation
 └── Security audit
 
-Phase 4: Real-World Validation (Weeks 9-14)
+Phase 4: Real-World Validation (Weeks 6-10)
 ├── IMU sensor integration
 ├── Safety interlock demo
 ├── Performance benchmarks
@@ -286,17 +298,19 @@ Phase 4: Real-World Validation (Weeks 9-14)
 **What makes Axiom promising:**
 - Solid kernel foundation that boots on real hardware
 - Complete BPF verification and execution engine
+- **BPF timer and syscall hooks already working end-to-end**
+- RPi5 GPIO hardware driver exists
 - Clean Rust codebase with good architecture
 
 **What blocks industry deployment:**
-1. BPF not connected to real hardware (GPIO, PWM, sensors)
-2. Security vulnerabilities in syscall handling
-3. Missing robotics-specific drivers
+1. GPIO/PWM/IIO not wired to BPF (timer/syscall hooks work, hardware hooks don't)
+2. Security vulnerabilities in syscall handling (hardcoded sizes, no pointer validation)
+3. PWM/IIO hardware drivers not implemented
 4. Unproven real-time guarantees
 5. Insufficient testing and validation
 
-**Estimated time to MVP (demo-able on RPi5):** 12-16 weeks
-**Estimated time to production-ready:** 6-12 months
+**Estimated time to MVP (demo-able on RPi5):** 8-12 weeks
+**Estimated time to production-ready:** 5-9 months
 
 ---
 
