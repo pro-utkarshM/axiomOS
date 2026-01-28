@@ -75,6 +75,10 @@ static GICC: usize = GICC_BASE;
 /// This configures both the Distributor and CPU Interface.
 #[cfg(feature = "rpi5")]
 pub fn init() {
+    // SAFETY: All register accesses are to valid GIC MMIO addresses defined by the
+    // platform memory map. The GIC is being initialized before any interrupts are
+    // enabled, so there are no race conditions. The kernel has exclusive access to
+    // the GIC hardware.
     unsafe {
         // Disable distributor while configuring
         write_gicd(gicd::CTLR, 0);
@@ -140,6 +144,9 @@ pub fn enable_irq(irq: u32) {
     let reg_index = (irq / 32) as usize;
     let bit = 1u32 << (irq % 32);
 
+    // SAFETY: Writing to ISENABLER is safe - it's a set-enable register where
+    // writing 1 enables the interrupt and writing 0 has no effect. The register
+    // address is computed from platform constants and validated offsets.
     unsafe {
         write_gicd(gicd::ISENABLER + reg_index * 4, bit);
     }
@@ -156,6 +163,9 @@ pub fn disable_irq(irq: u32) {
     let reg_index = (irq / 32) as usize;
     let bit = 1u32 << (irq % 32);
 
+    // SAFETY: Writing to ICENABLER is safe - it's a clear-enable register where
+    // writing 1 disables the interrupt and writing 0 has no effect. The register
+    // address is computed from platform constants and validated offsets.
     unsafe {
         write_gicd(gicd::ICENABLER + reg_index * 4, bit);
     }
@@ -169,6 +179,9 @@ pub fn disable_irq(_irq: u32) {}
 /// Returns the interrupt ID. A value of 1023 indicates a spurious interrupt.
 #[cfg(feature = "rpi5")]
 pub fn acknowledge() -> u32 {
+    // SAFETY: Reading IAR is the standard way to acknowledge an interrupt.
+    // This atomically returns the highest priority pending interrupt ID and
+    // marks it as active. The GICC base address is a platform constant.
     unsafe { read_gicc(gicc::IAR) }
 }
 
@@ -180,6 +193,9 @@ pub fn acknowledge() -> u32 {
 /// Signal end of interrupt handling
 #[cfg(feature = "rpi5")]
 pub fn end_of_interrupt(irq: u32) {
+    // SAFETY: Writing to EOIR signals completion of interrupt handling.
+    // The irq value must be the same as returned by acknowledge().
+    // The GICC base address is a platform constant.
     unsafe {
         write_gicc(gicc::EOIR, irq);
     }
@@ -194,6 +210,9 @@ pub fn set_priority(irq: u32, priority: u8) {
     let reg_index = (irq / 4) as usize;
     let byte_offset = (irq % 4) as usize;
 
+    // SAFETY: Reading and writing IPRIORITYR is safe. Each IRQ has an 8-bit
+    // priority field, and we use read-modify-write to update only the relevant
+    // byte. The register address is computed from platform constants.
     unsafe {
         let mut val = read_gicd(gicd::IPRIORITYR + reg_index * 4);
         val &= !(0xFF << (byte_offset * 8));
@@ -206,6 +225,15 @@ pub fn set_priority(irq: u32, priority: u8) {
 pub fn set_priority(_irq: u32, _priority: u8) {}
 
 // Low-level register access
+//
+// SAFETY for all GIC register access functions:
+// These functions perform MMIO access to GIC registers. They are safe because:
+// 1. The GIC base addresses (GICD_BASE, GICC_BASE) are platform-specific constants
+//    that are correct for the RPi5 platform when rpi5 feature is enabled
+// 2. The offsets used are defined by the ARM GICv2 specification
+// 3. The kernel has exclusive access to these hardware registers
+// 4. read_volatile/write_volatile ensure proper memory ordering for MMIO
+
 #[cfg(feature = "rpi5")]
 unsafe fn read_gicd(offset: usize) -> u32 {
     core::ptr::read_volatile((GICD + offset) as *const u32)

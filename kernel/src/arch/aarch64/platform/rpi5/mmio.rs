@@ -97,8 +97,14 @@ impl MmioReg<u32> {
     }
 }
 
-// MmioReg is Send+Sync because MMIO access is inherently thread-safe
-// when properly synchronized at higher levels (which is the caller's
-// responsibility).
+// SAFETY: MmioReg is Send because the raw pointer it contains points to
+// memory-mapped hardware registers which can be safely accessed from any thread.
+// The hardware itself provides the necessary synchronization guarantees for
+// register access.
 unsafe impl<T: Copy> Send for MmioReg<T> {}
+
+// SAFETY: MmioReg is Sync because read_volatile and write_volatile are atomic
+// at the hardware level for naturally-aligned accesses up to the bus width.
+// Higher-level synchronization (e.g., for read-modify-write sequences) is the
+// caller's responsibility.
 unsafe impl<T: Copy> Sync for MmioReg<T> {}

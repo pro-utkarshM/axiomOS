@@ -45,6 +45,13 @@ impl SwitchFrame {
 /// * `new_sp` - The new stack pointer to load
 /// * `new_ttbr0` - The new TTBR0 value (user page table), or 0 to keep current
 ///
+/// # Safety
+///
+/// The caller must ensure:
+/// - `old_sp` points to valid, writable memory for storing a usize
+/// - `new_sp` points to a valid stack with a properly initialized SwitchFrame
+/// - `new_ttbr0` is either 0 or a valid page table physical address
+/// - This function is only called from the scheduler with proper locking
 #[unsafe(naked)]
 pub unsafe extern "C" fn switch_impl(_old_sp: *mut usize, _new_sp: usize, _new_ttbr0: usize) {
     // x0 = old_sp (pointer to save current SP)
@@ -106,6 +113,9 @@ pub fn init_task_stack(stack_top: usize, entry_point: usize, arg: usize) -> usiz
 
     let frame_ptr = (stack_top - SwitchFrame::SIZE) as *mut SwitchFrame;
 
+    // SAFETY: frame_ptr points to memory within the allocated stack. The stack
+    // was allocated with sufficient size and proper alignment. We have exclusive
+    // access to this stack memory as it's being initialized for a new task.
     unsafe {
         let frame = &mut *frame_ptr;
 
@@ -140,6 +150,11 @@ pub fn init_task_stack(stack_top: usize, entry_point: usize, arg: usize) -> usiz
 /// Note: The actual entry point is in x30 (LR) when we get here, but we
 /// already returned to it. So we need a different approach - we'll use
 /// a wrapper that's set as the entry point.
+///
+/// # Safety
+///
+/// This function must only be jumped to from a properly initialized SwitchFrame
+/// where x19 contains the task argument and x20 contains the entry point address.
 #[unsafe(naked)]
 pub unsafe extern "C" fn task_entry_trampoline() {
     core::arch::naked_asm!(
@@ -157,6 +172,9 @@ pub fn init_task_stack_with_arg(stack_top: usize, entry_point: usize, arg: usize
     let stack_top = stack_top & !0xF;
     let frame_ptr = (stack_top - SwitchFrame::SIZE) as *mut SwitchFrame;
 
+    // SAFETY: frame_ptr points to memory within the allocated stack. The stack
+    // was allocated with sufficient size and proper alignment. We have exclusive
+    // access to this stack memory as it's being initialized for a new task.
     unsafe {
         let frame = &mut *frame_ptr;
 
@@ -187,6 +205,8 @@ pub fn init_task_stack_with_arg(stack_top: usize, entry_point: usize, arg: usize
 #[inline]
 pub fn current_sp() -> usize {
     let sp: usize;
+    // SAFETY: Reading the stack pointer register is always safe. The nomem and
+    // nostack options tell the compiler this doesn't access memory or modify stack.
     unsafe {
         asm!("mov {}, sp", out(reg) sp, options(nomem, nostack));
     }
@@ -197,6 +217,8 @@ pub fn current_sp() -> usize {
 #[inline]
 pub fn current_fp() -> usize {
     let fp: usize;
+    // SAFETY: Reading x29 (frame pointer) is always safe. The nomem and nostack
+    // options tell the compiler this doesn't access memory or modify stack.
     unsafe {
         asm!("mov {}, x29", out(reg) fp, options(nomem, nostack));
     }
@@ -207,6 +229,8 @@ pub fn current_fp() -> usize {
 #[inline]
 pub fn current_lr() -> usize {
     let lr: usize;
+    // SAFETY: Reading x30 (link register) is always safe. The nomem and nostack
+    // options tell the compiler this doesn't access memory or modify stack.
     unsafe {
         asm!("mov {}, x30", out(reg) lr, options(nomem, nostack));
     }

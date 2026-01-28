@@ -185,6 +185,12 @@ pub fn sys_bpf(cmd: usize, attr_ptr: usize, _size: usize) -> isize {
                             let edge_flags = attr.value as u32;
 
                             if pin < 28 {
+                                // SAFETY: Rp1Gpio::new() creates an interface to memory-mapped
+                                // GPIO registers. This is safe because:
+                                // 1. We are on aarch64 with rpi5 feature enabled (checked by cfg)
+                                // 2. The GPIO base address is hardcoded for RPi5 platform
+                                // 3. We have validated the pin number is in range 0-27
+                                // 4. The kernel has exclusive access to GPIO hardware
                                 let gpio =
                                     unsafe { crate::arch::aarch64::platform::rpi5::gpio::Rp1Gpio::new() };
 
@@ -252,7 +258,7 @@ pub fn sys_bpf(cmd: usize, attr_ptr: usize, _size: usize) -> isize {
             let insns_bytes_ptr = insns_ptr as usize; 
             
             // Validate the entire instruction buffer first
-            if let Err(_) = read_userspace_slice(insns_bytes_ptr, insn_cnt * size_of::<BpfInsn>()) {
+            if read_userspace_slice(insns_bytes_ptr, insn_cnt * size_of::<BpfInsn>()).is_err() {
                 log::error!("sys_bpf: invalid instruction buffer");
                 return -1;
             }
