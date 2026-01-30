@@ -75,21 +75,21 @@ impl Scheduler {
             old_task.last_stack_ptr() as *mut usize
         };
 
-        if let Some(mut guard) = old_task.fx_area().try_write()
-            && let Some(fx_area) = guard.as_mut()
-        {
-            // SAFETY: We are disabling task switching (FPU context) via CR0.TS.
-            unsafe { asm!("clts") };
-            // SAFETY: Safe because we hold a mutable reference to the fx_area
-            unsafe {
-                _fxsave(fx_area.start().as_mut_ptr::<u8>());
+        if let Some(mut guard) = old_task.fx_area().try_write() {
+            if let Some(fx_area) = guard.as_mut() {
+                // SAFETY: We are disabling task switching (FPU context) via CR0.TS.
+                unsafe { asm!("clts") };
+                // SAFETY: Safe because we hold a mutable reference to the fx_area
+                unsafe {
+                    _fxsave(fx_area.start().as_mut_ptr::<u8>());
+                }
             }
         }
 
-        if let Some(guard) = self.current_task.tls().try_read()
-            && let Some(tls) = guard.as_ref()
-        {
-            FsBase::write(tls.start());
+        if let Some(guard) = self.current_task.tls().try_read() {
+            if let Some(tls) = guard.as_ref() {
+                FsBase::write(tls.start());
+            }
         }
 
         assert!(self.zombie_task.is_none());

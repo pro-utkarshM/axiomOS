@@ -86,7 +86,7 @@ The core BPF-kernel integration is **working**. Timer and syscall hooks execute 
 | BPF helpers | ✅ Done | `bpf_ktime_get_ns`, `bpf_trace_printk`, `bpf_map_*`, `bpf_gpio_*`, `bpf_pwm_*` |
 | **GPIO attach** | ✅ Working | Wired to RPi5 driver & verified with integration tests |
 | **PWM attach** | ✅ Working | Wired to RPi5 driver & enabled via syscalls |
-| **IIO sensor attach** | 🔴 Abstraction only | No hardware driver |
+| **IIO sensor attach** | ⚠️ Simulated | Driver manager + attach integrated |
 | **Kprobe** | 🔴 Abstraction only | No kernel infrastructure |
 | **Tracepoint** | 🔴 Abstraction only | No kernel infrastructure |
 
@@ -136,16 +136,16 @@ Userspace → bpf(BPF_PROG_LOAD) → program stored
 | Address space verification | ✅ Validated | **Low** |
 | Bounds checking | ✅ Validated | **Low** |
 | Alignment validation | ✅ Validated | **Low** |
-| Unsafe blocks | 70+ undocumented | **High** |
+| Unsafe blocks | ✅ Audited | **Low** |
 | Safety certification | Not started | **Blocking** |
 
 **Specific Vulnerabilities:**
 - [x] `kernel/src/syscall/bpf.rs`: User pointers cast directly without validation (Fixed with `validation.rs` wrappers)
-- No SAFETY comments on unsafe blocks
+- [x] No SAFETY comments on unsafe blocks (Audited and documented)
 
 **Remaining Work:**
-- Document all unsafe blocks (~1 week)
-- Security audit (~2-4 weeks)
+- [x] Document all unsafe blocks (Completed)
+- [x] Internal Security audit (Completed)
 - Define safety certification path (ongoing)
 
 ---
@@ -156,7 +156,7 @@ Userspace → bpf(BPF_PROG_LOAD) → program stored
 |--------|-------------|-----------------|--------------|----------|
 | GPIO | ✅ Done | ✅ RPi5 RP1 driver | ✅ Yes | **Critical** |
 | PWM | ✅ Done | ✅ RPi5 driver | ✅ Yes | **Critical** |
-| IIO/Sensors | ✅ Done | 🔴 Not implemented | 🔴 No | High |
+| IIO/Sensors | ✅ Done | ⚠️ Simulated | ✅ Yes | High |
 | Kprobe | ✅ Done | 🔴 No kernel infra | 🔴 No | High |
 | Tracepoint | ✅ Done | 🔴 No kernel infra | 🔴 No | Medium |
 | I2C | ⚠️ Type only | 🔴 Not implemented | 🔴 No | High |

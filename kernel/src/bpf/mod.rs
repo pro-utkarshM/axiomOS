@@ -14,6 +14,7 @@ use kernel_bpf::profile::ActiveProfile;
 pub const ATTACH_TYPE_TIMER: u32 = 1;
 pub const ATTACH_TYPE_GPIO: u32 = 2;
 pub const ATTACH_TYPE_PWM: u32 = 3;
+pub const ATTACH_TYPE_IIO: u32 = 4;
 
 pub struct BpfManager {
     programs: Vec<BpfProgram<ActiveProfile>>,
@@ -91,8 +92,14 @@ impl BpfManager {
     pub fn execute_hooks(&self, attach_type: u32, ctx: &BpfContext) {
         if let Some(progs) = self.attachments.get(&attach_type) {
             for prog_id in progs {
-                // For now, ignore errors from hooks
-                let _ = self.execute(*prog_id, ctx);
+                match self.execute(*prog_id, ctx) {
+                    Ok(res) => {
+                        if attach_type == ATTACH_TYPE_IIO {
+                            log::info!("IIO BPF Hook [id={}] returned: {}", prog_id, res);
+                        }
+                    }
+                    Err(e) => log::error!("BPF Hook [id={}] failed: {:?}", prog_id, e),
+                }
             }
         }
     }

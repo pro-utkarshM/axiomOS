@@ -629,6 +629,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "iio_demo"
+version = "0.1.0"
+dependencies = [
+ "kernel_abi",
+ "minilib",
+]
+
+[[package]]
 name = "init"
 version = "0.1.0"
 dependencies = [
@@ -1016,6 +1024,7 @@ dependencies = [
  "clap",
  "file_structure",
  "gpio_demo",
+ "iio_demo",
  "init",
  "kernel",
  "ovmf-prebuilt",

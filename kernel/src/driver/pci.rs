@@ -88,7 +88,7 @@ pub fn init() {
 ///
 /// This function probes the PCI bus which involves reading from hardware registers.
 /// The caller must ensure that it is safe to access the PCI configuration space.
-unsafe fn iterate_all<C: ConfigurationAccess>(cam: &C) -> impl Iterator<Item = PciAddress> {
+unsafe fn iterate_all<C: ConfigurationAccess>(cam: &C) -> impl Iterator<Item = PciAddress> + '_ {
     (0..=u8::MAX)
         .flat_map(|bus| (0_u8..32).map(move |slot| (bus, slot)))
         .flat_map(|(bus, slot)| {

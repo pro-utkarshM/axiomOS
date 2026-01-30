@@ -7,6 +7,7 @@ pub const STRUCTURE: Dir<'static> = Dir::new(
             &[
                 File::new("init", Kind::Executable),
                 File::new("gpio_demo", Kind::Executable),
+                File::new("iio_demo", Kind::Executable),
             ],
         ),
         Dir::new("dev", &[Dir::new("fd", &[], &[])], &[]),

@@ -244,6 +244,13 @@ pub fn sys_bpf(cmd: usize, attr_ptr: usize, size: usize) -> isize {
                             }
                         }
 
+                        // For IIO attach type, we might want to validate or configure the sensor channel
+                        if attach_type == crate::bpf::ATTACH_TYPE_IIO {
+                            log::info!("sys_bpf: attached BPF program {} to IIO sensor event", prog_id);
+                            // In a full implementation, we would use attr.key and attr.value
+                            // to identify the specific sensor device and channel to enable.
+                        }
+
                         0
                     }
                     Err(e) => {

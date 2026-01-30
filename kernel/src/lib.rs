@@ -135,6 +135,8 @@ pub fn init() {
     backtrace::init();
 
     file::init();
+    driver::iio::init();
+    driver::iio::init_simulated_device();
 
     #[cfg(target_arch = "x86_64")]
     {

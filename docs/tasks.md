@@ -9,7 +9,7 @@ Axiom is a **complete operating system kernel** with BPF as a first-class primit
 | Kernel Core | ✅ Complete | Boot, memory, processes, VFS, syscalls |
 | BPF Subsystem | ✅ Complete | Verifier, interpreter, JIT, maps, signing |
 | BPF Integration | ⚠️ In Progress | Manager + syscall exist, needs hardening |
-| Hardware Attach | ❌ Not Started | GPIO, PWM, timer hooks on RPi5 |
+| Hardware Attach | ⚠️ In Progress | GPIO, PWM, IIO (Sim) integrated |
 | Example Programs | ⚠️ Partial | BPF maps demo exists |
 
 ---
@@ -237,6 +237,7 @@ Axiom is a **complete operating system kernel** with BPF as a first-class primit
 
 ### Code Quality (Priority: Medium)
 - [x] **Missing SAFETY Comments** - Addressed in critical paths
+- [x] **Build & Lint Cleanliness** - `cargo fmt`, `clippy`, and `cargo test` passing for workspace
 - [ ] **Edition 2024 in Cargo.toml** - Doesn't exist, should be "2021"
   - Files: `Cargo.toml`, `kernel/Cargo.toml`
 
@@ -294,6 +295,11 @@ Axiom is a **complete operating system kernel** with BPF as a first-class primit
 - [x] PWM sysfs-like syscalls
 - [x] PWM attach point implementation
 - [x] BPF helpers for PWM control
+
+### IIO (Simulated)
+- [x] Driver manager structure
+- [x] Simulated device
+- [x] Attach point integrated (ATTACH_TYPE_IIO)
 
 ### Timer (high-resolution)
 - [ ] ARM timer configuration

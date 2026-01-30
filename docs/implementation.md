@@ -534,9 +534,10 @@ cargo build --target aarch64-unknown-none --release
 - [ ] Can load program from userspace (needs testing)
 - [ ] Program executes successfully
 
-### Milestone 3: Attach Points Work ❌ NOT STARTED
+### Milestone 3: Attach Points Work ⚠️ PARTIAL
 - [ ] Timer attach point working
 - [ ] Syscall tracing working
+- [x] IIO attach point integrated (Simulated)
 - [ ] BPF runs on events
 
 ### Milestone 4: RPi5 Demo ❌ NOT STARTED

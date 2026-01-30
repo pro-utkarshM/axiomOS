@@ -5,6 +5,7 @@ use core::sync::atomic::Ordering::Relaxed;
 use kernel_device::DeviceId;
 
 pub mod block;
+pub mod iio;
 #[cfg(target_arch = "x86_64")]
 pub mod pci;
 pub mod raw;
