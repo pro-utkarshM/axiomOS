@@ -136,13 +136,15 @@ pub fn init() {
 
     file::init();
     driver::iio::init();
-    driver::iio::init_simulated_device();
 
     #[cfg(target_arch = "x86_64")]
     {
         mcore::init();
         pci::init();
     }
+
+    // Initialize simulated devices after scheduler is ready
+    driver::iio::init_simulated_device();
 
     info!("kernel initialized");
 }
