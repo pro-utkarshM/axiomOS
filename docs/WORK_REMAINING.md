@@ -13,13 +13,14 @@ Axiom has a solid foundation—the kernel boots on real hardware, **and BPF prog
 ```
 What's Done                          What's Left
 ───────────                          ──────────
-✅ Bootable kernel (x86_64, ARM64)   🔴 GPIO/PWM/IIO BPF attach wiring
+✅ Bootable kernel (x86_64, ARM64)   🔴 PWM/IIO BPF attach wiring
 ✅ Memory management                 🔴 Security hardening
 ✅ BPF verifier + interpreter        🔴 PWM/IIO hardware drivers
 ✅ x86_64 JIT + BPF maps             🔴 Real-time guarantees
 ✅ Timer hooks (BPF executes!)       🔴 35 more syscalls
 ✅ Syscall hooks (BPF executes!)     🔴 Production validation
 ✅ RPi5 GPIO driver (MMIO)           🔴 Kprobe/tracepoint infrastructure
+✅ GPIO attach wiring (Verified!)
 ```
 
 ---
@@ -81,7 +82,7 @@ The core BPF-kernel integration is **working**. Timer and syscall hooks execute 
 | **Timer hooks** | ✅ Working | `execute_hooks(1, ctx)` in `idt.rs:169` and `interrupts.rs:63` |
 | **Syscall hooks** | ✅ Working | `execute_hooks(2, ctx)` in `syscall/mod.rs:51` |
 | BPF helpers | ✅ Done | `bpf_ktime_get_ns`, `bpf_trace_printk`, `bpf_map_*` |
-| **GPIO attach** | 🔴 Abstraction only | Not wired to RPi5 GPIO driver |
+| **GPIO attach** | ✅ Working | Wired to RPi5 driver & verified with integration tests |
 | **PWM attach** | 🔴 Abstraction only | No hardware driver |
 | **IIO sensor attach** | 🔴 Abstraction only | No hardware driver |
 | **Kprobe** | 🔴 Abstraction only | No kernel infrastructure |
