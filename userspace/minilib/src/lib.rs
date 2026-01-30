@@ -1,13 +1,21 @@
 #![no_std]
 
 use core::arch::asm;
+#[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::_mm_pause;
 use core::ffi::c_int;
 
 pub fn exit(code: i32) -> ! {
     syscall1(1, code as usize);
     loop {
-        _mm_pause()
+        #[cfg(target_arch = "x86_64")]
+        unsafe {
+            _mm_pause();
+        }
+        #[cfg(target_arch = "aarch64")]
+        unsafe {
+            asm!("wfi");
+        }
     }
 }
 
@@ -25,6 +33,7 @@ pub fn bpf(cmd: c_int, attr: *const u8, size: c_int) -> c_int {
 
 pub fn syscall0(n: usize) -> usize {
     let mut result;
+    #[cfg(target_arch = "x86_64")]
     unsafe {
         asm!(
         "mov rax, {n}",
@@ -34,11 +43,21 @@ pub fn syscall0(n: usize) -> usize {
         result = lateout(reg) result,
         );
     }
+    #[cfg(target_arch = "aarch64")]
+    unsafe {
+        asm!(
+            "svc #0",
+            in("x8") n,
+            lateout("x0") result,
+            options(nostack)
+        );
+    }
     result
 }
 
 pub fn syscall1(n: usize, arg1: usize) -> usize {
     let mut result;
+    #[cfg(target_arch = "x86_64")]
     unsafe {
         asm!(
         "mov rax,{n}",
@@ -50,11 +69,22 @@ pub fn syscall1(n: usize, arg1: usize) -> usize {
         result = lateout(reg) result,
         );
     }
+    #[cfg(target_arch = "aarch64")]
+    unsafe {
+        asm!(
+            "svc #0",
+            in("x8") n,
+            in("x0") arg1,
+            lateout("x0") result,
+            options(nostack)
+        );
+    }
     result
 }
 
 pub fn syscall2(n: usize, arg1: usize, arg2: usize) -> usize {
     let mut result;
+    #[cfg(target_arch = "x86_64")]
     unsafe {
         asm!(
         "mov rax,{n}",
@@ -68,11 +98,23 @@ pub fn syscall2(n: usize, arg1: usize, arg2: usize) -> usize {
         result = lateout(reg) result,
         );
     }
+    #[cfg(target_arch = "aarch64")]
+    unsafe {
+        asm!(
+            "svc #0",
+            in("x8") n,
+            in("x0") arg1,
+            in("x1") arg2,
+            lateout("x0") result,
+            options(nostack)
+        );
+    }
     result
 }
 
 pub fn syscall3(n: usize, arg1: usize, arg2: usize, arg3: usize) -> usize {
     let mut result;
+    #[cfg(target_arch = "x86_64")]
     unsafe {
         asm!(
         "mov rax,{n}",
@@ -86,6 +128,18 @@ pub fn syscall3(n: usize, arg1: usize, arg2: usize, arg3: usize) -> usize {
         arg2 = in(reg) arg2,
         arg3 = in(reg) arg3,
         result = lateout(reg) result,
+        );
+    }
+    #[cfg(target_arch = "aarch64")]
+    unsafe {
+        asm!(
+            "svc #0",
+            in("x8") n,
+            in("x0") arg1,
+            in("x1") arg2,
+            in("x2") arg3,
+            lateout("x0") result,
+            options(nostack)
         );
     }
     result

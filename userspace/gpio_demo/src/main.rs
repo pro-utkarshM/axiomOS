@@ -179,8 +179,13 @@ pub extern "C" fn _start() -> ! {
     loop {
         // Sleep or do work. The BPF program runs in interrupt context.
         // For this demo, we just yield/pause.
+        #[cfg(target_arch = "x86_64")]
         unsafe {
             core::arch::asm!("pause");
+        }
+        #[cfg(target_arch = "aarch64")]
+        unsafe {
+            core::arch::asm!("wfi");
         }
     }
 }
