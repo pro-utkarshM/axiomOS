@@ -45,9 +45,8 @@ pub fn init() {
 
     // SAFETY: We have just mapped this memory region and verified it corresponds
     // to the HPET base address. The pointer is valid and non-null.
-    let hpet_volatile_ptr = unsafe {
-        VolatilePtr::new(NonNull::new(segment.start.as_mut_ptr()).unwrap())
-    };
+    let hpet_volatile_ptr =
+        unsafe { VolatilePtr::new(NonNull::new(segment.start.as_mut_ptr()).unwrap()) };
     let hpet = Hpet {
         segment,
         inner: hpet_volatile_ptr,

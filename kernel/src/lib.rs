@@ -51,8 +51,7 @@ unsafe impl core::alloc::GlobalAlloc for DummyAllocator {
     }
 
     // SAFETY: No-op deallocation is safe because we never allocated anything.
-    unsafe fn dealloc(&self, _ptr: *mut u8, _layout: core::alloc::Layout) {
-    }
+    unsafe fn dealloc(&self, _ptr: *mut u8, _layout: core::alloc::Layout) {}
 }
 #[cfg(target_arch = "x86_64")]
 pub mod sse;

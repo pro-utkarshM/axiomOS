@@ -24,9 +24,7 @@ impl<T> TryFrom<*const T> for UserspacePtr<T> {
 
     fn try_from(ptr: *const T) -> Result<Self, Self::Error> {
         // SAFETY: we use a valid pointer
-        unsafe {
-            Self::try_from_usize(ptr as usize)
-        }
+        unsafe { Self::try_from_usize(ptr as usize) }
     }
 }
 
@@ -98,9 +96,7 @@ impl<T> TryFrom<*mut T> for UserspaceMutPtr<T> {
 
     fn try_from(ptr: *mut T) -> Result<Self, Self::Error> {
         // SAFETY: we use a valid pointer
-        unsafe {
-            Self::try_from_usize(ptr as usize)
-        }
+        unsafe { Self::try_from_usize(ptr as usize) }
     }
 }
 

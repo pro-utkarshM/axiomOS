@@ -48,9 +48,7 @@ pub fn init() {
         let file_size = kernel_file.file().size().into_usize();
         // SAFETY: we keep the part of limine's higher half mapping that contains
         // the kernel file, so dereferencing that pointer is safe.
-        let file_slice = unsafe {
-            from_raw_parts(file_addr.as_mut_ptr::<u8>(), file_size)
-        };
+        let file_slice = unsafe { from_raw_parts(file_addr.as_mut_ptr::<u8>(), file_size) };
         let file = ElfBytes::<elf::endian::NativeEndian>::minimal_parse(file_slice).unwrap();
         let dwarf = Dwarf::load(|section| {
             Ok::<_, ParseError>(EndianSlice::new(
