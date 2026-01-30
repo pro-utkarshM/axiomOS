@@ -500,6 +500,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "784a4df722dc6267a04af36895398f59d21d07dce47232adf31ec0ff2fa45e67"
 
 [[package]]
+name = "file_io_demo"
+version = "0.1.0"
+dependencies = [
+ "kernel_abi",
+ "minilib",
+]
+
+[[package]]
 name = "file_structure"
 version = "0.1.0"
 
@@ -1022,6 +1030,7 @@ name = "muffinos"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "file_io_demo",
  "file_structure",
  "gpio_demo",
  "iio_demo",
