@@ -164,7 +164,7 @@ impl PageTableWalker {
         size: usize,
         flags: u64,
     ) -> Result<(), &'static str> {
-        let pages = (size + PAGE_SIZE - 1) / PAGE_SIZE;
+        let pages = size.div_ceil(PAGE_SIZE);
 
         for i in 0..pages {
             let virt = virt_start + i * PAGE_SIZE;
@@ -390,9 +390,8 @@ pub unsafe fn configure_tcr() {
     // - IRGN0/IRGN1 = 1 (Write-back cacheable)
     // - IPS = based on physical address size
 
-    let tcr: u64 = (16 << 0)        // T0SZ
-                 | (16 << 16)       // T1SZ
-                 | (0b00 << 14)     // TG0 = 4KB
+    let tcr: u64 = 16               // T0SZ = 16 (48-bit VA)
+                 | (16 << 16)       // T1SZ = 16 (48-bit VA)
                  | (0b10 << 30)     // TG1 = 4KB
                  | (0b11 << 12)     // SH0 = Inner Shareable
                  | (0b11 << 28)     // SH1 = Inner Shareable

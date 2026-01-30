@@ -112,7 +112,7 @@ pub extern "C" fn bpf_pwm_write(pwm_id: u32, channel: u32, duty_percent: u32) ->
     {
         use crate::arch::aarch64::platform::rpi5::pwm::{PWM0, PWM1};
 
-        if channel < 1 || channel > 2 {
+        if !(1..=2).contains(&channel) {
             return -1;
         }
 

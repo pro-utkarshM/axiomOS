@@ -33,7 +33,7 @@ pub fn sys_pwm_config(pwm_id: usize, freq_hz: usize) -> isize {
 /// - `channel`: 1 or 2
 /// - `duty_percent`: 0-100 (percentage)
 pub fn sys_pwm_write(pwm_id: usize, channel: usize, duty_percent: usize) -> isize {
-    if channel < 1 || channel > 2 {
+    if !(1..=2).contains(&channel) {
         return -1;
     }
 
@@ -59,7 +59,7 @@ pub fn sys_pwm_write(pwm_id: usize, channel: usize, duty_percent: usize) -> isiz
 /// - `channel`: 1 or 2
 /// - `enable`: 0 (disable) or 1 (enable)
 pub fn sys_pwm_enable(pwm_id: usize, channel: usize, enable: usize) -> isize {
-    if channel < 1 || channel > 2 {
+    if !(1..=2).contains(&channel) {
         return -1;
     }
 

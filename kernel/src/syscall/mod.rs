@@ -1,4 +1,5 @@
 use core::ops::Neg;
+#[cfg(target_arch = "x86_64")]
 use core::slice::{from_raw_parts, from_raw_parts_mut};
 
 #[cfg(target_arch = "x86_64")]
@@ -7,6 +8,16 @@ use kernel_abi::{EINVAL, Errno, syscall_name};
 use log::{error, trace};
 #[cfg(target_arch = "x86_64")]
 use x86_64::instructions::hlt;
+
+#[cfg(target_arch = "x86_64")]
+use kernel_syscall::{
+    access::FileAccess,
+    fcntl::sys_open,
+    mman::sys_mmap,
+    stat::sys_fstat,
+    unistd::{sys_close, sys_getcwd, sys_lseek, sys_read, sys_write},
+    UserspaceMutPtr, UserspacePtr,
+};
 
 #[cfg(not(target_arch = "x86_64"))]
 fn hlt() {
@@ -118,6 +129,7 @@ pub fn dispatch_syscall(
 /// - The memory is properly aligned for type `T`
 /// - The memory remains valid for the lifetime `'a`
 /// - No mutable references to the memory exist during the slice's lifetime
+#[cfg(target_arch = "x86_64")]
 unsafe fn slice_from_ptr_and_len<'a, T>(ptr: usize, len: usize) -> Result<&'a [T], Errno> {
     if ptr == 0 || len == 0 {
         return Err(EINVAL);
@@ -138,6 +150,7 @@ unsafe fn slice_from_ptr_and_len<'a, T>(ptr: usize, len: usize) -> Result<&'a [T
 /// - The memory is properly aligned for type `T`
 /// - The memory remains valid for the lifetime `'a`
 /// - No other references (mutable or immutable) to the memory exist
+#[cfg(target_arch = "x86_64")]
 unsafe fn slice_from_ptr_and_len_mut<'a, T>(ptr: usize, len: usize) -> Result<&'a mut [T], Errno> {
     if ptr == 0 || len == 0 {
         return Err(EINVAL);

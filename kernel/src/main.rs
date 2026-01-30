@@ -16,6 +16,24 @@ use log::{error, info};
 #[cfg(target_arch = "x86_64")]
 use x86_64::instructions::hlt;
 
+#[cfg(target_arch = "x86_64")]
+use alloc::{boxed::Box, sync::Arc};
+#[cfg(target_arch = "x86_64")]
+use core::error::Error;
+#[cfg(target_arch = "x86_64")]
+use ext2::Ext2Fs;
+#[cfg(target_arch = "x86_64")]
+use kernel::{
+    driver::{block::BlockDevices, KernelDeviceId},
+    file::{ext2::VirtualExt2Fs, vfs},
+};
+#[cfg(target_arch = "x86_64")]
+use kernel_device::block::{BlockBuf, BlockDevice};
+#[cfg(target_arch = "x86_64")]
+use kernel_vfs::path::{AbsolutePath, ROOT};
+#[cfg(target_arch = "x86_64")]
+use spin::RwLock;
+
 #[cfg(not(target_arch = "x86_64"))]
 fn hlt() {
     #[cfg(target_arch = "riscv64")]

@@ -793,8 +793,8 @@ mod tests {
 
         let program = ProgramBuilder::<ActiveProfile>::new(BpfProgType::SocketFilter)
             .insn(BpfInsn::mov64_imm(1, 17)) // r1 = pin 17
-            .insn(BpfInsn::mov64_imm(2, 1))  // r2 = value 1
-            .insn(BpfInsn::call(1003))       // r0 = bpf_gpio_write(r1, r2)
+            .insn(BpfInsn::mov64_imm(2, 1)) // r2 = value 1
+            .insn(BpfInsn::call(1003)) // r0 = bpf_gpio_write(r1, r2)
             .exit()
             .build()
             .expect("valid program");

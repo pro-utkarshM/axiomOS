@@ -106,6 +106,7 @@ pub unsafe fn parse(dtb_addr: usize) -> Result<(), &'static str> { unsafe {
 }}
 
 /// Get the parsed device tree information
+#[allow(clippy::deref_addrof)]
 pub fn info() -> &'static DeviceTreeInfo {
     unsafe { &*(&raw const DTB_INFO) }
 }

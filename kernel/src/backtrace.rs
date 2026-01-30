@@ -1,5 +1,7 @@
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
+#[cfg(target_arch = "x86_64")]
+use core::arch::asm;
 use core::fmt::{Debug, Display, Formatter};
 use core::iter;
 

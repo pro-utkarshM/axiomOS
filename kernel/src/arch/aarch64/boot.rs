@@ -6,16 +6,23 @@ pub struct BootInfo {
 static mut BOOT_INFO: BootInfo = BootInfo { dtb_addr: 0 };
 
 /// Initialize boot information
+///
+/// # Safety
+/// The caller must ensure that `dtb_addr` is a valid physical address.
 pub unsafe fn init_boot_info(dtb_addr: usize) { unsafe {
     BOOT_INFO.dtb_addr = dtb_addr;
 }}
 
 /// Get boot information
+#[allow(clippy::deref_addrof)]
 pub fn boot_info() -> &'static BootInfo {
     unsafe { &*(&raw const BOOT_INFO) }
 }
 
 /// Early boot initialization (called from assembly)
+///
+/// # Safety
+/// This function is the kernel entry point and expects to be called with MMU disabled.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn _start(dtb_addr: usize) -> ! {
     // Initialize boot info

@@ -36,7 +36,7 @@ pub fn init_exception_vector() {
     }
 }
 
-/// Exception vector base (defined in assembly)
+// Exception vector base (defined in assembly)
 unsafe extern "C" {
     fn exception_vector_base();
 }

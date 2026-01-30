@@ -113,6 +113,7 @@ pub struct LazyMemoryRegion {
     size: usize,
     /// The physical frames that were mapped for this lazy
     /// memory region.
+    #[allow(dead_code)]
     physical_frames: Mutex<Vec<PhysFrame>>,
 }
 
@@ -126,6 +127,7 @@ impl Drop for LazyMemoryRegion {
 pub struct MappedMemoryRegion {
     segment: OwnedSegment<'static>,
     size: usize,
+    #[allow(dead_code)]
     physical_frames: PhysFrameRangeInclusive,
 }
 
@@ -152,6 +154,7 @@ impl Drop for MappedMemoryRegion {
 #[derive(Debug)]
 pub struct FileBackedMemoryRegion {
     region: LazyMemoryRegion,
+    #[allow(dead_code)]
     node: VfsNode,
 }
 

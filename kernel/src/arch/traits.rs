@@ -104,6 +104,7 @@ impl Default for ArchState {
     target_arch = "riscv64",
     all(target_arch = "aarch64", feature = "aarch64_arch")
 ))]
+#[allow(clippy::derivable_impls)]
 impl Default for ArchState {
     fn default() -> Self {
         #[cfg(target_arch = "x86_64")]

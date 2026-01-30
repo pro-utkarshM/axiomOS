@@ -240,7 +240,7 @@ impl BitmapAllocator {
         total_frames = total_frames.saturating_sub(skip_frames);
 
         // Allocate bitmap
-        let bitmap_size = (total_frames + 63) / 64;
+        let bitmap_size = total_frames.div_ceil(64);
         let mut bitmap = alloc::vec![0u64; bitmap_size];
 
         // Mark pre-allocated frames as used

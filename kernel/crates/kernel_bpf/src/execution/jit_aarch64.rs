@@ -448,6 +448,7 @@ impl Arm64Emitter {
 /// ARM64 JIT-compiled BPF program.
 pub struct Arm64JitProgram {
     /// Executable code
+    #[allow(dead_code)]
     code: Vec<u8>,
     /// Entry point function
     #[allow(dead_code)]

@@ -70,6 +70,7 @@ mod ctrl {
     /// Output override (bit 13)
     pub const OUTOVER_SHIFT: u32 = 13;
     /// Output enable override (bit 15)
+    #[allow(dead_code)]
     pub const OEOVER_SHIFT: u32 = 15;
 }
 
@@ -82,8 +83,10 @@ mod status {
     /// Rising edge event detected (bit 21)
     pub const EVENT_RISING: u32 = 1 << 21;
     /// Low level event detected (bit 22)
+    #[allow(dead_code)]
     pub const EVENT_LOW: u32 = 1 << 22;
     /// High level event detected (bit 23)
+    #[allow(dead_code)]
     pub const EVENT_HIGH: u32 = 1 << 23;
     /// Mask for all raw event bits
     pub const EVENT_MASK: u32 = 0xF << 20;
@@ -96,8 +99,10 @@ mod irq_ctrl {
     /// Enable rising edge interrupt (bit 21)
     pub const IRQEN_RISING: u32 = 1 << 21;
     /// Enable low level interrupt (bit 22)
+    #[allow(dead_code)]
     pub const IRQEN_LOW: u32 = 1 << 22;
     /// Enable high level interrupt (bit 23)
+    #[allow(dead_code)]
     pub const IRQEN_HIGH: u32 = 1 << 23;
     /// IRQ reset - write 1 to clear pending interrupt (bit 28)
     pub const IRQRESET: u32 = 1 << 28;

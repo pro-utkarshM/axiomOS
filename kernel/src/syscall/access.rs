@@ -103,7 +103,13 @@ impl FileAccess for KernelAccess<'_> {
     }
 
     fn close(&self, fd: Self::Fd) -> Result<(), ()> {
-        if self.process.file_descriptors().write().remove(&fd).is_some() {
+        if self
+            .process
+            .file_descriptors()
+            .write()
+            .remove(&fd)
+            .is_some()
+        {
             Ok(())
         } else {
             Err(())

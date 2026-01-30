@@ -131,6 +131,7 @@ static CPU_CONTEXTS: [CpuContext; MAX_CPUS] = [
 ];
 
 /// Current CPU context initialization flag
+#[allow(dead_code)]
 static CURRENT_CPU_INIT: Once = Once::new();
 
 /// Initialize the current CPU's context

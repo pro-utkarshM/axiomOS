@@ -19,20 +19,25 @@ mod reg {
     /// Data Register - read/write data
     pub const DR: usize = 0x00;
     /// Receive Status / Error Clear Register
+    #[allow(dead_code)]
     pub const RSRECR: usize = 0x04;
     /// Flag Register - status flags
     pub const FR: usize = 0x18;
     /// Integer Baud Rate Divisor
+    #[allow(dead_code)]
     pub const IBRD: usize = 0x24;
     /// Fractional Baud Rate Divisor
+    #[allow(dead_code)]
     pub const FBRD: usize = 0x28;
     /// Line Control Register
     pub const LCRH: usize = 0x2C;
     /// Control Register
     pub const CR: usize = 0x30;
     /// Interrupt FIFO Level Select Register
+    #[allow(dead_code)]
     pub const IFLS: usize = 0x34;
     /// Interrupt Mask Set/Clear Register
+    #[allow(dead_code)]
     pub const IMSC: usize = 0x38;
     /// Interrupt Clear Register
     pub const ICR: usize = 0x44;
@@ -55,18 +60,25 @@ mod lcrh {
     /// Word length: 8 bits
     pub const WLEN_8: u32 = 0b11 << 5;
     /// Word length: 7 bits
+    #[allow(dead_code)]
     pub const WLEN_7: u32 = 0b10 << 5;
     /// Word length: 6 bits
+    #[allow(dead_code)]
     pub const WLEN_6: u32 = 0b01 << 5;
     /// Word length: 5 bits
+    #[allow(dead_code)]
     pub const WLEN_5: u32 = 0b00 << 5;
     /// Enable 2 stop bits
+    #[allow(dead_code)]
     pub const STP2: u32 = 1 << 3;
     /// Even parity select
+    #[allow(dead_code)]
     pub const EPS: u32 = 1 << 2;
     /// Parity enable
+    #[allow(dead_code)]
     pub const PEN: u32 = 1 << 1;
     /// Send break
+    #[allow(dead_code)]
     pub const BRK: u32 = 1 << 0;
 }
 
@@ -75,12 +87,14 @@ mod cr {
     /// UART enable
     pub const UARTEN: u32 = 1 << 0;
     /// Loopback enable
+    #[allow(dead_code)]
     pub const LBE: u32 = 1 << 7;
     /// Transmit enable
     pub const TXE: u32 = 1 << 8;
     /// Receive enable
     pub const RXE: u32 = 1 << 9;
     /// Request to send
+    #[allow(dead_code)]
     pub const RTS: u32 = 1 << 11;
 }
 

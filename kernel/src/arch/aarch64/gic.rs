@@ -17,12 +17,14 @@ mod gicd {
     /// Interrupt Controller Type Register
     pub const TYPER: usize = 0x004;
     /// Distributor Implementer Identification Register
+    #[allow(dead_code)]
     pub const IIDR: usize = 0x008;
     /// Interrupt Set-Enable Registers (32 bits each, 1 bit per IRQ)
     pub const ISENABLER: usize = 0x100;
     /// Interrupt Clear-Enable Registers
     pub const ICENABLER: usize = 0x180;
     /// Interrupt Set-Pending Registers
+    #[allow(dead_code)]
     pub const ISPENDR: usize = 0x200;
     /// Interrupt Clear-Pending Registers
     pub const ICPENDR: usize = 0x280;
@@ -41,14 +43,17 @@ mod gicc {
     /// Interrupt Priority Mask Register
     pub const PMR: usize = 0x004;
     /// Binary Point Register
+    #[allow(dead_code)]
     pub const BPR: usize = 0x008;
     /// Interrupt Acknowledge Register
     pub const IAR: usize = 0x00C;
     /// End of Interrupt Register
     pub const EOIR: usize = 0x010;
     /// Running Priority Register
+    #[allow(dead_code)]
     pub const RPR: usize = 0x014;
     /// Highest Priority Pending Interrupt Register
+    #[allow(dead_code)]
     pub const HPPIR: usize = 0x018;
 }
 
@@ -89,7 +94,7 @@ pub fn init() {
         log::debug!("GIC supports {} IRQs", num_irqs);
 
         // Disable all interrupts
-        let num_regs = (num_irqs + 31) / 32;
+        let num_regs = num_irqs.div_ceil(32);
         for i in 0..num_regs {
             write_gicd(gicd::ICENABLER + i as usize * 4, 0xFFFF_FFFF);
         }
@@ -100,20 +105,20 @@ pub fn init() {
         }
 
         // Set all interrupts to lowest priority (0xFF)
-        let num_priority_regs = (num_irqs + 3) / 4;
+        let num_priority_regs = num_irqs.div_ceil(4);
         for i in 0..num_priority_regs {
             write_gicd(gicd::IPRIORITYR + i as usize * 4, 0xFFFF_FFFF);
         }
 
         // Route all SPIs to CPU 0
-        let num_target_regs = (num_irqs + 3) / 4;
+        let num_target_regs = num_irqs.div_ceil(4);
         for i in 8..num_target_regs {
             // Skip first 8 (SGIs/PPIs are per-CPU)
             write_gicd(gicd::ITARGETSR + i as usize * 4, 0x0101_0101);
         }
 
         // Configure all interrupts as level-triggered
-        let num_cfg_regs = (num_irqs + 15) / 16;
+        let num_cfg_regs = num_irqs.div_ceil(16);
         for i in 0..num_cfg_regs {
             write_gicd(gicd::ICFGR + i as usize * 4, 0);
         }

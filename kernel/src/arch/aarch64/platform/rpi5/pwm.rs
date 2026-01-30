@@ -39,14 +39,19 @@ mod ctl {
     /// Channel 1 Enable
     pub const PWEN1: u32 = 1 << 0;
     /// Channel 1 Mode (0: PWM, 1: Serialiser)
+    #[allow(dead_code)]
     pub const MODE1: u32 = 1 << 1;
     /// Channel 1 Repeat Last Data
+    #[allow(dead_code)]
     pub const RPTL1: u32 = 1 << 2;
     /// Channel 1 Silence Value
+    #[allow(dead_code)]
     pub const SBIT1: u32 = 1 << 3;
     /// Channel 1 Polarity (0: Normal, 1: Inverted)
+    #[allow(dead_code)]
     pub const POLA1: u32 = 1 << 4;
     /// Channel 1 Use FIFO
+    #[allow(dead_code)]
     pub const USEF1: u32 = 1 << 5;
     /// Channel 1 MS Mode (0: PWM, 1: M/S)
     pub const MSEN1: u32 = 1 << 7;
@@ -54,14 +59,19 @@ mod ctl {
     /// Channel 2 Enable
     pub const PWEN2: u32 = 1 << 8;
     /// Channel 2 Mode
+    #[allow(dead_code)]
     pub const MODE2: u32 = 1 << 9;
     /// Channel 2 Repeat Last Data
+    #[allow(dead_code)]
     pub const RPTL2: u32 = 1 << 10;
     /// Channel 2 Silence Value
+    #[allow(dead_code)]
     pub const SBIT2: u32 = 1 << 11;
     /// Channel 2 Polarity
+    #[allow(dead_code)]
     pub const POLA2: u32 = 1 << 12;
     /// Channel 2 Use FIFO
+    #[allow(dead_code)]
     pub const USEF2: u32 = 1 << 13;
     /// Channel 2 MS Mode
     pub const MSEN2: u32 = 1 << 15;
@@ -70,18 +80,25 @@ mod ctl {
 /// Status Register bit fields
 mod sta {
     /// Channel 1 Full
+    #[allow(dead_code)]
     pub const FULL1: u32 = 1 << 0;
     /// Channel 1 Empt
+    #[allow(dead_code)]
     pub const EMPT1: u32 = 1 << 1;
     /// Channel 1 Werr
+    #[allow(dead_code)]
     pub const WERR1: u32 = 1 << 2;
     /// Channel 1 Rerr
+    #[allow(dead_code)]
     pub const RERR1: u32 = 1 << 3;
     /// Channel 1 Gap
+    #[allow(dead_code)]
     pub const GAP1: u32 = 1 << 4;
     /// Channel 1 Berp
+    #[allow(dead_code)]
     pub const BERR: u32 = 1 << 8;
     /// Channel 1 Sta
+    #[allow(dead_code)]
     pub const STA1: u32 = 1 << 9;
 }
 

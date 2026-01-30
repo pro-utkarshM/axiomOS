@@ -1,8 +1,8 @@
 #![no_std]
 #![no_main]
 
-use minilib::{write, bpf, exit};
 use kernel_abi::BpfAttr;
+use minilib::{bpf, exit, write};
 
 // Hardcoded for RPi5 GPIO demo
 const BUTTON_PIN: u32 = 17;
@@ -37,42 +37,94 @@ pub extern "C" fn _start() -> ! {
     #[allow(clippy::identity_op)]
     let insns = [
         // R6 = R1 (Save context pointer)
-        BpfInsn { code: 0xbf, dst_src: 0x61, off: 0, imm: 0 },
-
+        BpfInsn {
+            code: 0xbf,
+            dst_src: 0x61,
+            off: 0,
+            imm: 0,
+        },
         // R2 = *(u32 *)(R6 + 12)  // Load 'line' from GpioEvent
-        BpfInsn { code: 0x61, dst_src: 0x26, off: 12, imm: 0 },
-
+        BpfInsn {
+            code: 0x61,
+            dst_src: 0x26,
+            off: 12,
+            imm: 0,
+        },
         // If R2 != BUTTON_PIN, goto EXIT (skip next 7 instructions)
-        BpfInsn { code: 0x55, dst_src: 0x02, off: 7, imm: BUTTON_PIN as i32 },
-
+        BpfInsn {
+            code: 0x55,
+            dst_src: 0x02,
+            off: 7,
+            imm: BUTTON_PIN as i32,
+        },
         // --- Button Pressed Logic ---
 
         // R1 = LED_PIN
-        BpfInsn { code: 0xb7, dst_src: 0x01, off: 0, imm: LED_PIN as i32 },
-
+        BpfInsn {
+            code: 0xb7,
+            dst_src: 0x01,
+            off: 0,
+            imm: LED_PIN as i32,
+        },
         // Call bpf_gpio_read(R1) -> R0
-        BpfInsn { code: 0x85, dst_src: 0x00, off: 0, imm: HELPER_GPIO_READ },
-
+        BpfInsn {
+            code: 0x85,
+            dst_src: 0x00,
+            off: 0,
+            imm: HELPER_GPIO_READ,
+        },
         // Calculate toggle: R2 = (R0 == 0) ? 1 : 0
         // We'll use a trick or simple branching. Let's use branching.
         // If R0 != 0, goto SET_LOW (skip 1)
-        BpfInsn { code: 0x55, dst_src: 0x00, off: 1, imm: 0 },
+        BpfInsn {
+            code: 0x55,
+            dst_src: 0x00,
+            off: 1,
+            imm: 0,
+        },
         // R2 = 1 (was 0, set to 1)
-        BpfInsn { code: 0xb7, dst_src: 0x02, off: 0, imm: 1 },
+        BpfInsn {
+            code: 0xb7,
+            dst_src: 0x02,
+            off: 0,
+            imm: 1,
+        },
         // Goto WRITE (skip 1)
-        BpfInsn { code: 0x05, dst_src: 0x00, off: 1, imm: 0 },
-
+        BpfInsn {
+            code: 0x05,
+            dst_src: 0x00,
+            off: 1,
+            imm: 0,
+        },
         // SET_LOW: R2 = 0
-        BpfInsn { code: 0xb7, dst_src: 0x02, off: 0, imm: 0 },
-
+        BpfInsn {
+            code: 0xb7,
+            dst_src: 0x02,
+            off: 0,
+            imm: 0,
+        },
         // WRITE:
         // R1 = LED_PIN
-        BpfInsn { code: 0xb7, dst_src: 0x01, off: 0, imm: LED_PIN as i32 },
+        BpfInsn {
+            code: 0xb7,
+            dst_src: 0x01,
+            off: 0,
+            imm: LED_PIN as i32,
+        },
         // Call bpf_gpio_write(R1, R2)
-        BpfInsn { code: 0x85, dst_src: 0x00, off: 0, imm: HELPER_GPIO_WRITE },
-
+        BpfInsn {
+            code: 0x85,
+            dst_src: 0x00,
+            off: 0,
+            imm: HELPER_GPIO_WRITE,
+        },
         // EXIT:
-        BpfInsn { code: 0x95, dst_src: 0x00, off: 0, imm: 0 },
+        BpfInsn {
+            code: 0x95,
+            dst_src: 0x00,
+            off: 0,
+            imm: 0,
+        },
     ];
 
     print("Loading BPF program...\n");
@@ -105,7 +157,7 @@ pub extern "C" fn _start() -> ! {
         attach_btf_id: 2, // ATTACH_TYPE_GPIO
         attach_prog_fd: prog_id as u32,
         key: BUTTON_PIN as u64, // Pin number
-        value: 1, // 1=Rising Edge, 2=Falling, 3=Both
+        value: 1,               // 1=Rising Edge, 2=Falling, 3=Both
         ..Default::default()
     };
 

@@ -54,6 +54,7 @@ pub fn init() {
 ///
 /// Creates identity mapping for low memory and higher-half mapping for kernel.
 unsafe fn setup_kernel_page_tables(total_memory: usize) {
+    #[allow(clippy::deref_addrof)]
     let boot_tables = unsafe { &mut *(&raw mut BOOT_TABLES) };
 
     // Clear all tables
@@ -136,6 +137,7 @@ pub fn create_user_address_space() -> Option<*mut PageTable> {
         ptr::write_bytes(l0_ptr, 0, 1);
 
         // Copy kernel mappings (upper half - entry 256-511)
+        #[allow(clippy::deref_addrof)]
         let boot_l0 = &*(&raw const BOOT_TABLES.l0);
         let new_l0 = &mut *l0_ptr;
 
