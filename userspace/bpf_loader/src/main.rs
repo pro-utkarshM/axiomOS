@@ -49,10 +49,12 @@ pub extern "C" fn _start() -> ! {
 
     use kernel_abi::BpfAttr;
 
-    let mut attr = BpfAttr::default();
-    attr.prog_type = 1; // SOCKET_FILTER (arbitrary for now)
-    attr.insn_cnt = 2;
-    attr.insns = insns.as_ptr() as u64;
+    let attr = BpfAttr {
+        prog_type: 1, // SOCKET_FILTER (arbitrary for now)
+        insn_cnt: 2,
+        insns: insns.as_ptr() as u64,
+        ..Default::default()
+    };
 
     let attr_ptr = &attr as *const BpfAttr as *const u8;
 
