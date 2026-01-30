@@ -335,9 +335,9 @@ pub fn handle_interrupt() {
             // Determine the edge type for BPF context
             // 1 = rising, 2 = falling, 3 = both (shouldn't normally happen)
             let edge = match (is_rising, is_falling) {
-                (true, false) => 1,  // Rising
-                (false, true) => 2,  // Falling
-                (true, true) => 3,   // Both (edge case)
+                (true, false) => 1, // Rising
+                (false, true) => 2, // Falling
+                (true, true) => 3,  // Both (edge case)
                 (false, false) => {
                     // Level interrupt or spurious - skip
                     gpio.clear_interrupt(pin);
@@ -373,7 +373,9 @@ pub fn handle_interrupt() {
             // 3. Invoke BPF hooks
             if let Some(manager) = crate::BPF_MANAGER.get() {
                 // Execute all attached BPF programs
-                manager.lock().execute_hooks(crate::bpf::ATTACH_TYPE_GPIO, &ctx);
+                manager
+                    .lock()
+                    .execute_hooks(crate::bpf::ATTACH_TYPE_GPIO, &ctx);
             }
         }
     }

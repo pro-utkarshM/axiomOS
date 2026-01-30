@@ -718,7 +718,7 @@ mod operations_32bit {
         // mov32_imm opcode: 0xb4, add32_imm opcode: 0x04
         let program = ProgramBuilder::<ActiveProfile>::new(BpfProgType::SocketFilter)
             .insn(BpfInsn::new(0xb4, 0, 0, 0, -1)) // mov32 r0, 0xFFFFFFFF
-            .insn(BpfInsn::new(0x04, 0, 0, 0, 1))  // add32 r0, 1
+            .insn(BpfInsn::new(0x04, 0, 0, 0, 1)) // add32 r0, 1
             .insn(BpfInsn::exit())
             .build()
             .expect("valid program");

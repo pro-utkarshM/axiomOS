@@ -53,7 +53,11 @@ pub fn init() {
     // Initialize and start the timer
     init_timer();
 
-    log::info!("ARM interrupts initialized (timer={}, gpio={})", TIMER_IRQ, RP1_GPIO_IRQ);
+    log::info!(
+        "ARM interrupts initialized (timer={}, gpio={})",
+        TIMER_IRQ,
+        RP1_GPIO_IRQ
+    );
 }
 
 /// Handle IRQ interrupt (called from exception vector)

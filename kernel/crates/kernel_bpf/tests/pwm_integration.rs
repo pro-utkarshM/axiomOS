@@ -99,18 +99,14 @@ fn test_pwm_event_processing() {
         // R1 points to context (BpfContext)
         // 1. Load data pointer from BpfContext.data (offset 0) into R4
         .insn(BpfInsn::new(0x79, 4, 1, 0, 0)) // LDX_DW R4, [R1+0]
-
         // 2. Load duty_ns into R2 (LDX_W) from R4
         .insn(BpfInsn::new(0x61, 2, 4, 20, 0))
         // 3. Load period_ns into R3 (LDX_W) from R4
         .insn(BpfInsn::new(0x61, 3, 4, 16, 0))
-
         // Calculate (duty * 100)
         .insn(BpfInsn::mul64_imm(2, 100))
-
         // Calculate result / period (DIV64_REG)
         .insn(BpfInsn::new(0x3F, 2, 3, 0, 0))
-
         // Move result to R0 and exit
         .insn(BpfInsn::mov64_reg(0, 2))
         .insn(BpfInsn::exit())
@@ -152,10 +148,8 @@ fn test_pwm_event_filtering() {
     let program = ProgramBuilder::<ActiveProfile>::new(BpfProgType::SocketFilter)
         // 1. Load data pointer from BpfContext.data (offset 0) into R4
         .insn(BpfInsn::new(0x79, 4, 1, 0, 0)) // LDX_DW R4, [R1+0]
-
         // 2. Load channel from offset 12 (LDX_W) from R4
         .insn(BpfInsn::new(0x61, 2, 4, 12, 0))
-
         // If channel != 1, jump to exit (return 0)
         .insn(BpfInsn::new(0x55, 0, 2, 2, 1)) // JNE R2, 1, +2
         // Match: return 1

@@ -34,10 +34,10 @@ fn hlt() {
 
 #[cfg(target_arch = "x86_64")]
 mod access;
-mod validation;
 pub mod bpf;
 #[cfg(all(target_arch = "aarch64", feature = "rpi5"))]
 pub mod pwm;
+mod validation;
 
 #[must_use]
 pub fn dispatch_syscall(
@@ -89,8 +89,11 @@ pub fn dispatch_syscall(
         kernel_abi::SYS_FSTAT => dispatch_sys_fstat(arg1, arg2),
         kernel_abi::SYS_LSEEK => dispatch_sys_lseek(arg1, arg2, arg3),
         kernel_abi::SYS_BPF => dispatch_sys_bpf(arg1, arg2, arg3),
+        #[cfg(all(target_arch = "aarch64", feature = "rpi5"))]
         kernel_abi::SYS_PWM_CONFIG => dispatch_sys_pwm_config(arg1, arg2),
+        #[cfg(all(target_arch = "aarch64", feature = "rpi5"))]
         kernel_abi::SYS_PWM_WRITE => dispatch_sys_pwm_write(arg1, arg2, arg3),
+        #[cfg(all(target_arch = "aarch64", feature = "rpi5"))]
         kernel_abi::SYS_PWM_ENABLE => dispatch_sys_pwm_enable(arg1, arg2, arg3),
         _ => {
             error!("unimplemented syscall: {} ({n})", syscall_name(n));

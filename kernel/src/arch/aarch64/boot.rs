@@ -45,7 +45,5 @@ pub unsafe extern "C" fn _start(dtb_addr: usize) -> ! {
         fn kernel_main() -> !;
     }
 
-    unsafe {
-        kernel_main()
-    }
+    unsafe { kernel_main() }
 }

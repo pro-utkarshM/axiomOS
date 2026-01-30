@@ -68,8 +68,6 @@ pub fn copy_to_userspace(ptr: usize, data: &[u8]) -> Result<(), Errno> {
     // 3. Within valid bounds for data.len() bytes (validated by validate_range)
     // u8 has no alignment requirements. copy_nonoverlapping requires non-overlapping
     // src/dst, which is guaranteed since data is kernel memory and ptr is userspace.
-    unsafe {
-        core::ptr::copy_nonoverlapping(data.as_ptr(), ptr as *mut u8, data.len())
-    }
+    unsafe { core::ptr::copy_nonoverlapping(data.as_ptr(), ptr as *mut u8, data.len()) }
     Ok(())
 }

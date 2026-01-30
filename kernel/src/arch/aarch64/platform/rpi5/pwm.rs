@@ -3,11 +3,12 @@
 //! The RP1 chip has two PWM controllers (PWM0 and PWM1), each with two channels.
 //! This driver provides basic functionality to control frequency and duty cycle.
 
+use kernel_bpf::attach::PwmEvent;
+use kernel_bpf::execution::BpfContext;
+
 use super::memory_map::{RP1_PWM0_BASE, RP1_PWM1_BASE};
 use super::mmio::MmioReg;
 use crate::bpf::{ATTACH_TYPE_PWM, BPF_MANAGER};
-use kernel_bpf::attach::PwmEvent;
-use kernel_bpf::execution::BpfContext;
 
 /// PWM Register offsets
 mod reg {
@@ -88,7 +89,9 @@ impl Rp1Pwm {
     ///
     /// Must be called only once for PWM0.
     pub const unsafe fn pwm0() -> Self {
-        Self { base: RP1_PWM0_BASE }
+        Self {
+            base: RP1_PWM0_BASE,
+        }
     }
 
     /// Create a new PWM instance for PWM1
@@ -97,7 +100,9 @@ impl Rp1Pwm {
     ///
     /// Must be called only once for PWM1.
     pub const unsafe fn pwm1() -> Self {
-        Self { base: RP1_PWM1_BASE }
+        Self {
+            base: RP1_PWM1_BASE,
+        }
     }
 
     /// Initialize the PWM controller

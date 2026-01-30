@@ -7,8 +7,8 @@ use kernel_abi::{
 };
 use kernel_bpf::bytecode::insn::BpfInsn;
 
+use super::validation::{copy_from_userspace, copy_to_userspace, read_userspace_slice};
 use crate::BPF_MANAGER;
-use super::validation::{copy_from_userspace, read_userspace_slice, copy_to_userspace};
 
 pub fn sys_bpf(cmd: usize, attr_ptr: usize, _size: usize) -> isize {
     // Basic permissions check would go here
@@ -67,7 +67,7 @@ pub fn sys_bpf(cmd: usize, attr_ptr: usize, _size: usize) -> isize {
                 let mgr = manager.lock();
                 // Get key size from map (for now, assume 4 bytes)
                 let key_size = 4usize; // TODO: get from map def
-                
+
                 let key = match read_userspace_slice(key_ptr as usize, key_size) {
                     Ok(k) => k,
                     Err(_) => return -1,
@@ -108,12 +108,11 @@ pub fn sys_bpf(cmd: usize, attr_ptr: usize, _size: usize) -> isize {
                 let key_size = 4usize;
                 let value_size = 8usize;
 
-                
                 let key = match read_userspace_slice(key_ptr as usize, key_size) {
                     Ok(k) => k,
                     Err(_) => return -1,
                 };
-                
+
                 let value = match read_userspace_slice(value_ptr as usize, value_size) {
                     Ok(v) => v,
                     Err(_) => return -1,
@@ -147,7 +146,7 @@ pub fn sys_bpf(cmd: usize, attr_ptr: usize, _size: usize) -> isize {
             if let Some(manager) = BPF_MANAGER.get() {
                 let mgr = manager.lock();
                 let key_size = 4usize;
-                
+
                 let key = match read_userspace_slice(key_ptr as usize, key_size) {
                     Ok(k) => k,
                     Err(_) => return -1,
@@ -191,8 +190,9 @@ pub fn sys_bpf(cmd: usize, attr_ptr: usize, _size: usize) -> isize {
                                 // 2. The GPIO base address is hardcoded for RPi5 platform
                                 // 3. We have validated the pin number is in range 0-27
                                 // 4. The kernel has exclusive access to GPIO hardware
-                                let gpio =
-                                    unsafe { crate::arch::aarch64::platform::rpi5::gpio::Rp1Gpio::new() };
+                                let gpio = unsafe {
+                                    crate::arch::aarch64::platform::rpi5::gpio::Rp1Gpio::new()
+                                };
 
                                 // Configure pin as input for edge detection
                                 gpio.configure_input(pin);
@@ -255,8 +255,8 @@ pub fn sys_bpf(cmd: usize, attr_ptr: usize, _size: usize) -> isize {
 
             let mut insns = Vec::with_capacity(insn_cnt);
             // safe cast because we validate the pointer below
-            let insns_bytes_ptr = insns_ptr as usize; 
-            
+            let insns_bytes_ptr = insns_ptr as usize;
+
             // Validate the entire instruction buffer first
             if read_userspace_slice(insns_bytes_ptr, insn_cnt * size_of::<BpfInsn>()).is_err() {
                 log::error!("sys_bpf: invalid instruction buffer");
@@ -264,10 +264,10 @@ pub fn sys_bpf(cmd: usize, attr_ptr: usize, _size: usize) -> isize {
             }
 
             for i in 0..insn_cnt {
-                 match copy_from_userspace::<BpfInsn>(insns_bytes_ptr + i * size_of::<BpfInsn>()) {
-                     Ok(insn) => insns.push(insn),
-                     Err(_) => return -1,
-                 }
+                match copy_from_userspace::<BpfInsn>(insns_bytes_ptr + i * size_of::<BpfInsn>()) {
+                    Ok(insn) => insns.push(insn),
+                    Err(_) => return -1,
+                }
             }
 
             if let Some(manager) = BPF_MANAGER.get() {

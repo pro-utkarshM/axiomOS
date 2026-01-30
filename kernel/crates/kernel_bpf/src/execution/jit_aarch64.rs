@@ -57,10 +57,9 @@ const X1: u8 = 1;
 const X2: u8 = 2;
 const X3: u8 = 3;
 const X4: u8 = 4;
-const X5: u8 = 5;
-const X6: u8 = 6;
+// X5-X6 are not used in our mapping
 const X7: u8 = 7;
-const X9: u8 = 9;  // Scratch register for helper addresses
+const X9: u8 = 9; // Scratch register for helper addresses
 const X19: u8 = 19;
 const X20: u8 = 20;
 const X21: u8 = 21;
@@ -231,6 +230,7 @@ impl Arm64Emitter {
     }
 
     /// SDIV: Rd = Rn / Rm (signed)
+    #[allow(dead_code)]
     fn emit_sdiv(&mut self, rd: u8, rn: u8, rm: u8) {
         let insn = 0x9AC00C00 | ((rm as u32) << 16) | ((rn as u32) << 5) | ((rd as u32) & 0x1f);
         self.emit(insn);
@@ -344,6 +344,7 @@ impl Arm64Emitter {
     }
 
     /// CMP (immediate): flags = Rn - imm12
+    #[allow(dead_code)]
     fn emit_cmp_imm(&mut self, rn: u8, imm: u16) {
         // SUBS XZR, Xn, #imm
         let insn = 0xF100001F | (((imm as u32) & 0xFFF) << 10) | ((rn as u32) << 5);
@@ -845,18 +846,23 @@ impl<P: PhysicalProfile> Arm64JitCompiler<P> {
             fn bpf_ktime_get_ns() -> u64;
             fn bpf_trace_printk(fmt: *const u8, size: u32) -> i32;
             fn bpf_map_lookup_elem(map_id: u32, key: *const u8) -> *mut u8;
-            fn bpf_map_update_elem(map_id: u32, key: *const u8, value: *const u8, flags: u64) -> i32;
+            fn bpf_map_update_elem(
+                map_id: u32,
+                key: *const u8,
+                value: *const u8,
+                flags: u64,
+            ) -> i32;
             fn bpf_map_delete_elem(map_id: u32, key: *const u8) -> i32;
             fn bpf_ringbuf_output(map_id: u32, data: *const u8, size: u64, flags: u64) -> i64;
         }
 
         match helper_id {
-            1 => Ok(bpf_ktime_get_ns as u64),
-            2 => Ok(bpf_trace_printk as u64),
-            3 => Ok(bpf_map_lookup_elem as u64),
-            4 => Ok(bpf_map_update_elem as u64),
-            5 => Ok(bpf_map_delete_elem as u64),
-            6 => Ok(bpf_ringbuf_output as u64),
+            1 => Ok(bpf_ktime_get_ns as *const () as u64),
+            2 => Ok(bpf_trace_printk as *const () as u64),
+            3 => Ok(bpf_map_lookup_elem as *const () as u64),
+            4 => Ok(bpf_map_update_elem as *const () as u64),
+            5 => Ok(bpf_map_delete_elem as *const () as u64),
+            6 => Ok(bpf_ringbuf_output as *const () as u64),
             _ => Err(Arm64JitError::UnsupportedInstruction),
         }
     }

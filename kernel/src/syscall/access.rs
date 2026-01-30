@@ -2,7 +2,7 @@ use alloc::sync::Arc;
 use core::sync::atomic::Ordering::Relaxed;
 
 use kernel_syscall::access::{CwdAccess, FileAccess};
-use kernel_syscall::stat::{mode, StatAccess, UserStat};
+use kernel_syscall::stat::{StatAccess, UserStat, mode};
 use kernel_vfs::node::VfsNode;
 use kernel_vfs::path::AbsolutePath;
 use spin::rwlock::RwLock;

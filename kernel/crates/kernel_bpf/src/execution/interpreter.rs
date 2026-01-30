@@ -270,12 +270,10 @@ impl<P: PhysicalProfile> Interpreter<P> {
                 5 => Ok(bpf_map_delete_elem(args[0] as u32, args[1] as *const u8) as u64),
 
                 // bpf_ringbuf_output
-                6 => Ok(bpf_ringbuf_output(
-                    args[0] as u32,
-                    args[1] as *const u8,
-                    args[2],
-                    args[3],
-                ) as u64),
+                6 => Ok(
+                    bpf_ringbuf_output(args[0] as u32, args[1] as *const u8, args[2], args[3])
+                        as u64,
+                ),
 
                 // Unknown helper
                 _ => Err(BpfError::InvalidHelper(helper_id)),
@@ -360,19 +358,17 @@ impl<P: PhysicalProfile> Interpreter<P> {
         let data_start = ctx.data as u64;
         let data_end = ctx.data_end as u64;
 
-        if !ctx.data.is_null() && addr >= data_start {
-            if addr + size.size_bytes() as u64 <= data_end {
-                let value = unsafe {
-                    match size {
-                        MemSize::Byte => core::ptr::read_unaligned(addr as *const u8) as u64,
-                        MemSize::Half => core::ptr::read_unaligned(addr as *const u16) as u64,
-                        MemSize::Word => core::ptr::read_unaligned(addr as *const u32) as u64,
-                        MemSize::DWord => core::ptr::read_unaligned(addr as *const u64),
-                    }
-                };
-                regs.set(dst, value);
-                return Ok(());
-            }
+        if !ctx.data.is_null() && addr >= data_start && addr + size.size_bytes() as u64 <= data_end {
+            let value = unsafe {
+                match size {
+                    MemSize::Byte => core::ptr::read_unaligned(addr as *const u8) as u64,
+                    MemSize::Half => core::ptr::read_unaligned(addr as *const u16) as u64,
+                    MemSize::Word => core::ptr::read_unaligned(addr as *const u32) as u64,
+                    MemSize::DWord => core::ptr::read_unaligned(addr as *const u64),
+                }
+            };
+            regs.set(dst, value);
+            return Ok(());
         }
 
         Err(BpfError::OutOfBounds)
