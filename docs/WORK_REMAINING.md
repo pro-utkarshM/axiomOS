@@ -100,7 +100,7 @@ Userspace → bpf(BPF_PROG_LOAD) → program stored
 **Remaining Work:**
 - IIO sensor driver + BPF wiring (~2-3 weeks)
 - Kprobe/tracepoint kernel infrastructure (~3-4 weeks)
-- Fix hardcoded key_size=4, value_size=8 in syscall handler (~1 day)
+- [x] Fix hardcoded key_size=4, value_size=8 in syscall handler (Done)
 
 ---
 
@@ -249,7 +249,7 @@ Phase 1: BPF Integration (MOSTLY DONE ✅)
 ├── ✅ Wire timer interrupt to BPF execution (WORKING)
 ├── ✅ bpf() syscall with PROG_LOAD, ATTACH, MAP ops (WORKING)
 ├── ✅ BPF helpers: ktime, trace_printk, map_* (WORKING)
-└── 🔴 Fix hardcoded key/value sizes in syscall handler (~1 day)
+└── ✅ Fix hardcoded key/value sizes in syscall handler (Done)
 
 Phase 2: Hardware Attach Points (Weeks 1-5)
 ├── Wire BPF GpioAttach → existing RPi5 GPIO driver (~1 week)
