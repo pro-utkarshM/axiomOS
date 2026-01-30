@@ -130,7 +130,6 @@ impl CpuContext {
         unsafe { &*self.scheduler.get() }
     }
 }
-}
 
 // Per-CPU context storage (statically allocated for simplicity)
 static CPU_CONTEXTS: [CpuContext; MAX_CPUS] = [
