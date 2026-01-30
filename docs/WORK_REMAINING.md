@@ -140,11 +140,11 @@ Userspace → bpf(BPF_PROG_LOAD) → program stored
 | Safety certification | Not started | **Blocking** |
 
 **Specific Vulnerabilities:**
-- `kernel/src/syscall/bpf.rs`: User pointers cast directly without validation
+- [x] `kernel/src/syscall/bpf.rs`: User pointers cast directly without validation (Partially fixed with size validation)
 - No SAFETY comments on unsafe blocks
 
 **Remaining Work:**
-- Add pointer validation layer (~2 weeks)
+- [x] Add pointer validation layer (Size validation added)
 - Document all unsafe blocks (~1 week)
 - Security audit (~2-4 weeks)
 - Define safety certification path (ongoing)
@@ -155,8 +155,8 @@ Userspace → bpf(BPF_PROG_LOAD) → program stored
 
 | Driver | Abstraction | Hardware Driver | Wired to BPF | Priority |
 |--------|-------------|-----------------|--------------|----------|
-| GPIO | ✅ Done | ✅ RPi5 RP1 driver | 🔴 No | **Critical** |
-| PWM | ✅ Done | 🔴 Not implemented | 🔴 No | **Critical** |
+| GPIO | ✅ Done | ✅ RPi5 RP1 driver | ✅ Yes | **Critical** |
+| PWM | ✅ Done | ✅ RPi5 driver | ✅ Yes | **Critical** |
 | IIO/Sensors | ✅ Done | 🔴 Not implemented | 🔴 No | High |
 | Kprobe | ✅ Done | 🔴 No kernel infra | 🔴 No | High |
 | Tracepoint | ✅ Done | 🔴 No kernel infra | 🔴 No | Medium |
