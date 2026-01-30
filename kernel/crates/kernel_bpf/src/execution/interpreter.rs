@@ -54,7 +54,7 @@ impl<P: PhysicalProfile> Interpreter<P> {
         insn: &BpfInsn,
         regs: &mut RegisterFile,
         stack: &mut [u8],
-        _ctx: &BpfContext,
+        ctx: &BpfContext,
     ) -> Result<InsnResult, BpfError> {
         // Exit instruction
         if insn.is_exit() {
@@ -74,7 +74,7 @@ impl<P: PhysicalProfile> Interpreter<P> {
             }
 
             OpcodeClass::Ldx => {
-                self.execute_load(insn, regs, stack)?;
+                self.execute_load(insn, regs, stack, ctx)?;
             }
 
             OpcodeClass::Stx | OpcodeClass::St => {
@@ -289,6 +289,7 @@ impl<P: PhysicalProfile> Interpreter<P> {
         insn: &BpfInsn,
         regs: &mut RegisterFile,
         stack: &[u8],
+        ctx: &BpfContext,
     ) -> Result<(), BpfError> {
         let dst = Register::from_raw(insn.dst_reg()).ok_or(BpfError::InvalidInstruction)?;
         let src = Register::from_raw(insn.src_reg()).ok_or(BpfError::InvalidInstruction)?;
@@ -296,9 +297,10 @@ impl<P: PhysicalProfile> Interpreter<P> {
         let size = MemSize::from_opcode(insn.opcode).ok_or(BpfError::InvalidInstruction)?;
 
         let base = regs.get(src);
-        let _addr = base.wrapping_add(insn.offset as i64 as u64);
+        // wrapping_add is correct for address calculation
+        let addr = base.wrapping_add(insn.offset as i64 as u64);
 
-        // For stack access (src = R10)
+        // 1. Stack access (src = R10)
         if src == Register::R10 {
             let _fp = base;
             let offset = insn.offset as i64;
@@ -335,8 +337,44 @@ impl<P: PhysicalProfile> Interpreter<P> {
             return Ok(());
         }
 
-        // Generic memory access would require context pointer validation
-        // For now, only stack access is fully implemented
+        // 2. Context access
+        // Check if address is within the BpfContext struct
+        let ctx_addr = ctx as *const _ as u64;
+        let ctx_size = core::mem::size_of::<BpfContext>() as u64;
+
+        if addr >= ctx_addr && addr + size.size_bytes() as u64 <= ctx_addr + ctx_size {
+            let value = unsafe {
+                match size {
+                    MemSize::Byte => core::ptr::read_unaligned(addr as *const u8) as u64,
+                    MemSize::Half => core::ptr::read_unaligned(addr as *const u16) as u64,
+                    MemSize::Word => core::ptr::read_unaligned(addr as *const u32) as u64,
+                    MemSize::DWord => core::ptr::read_unaligned(addr as *const u64),
+                }
+            };
+            regs.set(dst, value);
+            return Ok(());
+        }
+
+        // 3. Data access
+        // Check if address is within [ctx.data, ctx.data_end)
+        let data_start = ctx.data as u64;
+        let data_end = ctx.data_end as u64;
+
+        if !ctx.data.is_null() && addr >= data_start {
+            if addr + size.size_bytes() as u64 <= data_end {
+                let value = unsafe {
+                    match size {
+                        MemSize::Byte => core::ptr::read_unaligned(addr as *const u8) as u64,
+                        MemSize::Half => core::ptr::read_unaligned(addr as *const u16) as u64,
+                        MemSize::Word => core::ptr::read_unaligned(addr as *const u32) as u64,
+                        MemSize::DWord => core::ptr::read_unaligned(addr as *const u64),
+                    }
+                };
+                regs.set(dst, value);
+                return Ok(());
+            }
+        }
+
         Err(BpfError::OutOfBounds)
     }
 

@@ -55,4 +55,7 @@ n! {
     SYS_CLOSE = 40,
     SYS_MMAP = 41,
     SYS_BPF = 50,
+    SYS_PWM_CONFIG = 51,
+    SYS_PWM_WRITE = 52,
+    SYS_PWM_ENABLE = 53,
 }

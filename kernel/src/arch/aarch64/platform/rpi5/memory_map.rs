@@ -27,6 +27,12 @@ pub const RP1_I2C0_OFFSET: usize = 0x0007_0000;
 /// RP1 internal offset for SPI0
 pub const RP1_SPI0_OFFSET: usize = 0x0005_0000;
 
+/// RP1 internal offset for PWM0
+pub const RP1_PWM0_OFFSET: usize = 0x0009_8000;
+
+/// RP1 internal offset for PWM1
+pub const RP1_PWM1_OFFSET: usize = 0x0009_C000;
+
 /// Calculate CPU physical address for an RP1 peripheral
 #[inline]
 pub const fn rp1_peripheral_addr(offset: usize) -> usize {
@@ -41,6 +47,12 @@ pub const RP1_UART1_BASE: usize = rp1_peripheral_addr(RP1_UART1_OFFSET);
 
 /// GPIO base address
 pub const RP1_GPIO_BASE: usize = rp1_peripheral_addr(RP1_GPIO_OFFSET);
+
+/// PWM0 base address
+pub const RP1_PWM0_BASE: usize = rp1_peripheral_addr(RP1_PWM0_OFFSET);
+
+/// PWM1 base address
+pub const RP1_PWM1_BASE: usize = rp1_peripheral_addr(RP1_PWM1_OFFSET);
 
 /// ARM GIC distributor base address (on BCM2712, not RP1)
 pub const GICD_BASE: usize = 0xFF84_1000;

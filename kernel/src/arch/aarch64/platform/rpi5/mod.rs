@@ -13,9 +13,11 @@
 pub mod gpio;
 pub mod memory_map;
 pub mod mmio;
+pub mod pwm;
 pub mod uart;
 
 use conquer_once::spin::Lazy;
+use pwm::Rp1Pwm;
 use spin::Mutex;
 use uart::Rp1Uart;
 
@@ -24,6 +26,20 @@ pub static UART: Lazy<Mutex<Rp1Uart>> = Lazy::new(|| {
     let mut uart = unsafe { Rp1Uart::new() };
     uart.init();
     Mutex::new(uart)
+});
+
+/// Global PWM0 instance
+pub static PWM0: Lazy<Mutex<Rp1Pwm>> = Lazy::new(|| {
+    let pwm = unsafe { Rp1Pwm::pwm0() };
+    pwm.init();
+    Mutex::new(pwm)
+});
+
+/// Global PWM1 instance
+pub static PWM1: Lazy<Mutex<Rp1Pwm>> = Lazy::new(|| {
+    let pwm = unsafe { Rp1Pwm::pwm1() };
+    pwm.init();
+    Mutex::new(pwm)
 });
 
 /// Initialize Raspberry Pi 5 platform

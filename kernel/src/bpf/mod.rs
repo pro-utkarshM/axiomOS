@@ -13,6 +13,7 @@ use kernel_bpf::profile::ActiveProfile;
 
 pub const ATTACH_TYPE_TIMER: u32 = 1;
 pub const ATTACH_TYPE_GPIO: u32 = 2;
+pub const ATTACH_TYPE_PWM: u32 = 3;
 
 pub struct BpfManager {
     programs: Vec<BpfProgram<ActiveProfile>>,
