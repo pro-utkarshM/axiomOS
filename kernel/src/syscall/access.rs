@@ -103,8 +103,11 @@ impl FileAccess for KernelAccess<'_> {
     }
 
     fn close(&self, fd: Self::Fd) -> Result<(), ()> {
-        self.process.file_descriptors().write().remove(&fd);
-        Ok(())
+        if self.process.file_descriptors().write().remove(&fd).is_some() {
+            Ok(())
+        } else {
+            Err(())
+        }
     }
 
     fn lseek(&self, fd: Self::Fd, offset: i64, whence: i32) -> Result<usize, ()> {

@@ -108,12 +108,12 @@ Userspace → bpf(BPF_PROG_LOAD) → program stored
 
 **7 of 42 syscalls implemented** (x86_64 only, stubs on other archs)
 
-| Implemented (7) | Missing (35) |
+| Implemented (8) | Missing (34) |
 |-----------------|--------------|
 | exit | fork, exec, wait, clone |
-| read | close, dup, dup2, pipe |
+| read | dup, dup2, pipe |
 | write, writev | lseek, stat, fstat |
-| open | socket, bind, listen, accept |
+| open, close | socket, bind, listen, accept |
 | mmap | munmap, mprotect |
 | getcwd | chdir, mkdir, rmdir |
 | bpf | kill, signal, sigaction |
@@ -121,9 +121,8 @@ Userspace → bpf(BPF_PROG_LOAD) → program stored
 | | ioctl, fcntl, poll |
 
 **Remaining Work:**
-- close syscall (critical, ~1 day)
 - Process lifecycle: fork, exec, wait (~2 weeks)
-- File operations: lseek, stat, fstat, close (~1 week)
+- File operations: lseek, stat, fstat (~1 week)
 - Signal handling (~2 weeks)
 - Remaining memory syscalls (~1 week)
 
@@ -142,7 +141,6 @@ Userspace → bpf(BPF_PROG_LOAD) → program stored
 
 **Specific Vulnerabilities:**
 - `kernel/src/syscall/bpf.rs`: User pointers cast directly without validation
-- Hardcoded 4-byte key / 8-byte value assumption for all maps
 - No SAFETY comments on unsafe blocks
 
 **Remaining Work:**

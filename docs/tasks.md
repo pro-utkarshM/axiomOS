@@ -190,7 +190,7 @@ Axiom is a **complete operating system kernel** with BPF as a first-class primit
   - [x] BPF_MAP_UPDATE
 
 ### ⚠️ Known Issues (from codebase analysis)
-- [ ] **Hardcoded BPF Map Sizes** - All maps assume 4-byte keys, 8-byte values
+- [x] **Hardcoded BPF Map Sizes** - All maps assume 4-byte keys, 8-byte values
   - File: `kernel/src/syscall/bpf.rs` (lines 67, 101-103)
   - Fix: Extract key/value sizes from BpfAttr structure
 - [ ] **Unsafe Pointer Casts** - User pointers cast without validation
