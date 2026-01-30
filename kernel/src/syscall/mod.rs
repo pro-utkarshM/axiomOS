@@ -17,9 +17,8 @@ use kernel_syscall::{
 #[cfg(target_arch = "x86_64")]
 use kernel_vfs::path::AbsolutePath;
 #[cfg(target_arch = "x86_64")]
-use alloc::boxed::Box;
 #[cfg(target_arch = "x86_64")]
-use crate::mcore::mtask::{process::Process, scheduler::global::GlobalTaskQueue};
+use crate::mcore::mtask::process::Process;
 use log::{error, trace};
 #[cfg(target_arch = "x86_64")]
 use x86_64::instructions::hlt;
