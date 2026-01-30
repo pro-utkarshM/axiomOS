@@ -120,6 +120,8 @@ pub fn dispatch_syscall(
         kernel_abi::SYS_PWM_WRITE => dispatch_sys_pwm_write(arg1, arg2, arg3),
         #[cfg(all(target_arch = "aarch64", feature = "rpi5"))]
         kernel_abi::SYS_PWM_ENABLE => dispatch_sys_pwm_enable(arg1, arg2, arg3),
+        kernel_abi::SYS_CLOCK_GETTIME => dispatch_sys_clock_gettime(arg1, arg2),
+        kernel_abi::SYS_NANOSLEEP => dispatch_sys_nanosleep(arg1, arg2),
         _ => {
             error!("unimplemented syscall: {} ({n})", syscall_name(n));
             loop {
@@ -388,4 +390,58 @@ fn dispatch_sys_pwm_enable(pwm_id: usize, channel: usize, enable: usize) -> Resu
     } else {
         Ok(ret as usize)
     }
+}
+
+fn dispatch_sys_clock_gettime(_clock_id: usize, tp: usize) -> Result<usize, Errno> {
+    // We strictly support CLOCK_REALTIME/MONOTONIC which are mapped to kernel time for now.
+    let ns = crate::time::get_kernel_time_ns();
+    let ts = kernel_abi::timespec {
+        tv_sec: (ns / 1_000_000_000) as i64,
+        tv_nsec: (ns % 1_000_000_000) as i64,
+    };
+
+    // Serialize struct to bytes
+    let slice = unsafe {
+        core::slice::from_raw_parts(
+            &ts as *const _ as *const u8,
+            core::mem::size_of::<kernel_abi::timespec>(),
+        )
+    };
+
+    validation::copy_to_userspace(tp, slice)?;
+    Ok(0)
+}
+
+fn dispatch_sys_nanosleep(req: usize, _rem: usize) -> Result<usize, Errno> {
+    let ts: kernel_abi::timespec = validation::copy_from_userspace(req)?;
+
+    // Check for valid nanoseconds
+    if ts.tv_nsec < 0 || ts.tv_nsec >= 1_000_000_000 {
+        return Err(EINVAL);
+    }
+
+    let duration_ns = (ts.tv_sec as u64)
+        .checked_mul(1_000_000_000)
+        .and_then(|s| s.checked_add(ts.tv_nsec as u64))
+        .ok_or(EINVAL)?;
+
+    let start = crate::time::get_kernel_time_ns();
+
+    // Busy wait loop
+    // TODO: Use proper scheduler sleep/wait queue
+    loop {
+        let now = crate::time::get_kernel_time_ns();
+        if now.wrapping_sub(start) >= duration_ns {
+            break;
+        }
+
+        // On x86_64, enable interrupts and halt to save power
+        #[cfg(target_arch = "x86_64")]
+        x86_64::instructions::interrupts::enable_and_hlt();
+
+        #[cfg(not(target_arch = "x86_64"))]
+        core::hint::spin_loop();
+    }
+
+    Ok(0)
 }

@@ -6,6 +6,7 @@ mod fcntl;
 mod limits;
 mod mman;
 pub mod syscall;
+mod time;
 
 pub use bpf::*;
 pub use errno::*;
@@ -13,3 +14,4 @@ pub use fcntl::*;
 pub use limits::*;
 pub use mman::*;
 pub use syscall::*;
+pub use time::*;

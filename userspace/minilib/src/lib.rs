@@ -32,6 +32,37 @@ pub fn bpf(cmd: c_int, attr: *const u8, size: c_int) -> c_int {
     syscall3(50, cmd as usize, attr as usize, size as usize) as i32
 }
 
+#[repr(C)]
+#[derive(Debug, Copy, Clone, Default)]
+pub struct timespec {
+    pub tv_sec: i64,
+    pub tv_nsec: i64,
+}
+
+pub fn clock_gettime(clock_id: c_int, tp: *mut timespec) -> c_int {
+    syscall2(54, clock_id as usize, tp as usize) as i32
+}
+
+pub fn nanosleep(req: *const timespec, rem: *mut timespec) -> c_int {
+    syscall2(55, req as usize, rem as usize) as i32
+}
+
+pub fn sleep(secs: u64) {
+    let req = timespec {
+        tv_sec: secs as i64,
+        tv_nsec: 0,
+    };
+    nanosleep(&req, core::ptr::null_mut());
+}
+
+pub fn msleep(msecs: u64) {
+    let req = timespec {
+        tv_sec: (msecs / 1000) as i64,
+        tv_nsec: ((msecs % 1000) * 1_000_000) as i64,
+    };
+    nanosleep(&req, core::ptr::null_mut());
+}
+
 pub fn syscall0(n: usize) -> usize {
     let mut result;
     #[cfg(target_arch = "x86_64")]

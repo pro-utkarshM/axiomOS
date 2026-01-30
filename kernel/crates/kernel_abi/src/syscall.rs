@@ -58,4 +58,6 @@ n! {
     SYS_PWM_CONFIG = 51,
     SYS_PWM_WRITE = 52,
     SYS_PWM_ENABLE = 53,
+    SYS_CLOCK_GETTIME = 54,
+    SYS_NANOSLEEP = 55,
 }

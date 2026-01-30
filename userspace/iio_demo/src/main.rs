@@ -159,8 +159,8 @@ pub extern "C" fn _start() -> ! {
     print("Running indefinitely... (Press Ctrl-C to exit)\n");
 
     loop {
-        #[cfg(target_arch = "x86_64")]
-        unsafe { core::arch::asm!("pause") };
+        // Sleep to save CPU while kernel handles sensor events
+        minilib::sleep(1);
     }
 }
 

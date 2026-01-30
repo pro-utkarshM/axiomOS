@@ -178,18 +178,8 @@ pub extern "C" fn _start() -> ! {
     print("Running indefinitely... (Press Ctrl-C to exit if running in emulator)\n");
 
     loop {
-        // Sleep or do work. The BPF program runs in interrupt context.
-        // For this demo, we just yield/pause.
-        #[cfg(target_arch = "x86_64")]
-        // SAFETY: Safe to execute pause instruction in userspace loop.
-        unsafe {
-            core::arch::asm!("pause");
-        }
-        #[cfg(target_arch = "aarch64")]
-        // SAFETY: Safe to execute wfi (wait for interrupt) in userspace loop.
-        unsafe {
-            core::arch::asm!("wfi");
-        }
+        // Sleep to save CPU while BPF handles interrupts in background
+        minilib::sleep(1);
     }
 }
 
