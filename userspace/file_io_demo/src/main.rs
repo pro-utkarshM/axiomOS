@@ -1,9 +1,8 @@
 #![no_std]
 #![no_main]
 
-use core::default::Default;
 use minilib::{
-    close, exit, open, read, stat, write, O_RDONLY, O_WRONLY,
+    close, open, read, write, O_RDONLY, O_WRONLY,
 };
 
 #[unsafe(no_mangle)]
