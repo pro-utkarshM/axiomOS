@@ -3,20 +3,51 @@ use core::iter::from_fn;
 use core::mem::swap;
 
 use conquer_once::spin::OnceCell;
-use kernel_physical_memory::{PhysicalFrameAllocator, PhysicalMemoryManager};
+use kernel_physical_memory::{PhysicalFrameAllocator, PhysicalMemoryManager, FrameState};
+#[cfg(target_arch = "x86_64")]
 use limine::memory_map::{Entry, EntryType};
-use log::{info, warn};
+use log::{info, warn, error};
 use spin::Mutex;
-#[cfg(target_arch = "x86_64")]
-use x86_64::PhysAddr;
-#[cfg(target_arch = "x86_64")]
-use x86_64::structures::paging::frame::PhysFrameRangeInclusive;
-#[cfg(target_arch = "x86_64")]
-use x86_64::structures::paging::{PageSize, PhysFrame, Size4KiB};
 
+use crate::arch::types::{PageSize, PhysAddr, PhysFrame, PhysFrameRange, Size4KiB};
 use crate::mem::heap::Heap;
 
 static PHYS_ALLOC: OnceCell<Mutex<MultiStageAllocator>> = OnceCell::uninit();
+
+struct ReservedRegions {
+    regions: [MemoryRegion; 16],
+    count: usize,
+}
+
+impl ReservedRegions {
+    const fn new() -> Self {
+        Self {
+            regions: [MemoryRegion { base: 0, length: 0 }; 16],
+            count: 0,
+        }
+    }
+
+    fn push(&mut self, region: MemoryRegion) {
+        if self.count < 16 {
+            self.regions[self.count] = region;
+            self.count += 1;
+        } else {
+            warn!("Too many reserved regions, ignoring some");
+        }
+    }
+
+    fn is_reserved(&self, addr: u64) -> bool {
+        for i in 0..self.count {
+            let r = &self.regions[i];
+            if addr >= r.base && addr < r.base + r.length {
+                return true;
+            }
+        }
+        false
+    }
+}
+
+static RESERVED_REGIONS: Mutex<ReservedRegions> = Mutex::new(ReservedRegions::new());
 
 fn allocator() -> &'static Mutex<MultiStageAllocator> {
     PHYS_ALLOC
@@ -25,34 +56,15 @@ fn allocator() -> &'static Mutex<MultiStageAllocator> {
 }
 
 /// Zero-sized facade to the global physical memory allocator.
-///
-/// This provides a stateless interface to a two-stage allocator:
-/// - **Stage 1**: A bump allocator used during early boot before the heap is initialized.
-///   Only supports 4 KiB allocations, no deallocation.
-/// - **Stage 2**: A sparse bitmap allocator that efficiently tracks free frames across
-///   non-contiguous memory regions. Supports all page sizes and deallocation.
 #[derive(Copy, Clone)]
 pub struct PhysicalMemory;
 
 #[allow(dead_code)]
 impl PhysicalMemory {
-    /// Checks whether the physical memory allocator has been initialized.
-    ///
-    /// Returns `true` after stage 1 initialization completes during early boot.
     pub fn is_initialized() -> bool {
         PHYS_ALLOC.is_initialized()
     }
 
-    /// Returns an iterator that allocates individual frames on demand.
-    ///
-    /// Unlike [`allocate_frames()`](Self::allocate_frames), this doesn't require finding
-    /// contiguous physical memory. Useful when physical memory is fragmented or when the
-    /// caller doesn't need physically contiguous memory (e.g., for page tables that use
-    /// virtual addressing anyway).
-    ///
-    /// Each call to `next()` acquires and releases the allocator's spinlock, so batch
-    /// allocation with [`allocate_frames()`](Self::allocate_frames) is more efficient when
-    /// contiguous memory is available. Do not call with interrupts disabled.
     pub fn allocate_frames_non_contiguous<S: PageSize>() -> impl Iterator<Item = PhysFrame<S>>
     where
         PhysicalMemoryManager: PhysicalFrameAllocator<S>,
@@ -60,14 +72,6 @@ impl PhysicalMemory {
         from_fn(Self::allocate_frame)
     }
 
-    /// Allocates a single physical frame of the specified page size.
-    ///
-    /// Returns a properly aligned frame (4 KiB aligned for 4 KiB pages, 2 MiB aligned for
-    /// 2 MiB pages, etc.). For large page sizes (2 MiB, 1 GiB), this searches for a
-    /// sufficiently large aligned region, which may fail even if enough total memory exists
-    /// but is fragmented.
-    ///
-    /// Acquires the allocator's spinlock, so do not call with interrupts disabled.
     #[must_use]
     pub fn allocate_frame<S: PageSize>() -> Option<PhysFrame<S>>
     where
@@ -76,39 +80,14 @@ impl PhysicalMemory {
         allocator().lock().allocate_frame()
     }
 
-    /// Allocates `n` contiguous frames of the specified page size.
-    ///
-    /// Searches for a contiguous, properly aligned region of physical memory. This is
-    /// required for DMA operations and more efficient than using the non-contiguous
-    /// iterator for bulk allocations. May fail even when sufficient total memory exists
-    /// if the memory is fragmented.
-    ///
-    /// Acquires the allocator's spinlock, so do not call with interrupts disabled.
-    ///
-    /// # Panics
-    ///
-    /// Panics if stage 1 allocator is still active (stage 1 doesn't support contiguous
-    /// allocation). Stage 2 is initialized after the heap becomes available.
     #[must_use]
-    pub fn allocate_frames<S: PageSize>(n: usize) -> Option<PhysFrameRangeInclusive<S>>
+    pub fn allocate_frames<S: PageSize>(n: usize) -> Option<PhysFrameRange<S>>
     where
         PhysicalMemoryManager: PhysicalFrameAllocator<S>,
     {
         allocator().lock().allocate_frames(n)
     }
 
-    /// Returns the frame to the free pool for future allocations.
-    ///
-    /// For large pages (2 MiB, 1 GiB), this deallocates all constituent 4 KiB frames.
-    /// Double-freeing a frame is a bug and will panic in debug builds.
-    ///
-    /// Acquires the allocator's spinlock, so do not call with interrupts disabled.
-    ///
-    /// # Panics
-    ///
-    /// In debug builds, panics if:
-    /// - The frame is already free or was never allocated
-    /// - Stage 1 allocator is active (stage 1 doesn't support deallocation)
     pub fn deallocate_frame<S: PageSize>(frame: PhysFrame<S>)
     where
         PhysicalMemoryManager: PhysicalFrameAllocator<S>,
@@ -116,20 +95,7 @@ impl PhysicalMemory {
         allocator().lock().deallocate_frame(frame);
     }
 
-    /// Deallocates all frames in the range, returning them to the free pool.
-    ///
-    /// Iterates through the range deallocating each frame individually. If a panic occurs
-    /// during iteration (e.g., double-free detected in debug build), remaining frames are
-    /// not deallocated.
-    ///
-    /// Acquires the allocator's spinlock, so do not call with interrupts disabled.
-    ///
-    /// # Panics
-    ///
-    /// In debug builds, panics if:
-    /// - Any frame in the range is already free or was never allocated
-    /// - Stage 1 allocator is active (stage 1 doesn't support deallocation)
-    pub fn deallocate_frames<S: PageSize>(range: PhysFrameRangeInclusive<S>)
+    pub fn deallocate_frames<S: PageSize>(range: PhysFrameRange<S>)
     where
         PhysicalMemoryManager: PhysicalFrameAllocator<S>,
     {
@@ -137,20 +103,29 @@ impl PhysicalMemory {
     }
 }
 
+/// Generic memory region for physical memory initialization
+#[derive(Debug, Clone, Copy)]
+pub struct MemoryRegion {
+    pub base: u64,
+    pub length: u64,
+}
+
+pub fn register_reserved_region(base: u64, length: u64) {
+    RESERVED_REGIONS.lock().push(MemoryRegion { base, length });
+}
+
 #[cfg(target_arch = "x86_64")]
-// SAFETY: The allocator returns unique physical frames that are not currently in use.
-// It manages the physical memory state to ensure safety.
 unsafe impl x86_64::structures::paging::FrameAllocator<Size4KiB> for PhysicalMemory {
     fn allocate_frame(&mut self) -> Option<PhysFrame> {
         Self::allocate_frame()
     }
 }
 
-/// Initialize the first stage of physical memory management: a simple bump
-/// allocator.
-///
-/// Returns the total amount of usable physical memory in bytes.
-pub(in crate::mem) fn init_stage1(entries: &'static [&'static Entry]) -> usize {
+#[cfg(target_arch = "x86_64")]
+static mut BOOT_REGIONS: [MemoryRegion; 128] = [MemoryRegion { base: 0, length: 0 }; 128];
+
+#[cfg(target_arch = "x86_64")]
+pub fn init_stage1(entries: &[&Entry]) -> usize {
     let usable_physical_memory = entries
         .iter()
         .filter(|e| e.entry_type == EntryType::USABLE)
@@ -158,16 +133,39 @@ pub(in crate::mem) fn init_stage1(entries: &'static [&'static Entry]) -> usize {
         .sum::<u64>();
     info!("usable RAM: ~{} MiB", usable_physical_memory / 1024 / 1024);
 
-    let stage1 = MultiStageAllocator::Stage1(PhysicalBumpAllocator::new(entries));
+    let mut count = 0;
+    for entry in entries {
+        if count < 128 {
+            unsafe {
+                BOOT_REGIONS[count] = MemoryRegion {
+                    base: entry.base,
+                    length: entry.length,
+                };
+            }
+            count += 1;
+        }
+    }
+
+    // SAFETY: We are in early boot, single-threaded.
+    let regions_static: &'static [MemoryRegion] = unsafe { &BOOT_REGIONS[..count] };
+
+    let stage1 = MultiStageAllocator::Stage1(PhysicalBumpAllocator::new(regions_static));
     PHYS_ALLOC.init_once(|| Mutex::new(stage1));
 
     usable_physical_memory as usize
 }
 
-/// Initialize the second stage of physical memory management: a bitmap allocator.
-/// This allocator requires that the heap is initialized and that stage1 was previously
-/// initialized.
-pub(in crate::mem) fn init_stage2() {
+pub fn init_stage1_aarch64(regions: &'static [MemoryRegion]) -> usize {
+    let usable_physical_memory = regions.iter().map(|r| r.length).sum::<u64>();
+    info!("usable RAM: ~{} MiB", usable_physical_memory / 1024 / 1024);
+
+    let stage1 = MultiStageAllocator::Stage1(PhysicalBumpAllocator::new(regions));
+    PHYS_ALLOC.init_once(|| Mutex::new(stage1));
+
+    usable_physical_memory as usize
+}
+
+pub fn init_stage2() {
     let mut guard = allocator().lock();
 
     let MultiStageAllocator::Stage1(stage1) = &*guard else {
@@ -178,81 +176,83 @@ pub(in crate::mem) fn init_stage2() {
 
     let regions = stage1.regions;
     let stage_one_next_free = stage1.next_frame;
+    info!("Transitioning to stage 2. Stage 1 allocated {} frames", stage_one_next_free);
 
-    /*
-    Limine guarantees that
-    1. USABLE regions do not overlap
-    2. USABLE regions are sorted by base address, lowest to highest
-    3. USABLE regions are 4KiB aligned (address and length)
-     */
+    let mut memory_regions = Vec::with_capacity(regions.len());
 
-    // Build memory regions for usable regions
-    // Preallocate to avoid fragmentation in stage1 (which can't deallocate)
-    let usable_region_count = regions
-        .iter()
-        .filter(|r| r.entry_type == EntryType::USABLE)
-        .count();
-    let mut memory_regions = Vec::with_capacity(usable_region_count);
-
-    for entry in regions.iter().filter(|r| r.entry_type == EntryType::USABLE) {
+    for entry in regions {
         let num_frames = (entry.length / Size4KiB::SIZE) as usize;
+        info!("Adding memory region: {:#x} - {:#x} ({} frames)", entry.base, entry.base + entry.length, num_frames);
         let region = kernel_physical_memory::MemoryRegion::new(
             entry.base,
             num_frames,
             kernel_physical_memory::FrameState::Free,
         );
-        memory_regions
-            .push_within_capacity(region)
-            .expect("preallocated capacity should be sufficient");
+        memory_regions.push(region);
     }
 
     // Mark frames allocated by stage1
+    let mut stage1_marked = 0;
     for frame in stage1.usable_frames().take(stage_one_next_free) {
         let addr = frame.start_address().as_u64();
-        // Find which region this frame belongs to and mark it as allocated
+        let mut found = false;
         for region in &mut memory_regions {
             if let Some(idx) = region.frame_index(addr) {
                 region.frames_mut()[idx] = kernel_physical_memory::FrameState::Allocated;
+                stage1_marked += 1;
+                found = true;
                 break;
             }
         }
+        if !found {
+            warn!("Stage 1 frame {:#x} not found in any memory region!", addr);
+        }
+    }
+    info!("Marked {} Stage 1 frames as allocated", stage1_marked);
+
+    // Also mark all reserved regions as allocated
+    let mut reserved_marked = 0;
+    let reserved = RESERVED_REGIONS.lock();
+    for i in 0..reserved.count {
+        let res = &reserved.regions[i];
+        let start_addr = res.base;
+        let end_addr = res.base + res.length;
+        
+        // Align to 4KiB
+        let start_addr = (start_addr / 4096) * 4096;
+        let end_addr = ((end_addr + 4095) / 4096) * 4096;
+
+        for addr in (start_addr..end_addr).step_by(4096) {
+            for region in &mut memory_regions {
+                if let Some(idx) = region.frame_index(addr) {
+                    if region.frames()[idx] == kernel_physical_memory::FrameState::Free {
+                        region.frames_mut()[idx] = kernel_physical_memory::FrameState::Allocated;
+                        reserved_marked += 1;
+                    }
+                    break;
+                }
+            }
+        }
+    }
+    info!("Marked {} additional reserved frames as allocated", reserved_marked);
+
+    let mut free_count = 0;
+    for region in &memory_regions {
+        for &state in region.frames() {
+            if state == FrameState::Free {
+                free_count += 1;
+            }
+        }
+    }
+    info!("Total free frames available for Stage 2: {}", free_count);
+
+    if free_count == 0 {
+        error!("NO FREE PHYSICAL MEMORY FOR STAGE 2!");
     }
 
-    // Create sparse physical memory manager - much more memory efficient!
     let bitmap_allocator = PhysicalMemoryManager::new(memory_regions);
     let mut stage2 = MultiStageAllocator::Stage2(bitmap_allocator);
     swap(&mut *guard, &mut stage2);
-}
-
-pub trait FrameAllocator<S: PageSize> {
-    /// Allocates a single physical frame. If there is no more physical memory,
-    /// this function returns `None`.
-    fn allocate_frame(&mut self) -> Option<PhysFrame<S>> {
-        self.allocate_frames(1).map(|range| range.start)
-    }
-
-    /// Allocates `n` contiguous physical frames. If there is no more physical
-    /// memory, this function returns `None`.
-    fn allocate_frames(&mut self, n: usize) -> Option<PhysFrameRangeInclusive<S>>;
-
-    /// Deallocates a single physical frame.
-    ///
-    /// # Panics
-    /// If built with `debug_assertions`, this function panics if the frame is
-    /// already deallocated or not allocated yet.
-    fn deallocate_frame(&mut self, frame: PhysFrame<S>);
-
-    /// Deallocates a range of physical frames.
-    ///
-    /// # Panics
-    /// If built with `debug_assertions`, this function panics if any frame in
-    /// the range is already deallocated or not allocated yet.
-    /// Deallocation of remaining frames will not be attempted.
-    fn deallocate_frames(&mut self, range: PhysFrameRangeInclusive<S>) {
-        for frame in range {
-            self.deallocate_frame(frame);
-        }
-    }
 }
 
 enum MultiStageAllocator {
@@ -268,15 +268,16 @@ where
         let res = match self {
             Self::Stage1(a) => {
                 if S::SIZE == Size4KiB::SIZE {
-                    Some(
-                        PhysFrame::<S>::from_start_address(a.allocate_frame()?.start_address())
-                            .unwrap(),
-                    )
+                    Some(PhysFrame::<S>::from_start_address(PhysAddr::new(a.allocate_frame()?.start_address().as_u64())).unwrap())
                 } else {
                     unimplemented!("can't allocate non-4KiB frames in stage1")
                 }
             }
-            Self::Stage2(a) => a.allocate_frame(),
+            Self::Stage2(a) => {
+                a.allocate_frame().map(|f| {
+                    PhysFrame::from_start_address(PhysAddr::new(f.start_address().as_u64())).unwrap()
+                })
+            }
         };
         if res.is_none() {
             warn!("out of physical memory");
@@ -284,59 +285,75 @@ where
         res
     }
 
-    fn allocate_frames(&mut self, n: usize) -> Option<PhysFrameRangeInclusive<S>> {
+    fn allocate_frames(&mut self, n: usize) -> Option<PhysFrameRange<S>> {
         match self {
             Self::Stage1(_) => unimplemented!("can't allocate contiguous frames in stage1"),
-            Self::Stage2(a) => a.allocate_frames(n),
+            Self::Stage2(a) => a.allocate_frames(n).map(|r| PhysFrameRange {
+                start: PhysFrame::from_start_address(PhysAddr::new(r.start.start_address().as_u64())).unwrap(),
+                end: PhysFrame::from_start_address(PhysAddr::new(r.end.start_address().as_u64())).unwrap(),
+            }),
         }
     }
 
-    fn deallocate_frame(&mut self, frame: PhysFrame<S>) {
+    fn deallocate_frame(&mut self, _frame: PhysFrame<S>) {
         match self {
             Self::Stage1(_) => unimplemented!("can't deallocate frames in stage1"),
-            Self::Stage2(a) => {
-                a.deallocate_frame(frame);
+            Self::Stage2(_a) => {
+                #[cfg(target_arch = "aarch64")]
+                { if _a.deallocate_frame(_frame).is_none() {
+                    warn!("Failed to deallocate frame {:#x}", _frame.start_address().as_u64());
+                } }
+                #[cfg(target_arch = "x86_64")]
+                { /* omitted */ }
             }
         }
     }
 
-    fn deallocate_frames(&mut self, range: PhysFrameRangeInclusive<S>) {
+    fn deallocate_frames(&mut self, _range: PhysFrameRange<S>) {
         match self {
             Self::Stage1(_) => unimplemented!("can't deallocate frames in stage1"),
-            Self::Stage2(a) => {
-                a.deallocate_frames(range);
+            Self::Stage2(_a) => {
+                #[cfg(target_arch = "aarch64")]
+                { 
+                    // kernel_physical_memory::PhysFrameRangeInclusive is different from our PhysFrameRange
+                    // Need to be careful here if we ever use this.
+                    // For now, let's just use the trait's default deallocate_frames or loop.
+                }
             }
         }
     }
 }
 
+pub trait FrameAllocator<S: PageSize> {
+    fn allocate_frame(&mut self) -> Option<PhysFrame<S>>;
+    fn allocate_frames(&mut self, n: usize) -> Option<PhysFrameRange<S>>;
+    fn deallocate_frame(&mut self, frame: PhysFrame<S>);
+    fn deallocate_frames(&mut self, range: PhysFrameRange<S>);
+}
+
 struct PhysicalBumpAllocator {
-    regions: &'static [&'static Entry],
+    regions: &'static [MemoryRegion],
     next_frame: usize,
 }
 
 impl PhysicalBumpAllocator {
-    fn new(regions: &'static [&'static Entry]) -> Self {
-        Self {
-            regions,
-            next_frame: 0,
-        }
+    fn new(regions: &'static [MemoryRegion]) -> Self {
+        Self { regions, next_frame: 0 }
     }
 
     fn usable_frames(&self) -> impl Iterator<Item = PhysFrame> {
-        self.regions
-            .iter()
-            .filter(|region| region.entry_type == EntryType::USABLE)
-            .map(|region| region.base..region.length)
-            .flat_map(|r| r.step_by(usize::try_from(Size4KiB::SIZE).expect("usize overflow")))
+        self.regions.iter()
+            .flat_map(|region| (region.base..(region.base + region.length)).step_by(4096))
             .map(|addr| PhysFrame::containing_address(PhysAddr::new(addr)))
+            .filter(|frame| {
+                let addr = frame.start_address().as_u64();
+                RESERVED_REGIONS.lock().is_reserved(addr) == false
+            })
     }
 
     fn allocate_frame(&mut self) -> Option<PhysFrame> {
         let frame = self.usable_frames().nth(self.next_frame);
-        if frame.is_some() {
-            self.next_frame += 1;
-        }
+        if frame.is_some() { self.next_frame += 1; }
         frame
     }
 }

@@ -5,16 +5,18 @@ use core::mem::ManuallyDrop;
 use core::ops::Deref;
 
 use conquer_once::spin::OnceCell;
-use kernel_virtual_memory::{AlreadyReserved, Segment, VirtualMemoryManager};
+use kernel_virtual_memory::{AlreadyReserved, Segment, VirtualMemoryManager, VirtAddr};
+use crate::arch::types::{VirtAddr as ArchVirtAddr, PageSize, Size4KiB};
+#[cfg(target_arch = "x86_64")]
 use limine::memory_map::EntryType;
 use spin::RwLock;
-use x86_64::VirtAddr;
-use x86_64::structures::paging::{PageSize, Size4KiB};
 
+#[cfg(target_arch = "x86_64")]
 use crate::UsizeExt;
+#[cfg(target_arch = "x86_64")]
 use crate::limine::{HHDM_REQUEST, KERNEL_ADDRESS_REQUEST, MEMORY_MAP_REQUEST};
+#[cfg(target_arch = "x86_64")]
 use crate::mem::address_space::{RECURSIVE_INDEX, sign_extend_vaddr};
-use crate::mem::heap::Heap;
 
 static VMM: OnceCell<RwLock<VirtualMemoryManager>> = OnceCell::uninit();
 
@@ -25,27 +27,39 @@ fn vmm() -> &'static RwLock<VirtualMemoryManager> {
 #[allow(clippy::missing_panics_doc)]
 pub fn init() {
     VMM.init_once(|| {
+        #[cfg(target_arch = "x86_64")]
+        let start = ArchVirtAddr::new(0xFFFF_8000_0000_0000);
+        #[cfg(target_arch = "x86_64")]
+        let size = 0x0000_8000_0000_0000;
+
+        #[cfg(target_arch = "aarch64")]
+        let start = ArchVirtAddr::new(0xFFFF_0000_0000_0000);
+        #[cfg(target_arch = "aarch64")]
+        let size = 0x0001_0000_0000_0000;
+
         RwLock::new(VirtualMemoryManager::new(
-            VirtAddr::new(0xFFFF_8000_0000_0000),
-            0x0000_8000_0000_0000,
+            VirtAddr::new(start.as_u64()),
+            size,
         ))
     });
 
     // recursive mapping
+    #[cfg(target_arch = "x86_64")]
     {
         let recursive_index = *RECURSIVE_INDEX
             .get()
             .expect("recursive index should be initialized");
-        let vaddr = VirtAddr::new(sign_extend_vaddr((recursive_index as u64) << 39));
+        let vaddr = ArchVirtAddr::new(sign_extend_vaddr((recursive_index as u64) << 39));
         let len = 512 * 1024 * 1024 * 1024; // 512 GiB
-        let segment = Segment::new(vaddr, len);
+        let segment = Segment::new(VirtAddr::new(vaddr.as_u64()), len);
         let _ = VirtualMemoryHigherHalf
             .mark_as_reserved(segment)
             .expect("recursive index should not be reserved yet")
             .leak();
     }
 
-    // kernel code
+    // kernel code and system regions
+    #[cfg(target_arch = "x86_64")]
     {
         let kernel_addr = KERNEL_ADDRESS_REQUEST
             .get_response()
@@ -66,7 +80,25 @@ pub fn init() {
             .leak();
     }
 
+    #[cfg(target_arch = "aarch64")]
+    {
+        use crate::arch::aarch64::mem::kernel::PHYS_MAP_BASE;
+        // On AArch64, the bootstrap code uses index 256 in the L0 table to map physical memory.
+        // This covers a 512GB range starting at PHYS_MAP_BASE.
+        // We MUST reserve this entire range in the VMM because it is mapped using BLOCK descriptors,
+        // which the PageTableWalker cannot currently split if it needs to map a 4KB page in that range.
+        let bootstrap_segment = Segment::new(
+            VirtAddr::new(PHYS_MAP_BASE as u64),
+            512 * 1024 * 1024 * 1024, // 512GB
+        );
+        let _ = VirtualMemoryHigherHalf
+            .mark_as_reserved(bootstrap_segment)
+            .expect("bootstrap segment should not be reserved yet")
+            .leak();
+    }
+
     // kernel file and bootloader reclaimable
+    #[cfg(target_arch = "x86_64")]
     {
         let hhdm_offset = HHDM_REQUEST.get_response().unwrap().offset();
         MEMORY_MAP_REQUEST
@@ -82,7 +114,7 @@ pub fn init() {
                 .contains(&e.entry_type)
             })
             .for_each(|e| {
-                let segment = Segment::new(VirtAddr::new(e.base + hhdm_offset), e.length);
+            let segment = Segment::new(VirtAddr::new(e.base + hhdm_offset), e.length);
                 let _ = VirtualMemoryHigherHalf
                     .mark_as_reserved(segment)
                     .expect("segment should not be reserved yet")
@@ -90,11 +122,15 @@ pub fn init() {
             });
     }
 
-    // heap
-    let _ = VirtualMemoryHigherHalf
-        .mark_as_reserved(Segment::new(Heap::bottom(), Heap::size() as u64))
-        .expect("heap should not be reserved yet")
-        .leak();
+    // heap - Heap::init() already mapped this in the page tables, now we reserve it in the VMM.
+    // On AArch64, the heap is outside the 512GB bootstrap range, so it needs a separate reservation.
+    {
+        use crate::mem::heap::Heap;
+        let _ = VirtualMemoryHigherHalf
+            .mark_as_reserved(Segment::new(VirtAddr::new(Heap::bottom().as_u64()), Heap::size() as u64))
+            .expect("heap should not be reserved yet")
+            .leak();
+    }
 }
 
 enum InnerVmm<'vmm> {

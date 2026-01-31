@@ -1,16 +1,26 @@
 use core::ffi::c_void;
 use core::fmt::{Debug, Formatter};
+#[cfg(target_arch = "x86_64")]
 use core::slice::from_raw_parts_mut;
 
 use kernel_virtual_memory::Segment;
 use thiserror::Error;
-use x86_64::VirtAddr;
+use crate::arch::{PageSize, Size4KiB, VirtAddr};
+#[cfg(target_arch = "x86_64")]
 use x86_64::registers::rflags::RFlags;
-use x86_64::structures::paging::{PageSize, PageTableFlags, Size4KiB};
-
+#[cfg(target_arch = "x86_64")]
+use x86_64::structures::paging::PageTableFlags;
+#[cfg(target_arch = "aarch64")]
+use crate::arch::aarch64::paging::PageTableFlags;
+#[cfg(target_arch = "aarch64")]
+use crate::arch::types::PageRangeInclusive;
+#[cfg(target_arch = "aarch64")]
+use crate::arch::aarch64::context::init_task_stack_with_arg;
 use crate::mem::address_space::AddressSpace;
+#[cfg(target_arch = "x86_64")]
 use crate::mem::phys::PhysicalMemory;
 use crate::mem::virt::{OwnedSegment, VirtualMemoryAllocator, VirtualMemoryHigherHalf};
+#[cfg(target_arch = "x86_64")]
 use crate::{U64Ext, UsizeExt};
 
 #[derive(Debug, Copy, Clone, Error)]
@@ -39,7 +49,15 @@ impl Drop for HigherHalfStack {
     fn drop(&mut self) {
         let address_space = AddressSpace::kernel();
         address_space.with_active(|address_space| {
+            #[cfg(target_arch = "x86_64")]
             address_space.unmap_range::<Size4KiB>(&*self.segment, PhysicalMemory::deallocate_frame);
+            #[cfg(target_arch = "aarch64")]
+            {
+                let page_range = PageRangeInclusive::<Size4KiB>::from(&*self.segment);
+                address_space.unmap_range::<Size4KiB>(page_range, |frame| {
+                    crate::mem::phys::PhysicalMemory::deallocate_frame(frame);
+                });
+            }
         });
     }
 }
@@ -56,38 +74,55 @@ impl HigherHalfStack {
         arg: *mut c_void,
         exit_fn: extern "C" fn(),
     ) -> Result<Self, StackAllocationError> {
+        log::info!("HigherHalfStack::allocate: pages={}, entry_point={:p}, arg={:p}", pages, entry_point, arg);
         let mut stack = Self::allocate_plain(pages)?;
         let mapped_segment = stack.mapped_segment;
 
-        // set up stack
-        let entry_point = (entry_point as *const ()).cast::<usize>();
-        // SAFETY: The mapped segment is valid memory allocated for the stack.
-        // We have exclusive access to it during initialization.
-        let slice = unsafe {
-            from_raw_parts_mut(
-                mapped_segment.start.as_mut_ptr::<u8>(),
-                mapped_segment.len.into_usize(),
-            )
-        };
-        slice.fill(0xCD);
+        #[cfg(target_arch = "x86_64")]
+        {
+            // set up stack
+            let entry_point_ptr = (entry_point as *const ()).cast::<usize>();
+            // SAFETY: The mapped segment is valid memory allocated for the stack.
+            // We have exclusive access to it during initialization.
+            let slice = unsafe {
+                from_raw_parts_mut(
+                    mapped_segment.start.as_mut_ptr::<u8>(),
+                    mapped_segment.len.into_usize(),
+                )
+            };
+            slice.fill(0xCD);
 
-        let mut writer = StackWriter::new(slice);
-        writer.push(0xDEAD_BEEF_0BAD_F00D_DEAD_BEEF_0BAD_F00D_u128); // marker at stack bottom
-        debug_assert_eq!(size_of_val(&exit_fn), size_of::<u64>());
-        writer.push(exit_fn);
-        let rsp = writer.offset - size_of::<Registers>();
-        writer.push(Registers {
-            rsp,
-            rbp: 0,
-            rdi: arg as usize,
-            rip: entry_point as usize,
-            rflags: (RFlags::IOPL_LOW | RFlags::INTERRUPT_FLAG)
-                .bits()
-                .into_usize(),
-            ..Default::default()
-        });
+            let mut writer = StackWriter::new(slice);
+            writer.push(0xDEAD_BEEF_0BAD_F00D_DEAD_BEEF_0BAD_F00D_u128); // marker at stack bottom
+            debug_assert_eq!(size_of_val(&exit_fn), size_of::<u64>());
+            writer.push(exit_fn);
+            let rsp = writer.offset - size_of::<Registers>();
+            writer.push(Registers {
+                rsp,
+                rbp: 0,
+                rdi: arg as usize,
+                rip: entry_point_ptr as usize,
+                rflags: (RFlags::IOPL_LOW | RFlags::INTERRUPT_FLAG)
+                    .bits()
+                    .into_usize(),
+                ..Default::default()
+            });
 
-        stack.rsp = mapped_segment.start + rsp.into_u64();
+            stack.rsp = mapped_segment.start + rsp.into_u64();
+        }
+
+        #[cfg(target_arch = "aarch64")]
+        {
+            let stack_top = (mapped_segment.start + mapped_segment.len).as_u64() as usize;
+            let entry_point_addr = entry_point as usize;
+            let arg_addr = arg as usize;
+            let exit_addr = exit_fn as usize;
+
+            let rsp = init_task_stack_with_arg(stack_top, entry_point_addr, arg_addr, exit_addr);
+            stack.rsp = VirtAddr::new(rsp as u64);
+        }
+
+        log::info!("HigherHalfStack::allocate: stack initialized, rsp={:p}", stack.rsp.as_ptr::<()>());
         Ok(stack)
     }
 
@@ -102,23 +137,40 @@ impl HigherHalfStack {
     /// Returns an error if stack memory couldn't be allocated, either
     /// physical or virtual, or if mapping failed.
     pub fn allocate_plain(pages: usize) -> Result<Self, StackAllocationError> {
+        log::info!("HigherHalfStack::allocate_plain: pages={}", pages);
         let segment = VirtualMemoryHigherHalf
             .reserve(pages)
             .ok_or(StackAllocationError::OutOfVirtualMemory)?;
+
+        log::info!("HigherHalfStack::allocate_plain: segment reserved: {:?}", *segment);
 
         let mapped_segment =
             Segment::new(segment.start + Size4KiB::SIZE, segment.len - Size4KiB::SIZE);
 
         AddressSpace::kernel()
             .with_active(|address_space| {
-                address_space.map_range::<Size4KiB>(
-                    &mapped_segment,
-                    PhysicalMemory::allocate_frames_non_contiguous(),
-                    // FIXME: must be user accessible for user tasks, but can only be user accessible if in lower half, otherwise it can be modified by unrelated tasks/processes
-                    PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
-                )
-            })
-            .map_err(|_| StackAllocationError::OutOfPhysicalMemory)?;
+                #[cfg(target_arch = "x86_64")]
+                {
+                    address_space.map_range::<Size4KiB>(
+                        &mapped_segment,
+                        PhysicalMemory::allocate_frames_non_contiguous(),
+                        // FIXME: must be user accessible for user tasks, but can only be user accessible if in lower half, otherwise it can be modified by unrelated tasks/processes
+                        PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
+                    ).map_err(|_| StackAllocationError::OutOfPhysicalMemory)
+                }
+                #[cfg(target_arch = "aarch64")]
+                {
+                    log::info!("HigherHalfStack::allocate_plain: mapping range...");
+                    let frames = crate::arch::aarch64::phys::allocate_frames((mapped_segment.len / Size4KiB::SIZE) as usize).expect("out of phys memory");
+                    let res = address_space.map_range::<Size4KiB>(
+                        &mapped_segment,
+                        frames.into_iter(),
+                        PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::NO_EXECUTE,
+                    ).map_err(|_| StackAllocationError::OutOfPhysicalMemory);
+                    log::info!("HigherHalfStack::allocate_plain: range mapped");
+                    res
+                }
+            })?;
         let rsp = mapped_segment.start + mapped_segment.len;
         Ok(Self {
             segment,
@@ -152,6 +204,7 @@ impl HigherHalfStack {
     }
 }
 
+#[cfg(target_arch = "x86_64")]
 #[repr(C, packed)]
 #[derive(Debug, Default)]
 struct Registers {
@@ -175,11 +228,13 @@ struct Registers {
     rip: usize,
 }
 
+#[cfg(target_arch = "x86_64")]
 struct StackWriter<'a> {
     stack: &'a mut [u8],
     offset: usize,
 }
 
+#[cfg(target_arch = "x86_64")]
 impl<'a> StackWriter<'a> {
     fn new(stack: &'a mut [u8]) -> Self {
         let len = stack.len();

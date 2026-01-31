@@ -12,7 +12,6 @@ use cordyceps::Linked;
 use cordyceps::mpsc_queue::Links;
 use log::trace;
 use spin::RwLock;
-use x86_64::instructions::hlt;
 
 use crate::U64Ext;
 use crate::mcore::context::ExecutionContext;
@@ -58,6 +57,7 @@ pub struct Task {
     links: Links<Self>,
 }
 
+#[cfg(target_arch = "x86_64")]
 #[repr(C, align(16))]
 pub(crate) struct FxArea {
     data: [u8; 512],
@@ -170,7 +170,12 @@ impl Task {
         }
 
         loop {
-            hlt();
+            #[cfg(target_arch = "x86_64")]
+            x86_64::instructions::hlt();
+            #[cfg(target_arch = "aarch64")]
+            unsafe {
+                core::arch::asm!("wfi");
+            }
         }
     }
 
