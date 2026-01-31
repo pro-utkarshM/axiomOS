@@ -52,6 +52,7 @@ use crate::execution::{BpfContext, BpfExecutor, BpfResult};
 use crate::profile::{ActiveProfile, PhysicalProfile};
 
 // External kernel functions provided by the main kernel crate
+#[cfg(not(test))]
 unsafe extern "C" {
     fn bpf_jit_alloc_exec(size: usize) -> *mut u8;
     fn bpf_jit_free_exec(ptr: *mut u8, size: usize);
@@ -1061,17 +1062,17 @@ impl<P: PhysicalProfile> BpfExecutor<P> for Arm64JitExecutor<P> {
 
 // Dummy implementations for tests to satisfy linker
 #[cfg(test)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 unsafe extern "C" fn bpf_jit_alloc_exec(_size: usize) -> *mut u8 {
     core::ptr::null_mut()
 }
 
 #[cfg(test)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 unsafe extern "C" fn bpf_jit_free_exec(_ptr: *mut u8, _size: usize) {}
 
 #[cfg(test)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 unsafe extern "C" fn aarch64_jit_sync_cache(_start: usize, _len: usize) {}
 
 #[cfg(test)]
