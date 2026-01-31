@@ -51,6 +51,13 @@ use crate::bytecode::program::BpfProgram;
 use crate::execution::{BpfContext, BpfExecutor, BpfResult};
 use crate::profile::{ActiveProfile, PhysicalProfile};
 
+// External kernel functions provided by the main kernel crate
+unsafe extern "C" {
+    fn bpf_jit_alloc_exec(size: usize) -> *mut u8;
+    fn bpf_jit_free_exec(ptr: *mut u8, size: usize);
+    fn aarch64_jit_sync_cache(start: usize, len: usize);
+}
+
 // ARM64 register numbers
 const X0: u8 = 0;
 const X1: u8 = 1;
@@ -1006,13 +1013,42 @@ impl<P: PhysicalProfile> BpfExecutor<P> for Arm64JitExecutor<P> {
     fn execute(&self, program: &BpfProgram<P>, ctx: &BpfContext) -> BpfResult {
         // Try to compile
         match self.compile(program) {
-            Ok(_jit_prog) => {
-                // In a full implementation, we would:
-                // 1. Map the code to executable memory
-                // 2. Call the entry point
-                // For now, fall back to interpreter
-                let interp = crate::execution::Interpreter::<P>::new();
-                interp.execute(program, ctx)
+            Ok(jit_prog) => {
+                // 1. Allocate executable memory
+                let size = jit_prog.code.len();
+
+                // SAFETY: Calling external kernel function to allocate RX memory
+                let ptr = unsafe { bpf_jit_alloc_exec(size) };
+
+                if ptr.is_null() {
+                    // Fallback to interpreter if allocation fails
+                    let interp = crate::execution::Interpreter::<P>::new();
+                    return interp.execute(program, ctx);
+                }
+
+                // 2. Copy code
+                // SAFETY: ptr is valid for size bytes as returned by alloc.
+                // We are writing to it before it is effectively executable (or relying on RWX mapping).
+                unsafe {
+                    core::ptr::copy_nonoverlapping(jit_prog.code.as_ptr(), ptr, size);
+                }
+
+                // 3. Sync cache
+                // SAFETY: Required to ensure instruction fetch sees the new code
+                unsafe { aarch64_jit_sync_cache(ptr as usize, size) };
+
+                // 4. Cast to function pointer and execute
+                // BPF JIT function signature: fn(ctx: *const BpfContext) -> u64
+                // The JIT ensures R1 (ctx) is in X0, and R0 (ret) is moved to X0 before return.
+                let func: unsafe extern "C" fn(*const BpfContext) -> u64 =
+                    unsafe { core::mem::transmute(ptr) };
+
+                let result = unsafe { func(ctx) };
+
+                // 5. Free memory
+                unsafe { bpf_jit_free_exec(ptr, size) };
+
+                Ok(result)
             }
             Err(_) => {
                 // Fall back to interpreter
@@ -1022,6 +1058,21 @@ impl<P: PhysicalProfile> BpfExecutor<P> for Arm64JitExecutor<P> {
         }
     }
 }
+
+// Dummy implementations for tests to satisfy linker
+#[cfg(test)]
+#[no_mangle]
+unsafe extern "C" fn bpf_jit_alloc_exec(_size: usize) -> *mut u8 {
+    core::ptr::null_mut()
+}
+
+#[cfg(test)]
+#[no_mangle]
+unsafe extern "C" fn bpf_jit_free_exec(_ptr: *mut u8, _size: usize) {}
+
+#[cfg(test)]
+#[no_mangle]
+unsafe extern "C" fn aarch64_jit_sync_cache(_start: usize, _len: usize) {}
 
 #[cfg(test)]
 mod tests {

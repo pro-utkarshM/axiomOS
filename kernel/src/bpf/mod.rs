@@ -1,4 +1,5 @@
 pub mod helpers;
+pub mod jit_memory;
 
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;

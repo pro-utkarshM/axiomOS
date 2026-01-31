@@ -239,3 +239,52 @@ pub fn timer_tick() {
         }
     }
 }
+
+/// Synchronize I-cache and D-cache for JIT compilation
+///
+/// This function performs the necessary barriers and cache maintenance
+/// to ensure that instructions written to memory are visible to the
+/// instruction fetch unit.
+#[no_mangle]
+pub unsafe extern "C" fn aarch64_jit_sync_cache(start: usize, len: usize) {
+    // Get cache line sizes
+    let mut ctr_el0: u64;
+    core::arch::asm!("mrs {}, ctr_el0", out(reg) ctr_el0);
+
+    // D-cache line size (in 4-byte words, log2)
+    // Field DminLine is bits [19:16]
+    // Cache line size in bytes = 4 << DminLine
+    let dcache_line_shift = (ctr_el0 >> 16) & 0xF;
+    let dcache_line_size = 4usize << dcache_line_shift;
+
+    // I-cache line size (in 4-byte words, log2)
+    // Field IminLine is bits [3:0]
+    // Cache line size in bytes = 4 << IminLine
+    let icache_line_shift = ctr_el0 & 0xF;
+    let icache_line_size = 4usize << icache_line_shift;
+
+    let end = start + len;
+
+    // 1. Clean D-cache to PoU
+    let mut addr = start & !(dcache_line_size - 1);
+    while addr < end {
+        core::arch::asm!("dc cvau, {}", in(reg) addr);
+        addr += dcache_line_size;
+    }
+
+    // 2. DSB
+    core::arch::asm!("dsb ish");
+
+    // 3. Invalidate I-cache to PoU
+    addr = start & !(icache_line_size - 1);
+    while addr < end {
+        core::arch::asm!("ic ivau, {}", in(reg) addr);
+        addr += icache_line_size;
+    }
+
+    // 4. DSB
+    core::arch::asm!("dsb ish");
+
+    // 5. ISB
+    core::arch::asm!("isb");
+}
