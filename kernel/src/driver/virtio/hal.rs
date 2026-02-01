@@ -57,10 +57,12 @@ pub fn transport(addr: PciAddress, cam: Box<dyn ConfigurationAccess>) -> PciTran
     .unwrap()
 }
 
+#[allow(dead_code)]
 pub struct HalImpl;
 
 // Offset for allocating MMIO virtual addresses on AArch64
 #[cfg(target_arch = "aarch64")]
+#[allow(unused)]
 static MMIO_ALLOC_OFFSET: AtomicUsize = AtomicUsize::new(0);
 
 // SAFETY: HalImpl implements the VirtIO HAL trait using the kernel's memory management

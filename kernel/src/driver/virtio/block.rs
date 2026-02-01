@@ -63,6 +63,7 @@ fn virtio_init(addr: PciAddress, cam: Box<dyn ConfigurationAccess>) -> Result<()
 }
 
 #[cfg(target_arch = "aarch64")]
+#[allow(unused)]
 pub fn init_mmio(transport: MmioTransport) -> Result<(), Box<dyn Error>> {
     // SAFETY: MMIO transport is backed by kernel-mapped memory that lives for the entire kernel lifetime.
     let transport: MmioTransport<'static> = unsafe { core::mem::transmute(transport) };
@@ -79,6 +80,7 @@ pub fn init_mmio(transport: MmioTransport) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+#[allow(unused)]
 pub enum VirtioBlkInner {
     #[cfg(target_arch = "x86_64")]
     Pci(VirtIOBlk<HalImpl, PciTransport>),
@@ -86,6 +88,7 @@ pub enum VirtioBlkInner {
     Mmio(VirtIOBlk<HalImpl, MmioTransport<'static>>),
 }
 
+#[allow(unused)]
 impl VirtioBlkInner {
     fn capacity(&self) -> u64 {
         match self {
@@ -116,6 +119,7 @@ impl VirtioBlkInner {
 }
 
 #[derive(Clone)]
+#[allow(unused)]
 pub struct VirtioBlockDevice {
     id: KernelDeviceId,
     inner: Arc<Mutex<VirtioBlkInner>>,

@@ -14,12 +14,14 @@ use super::platform::rpi5::memory_map as platform_map;
 use super::platform::virt::mmio as platform_map;
 
 #[cfg(not(any(feature = "rpi5", feature = "virt")))]
+#[allow(dead_code)]
 mod platform_map {
     pub const GICC_BASE: usize = 0;
     pub const GICD_BASE: usize = 0;
 }
 
 /// GIC Distributor register offsets
+#[allow(dead_code)]
 mod gicd {
     /// Distributor Control Register
     pub const CTLR: usize = 0x000;
@@ -46,6 +48,7 @@ mod gicd {
 }
 
 /// GIC CPU Interface register offsets
+#[allow(dead_code)]
 mod gicc {
     /// CPU Interface Control Register
     pub const CTLR: usize = 0x000;
