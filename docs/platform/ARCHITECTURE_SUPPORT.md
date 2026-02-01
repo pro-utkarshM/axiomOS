@@ -22,7 +22,7 @@ axiom-ebpf now supports multiple architectures through an architecture abstracti
 - **Testing**: QEMU `qemu-system-riscv64 -machine virt`
 
 ### ARM 64-bit (AArch64)
-- **Status**: Initial implementation
+- **Status**: Fully supported (RPi5 target)
 - **Bootloader**: UEFI / Device Tree
 - **Exception Levels**: EL0, EL1
 - **Interrupt Controller**: GICv2/GICv3

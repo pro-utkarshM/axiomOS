@@ -1,3 +1,5 @@
+#![no_std]
+
 pub const STRUCTURE: Dir<'static> = Dir::new(
     "",
     &[

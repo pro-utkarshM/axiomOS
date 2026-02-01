@@ -57,7 +57,7 @@ What's Done                          What's Left
 | Streaming verifier | ✅ Done | O(n) memory, 50KB peak |
 | Interpreter | ✅ Done | All instructions |
 | x86_64 JIT | ✅ Done | Full instruction set |
-| ARM64 JIT | ⚠️ Partial | Structure done, ~40% complete |
+| ARM64 JIT | ✅ Done | Full instruction set |
 | Array maps | ✅ Done | |
 | Hash maps | ✅ Done | |
 | Ring buffer | ✅ Done | |
@@ -67,7 +67,6 @@ What's Done                          What's Left
 | BTF support | 🔴 Not done | Blocks rich debugging |
 
 **Remaining Work:**
-- Complete ARM64 JIT (~2 weeks)
 - BTF parsing for CO-RE support (~2-3 weeks)
 - BPF-to-BPF calls (future)
 

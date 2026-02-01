@@ -352,7 +352,7 @@ Tier 0: Kernel Core
 | Streaming Verifier | ✅ Complete | 1500 | O(n) memory usage |
 | Interpreter | ✅ Complete | 800 | All instructions |
 | x86_64 JIT | ✅ Complete | 600 | Full instruction set |
-| ARM64 JIT | ⚠️ Partial | 400 | Structure done |
+| ARM64 JIT | ✅ Complete | 1200 | Full instruction set |
 | Maps | ✅ Complete | 1200 | Array, Hash, Ring, TimeSeries |
 | Signing | ✅ Complete | 300 | Ed25519 + SHA3-256 |
 | **Architecture Support** | | | |
@@ -376,7 +376,7 @@ Tier 0: Kernel Core
 │  ✅ Boot (Limine)     ✅ Verifier          ✅ init          │
 │  ✅ Physical mem      ✅ Interpreter       ✅ minilib       │
 │  ✅ Virtual mem       ✅ x86_64 JIT        ✅ rk-cli        │
-│  ✅ Processes         ⚠️ ARM64 JIT        ✅ rk-bridge     │
+│  ✅ Processes         ✅ ARM64 JIT         ✅ rk-bridge     │
 │  ✅ VFS + Ext2        ✅ All map types                      │
 │  ✅ Syscalls (8)      ✅ Signing                            │
 │  ✅ ELF loader        ✅ Scheduler                          │

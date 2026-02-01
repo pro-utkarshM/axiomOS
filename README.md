@@ -68,7 +68,7 @@ Axiom is a **bare-metal operating system kernel** written in Rust, designed from
 | Streaming Verifier | ✅ Complete | O(n) memory, 50KB peak |
 | Interpreter | ✅ Complete | All instructions |
 | x86_64 JIT | ✅ Complete | Full instruction set |
-| ARM64 JIT | ⚠️ Partial | Structure done |
+| ARM64 JIT | ✅ Complete | Full instruction set |
 | Maps | ✅ Complete | Array, Hash, RingBuf, TimeSeries |
 | **Architecture** | | |
 | x86_64 | ✅ Complete | ACPI, APIC, full boot |

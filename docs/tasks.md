@@ -25,7 +25,7 @@ Axiom is a **complete operating system kernel** with BPF as a first-class primit
 │  ✅ Limine boot           ✅ Streaming verifier             │
 │  ✅ Physical memory       ✅ Interpreter                    │
 │  ✅ Virtual memory        ✅ x86_64 JIT                     │
-│  ✅ Process/tasks         ⚠️ ARM64 JIT (partial)            │
+│  ✅ Process/tasks         ✅ ARM64 JIT                      │
 │  ✅ Scheduler             ✅ Maps (array, hash, ring, ts)   │
 │  ✅ VFS + Ext2            ✅ ELF loader                     │
 │  ✅ DevFS                 ✅ Ed25519 signing                │
@@ -132,7 +132,7 @@ Axiom is a **complete operating system kernel** with BPF as a first-class primit
 - [x] ARM64 JIT (`kernel_bpf/src/execution/jit_aarch64.rs`)
   - Structure complete
   - Register mapping
-  - ⚠️ Instruction emission partial
+  - ✅ Instruction emission complete
 
 ### Maps
 - [x] Array map - O(1) lookup
@@ -266,8 +266,6 @@ Axiom is a **complete operating system kernel** with BPF as a first-class primit
 - [ ] **AArch64 Demand Paging** - Not implemented
   - `kernel/src/arch/aarch64/exceptions.rs` (line 178)
   - Impact: All memory must be pre-allocated
-- [ ] **ARM64 JIT Stack** - Hardcoded 512-byte stack
-  - File: `kernel/crates/kernel_bpf/src/execution/jit_aarch64.rs` (line 634)
 
 ### Test Coverage Gaps (Priority: High)
 - [ ] BPF syscall handler - No unit tests
