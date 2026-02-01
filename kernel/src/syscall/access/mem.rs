@@ -3,8 +3,8 @@ use kernel_syscall::access::{
     AllocationStrategy, CreateMappingError, Location, Mapping, MemoryAccess,
 };
 use kernel_virtual_memory::Segment;
-use x86_64::VirtAddr;
-use x86_64::structures::paging::{PageSize, PageTableFlags, Size4KiB};
+
+use crate::arch::types::{PageSize, PageTableFlags, PhysFrameRangeInclusive, Size4KiB, VirtAddr};
 
 use crate::UsizeExt;
 use crate::mcore::mtask::process::mem::{MappedMemoryRegion, MemoryRegion};
@@ -75,7 +75,7 @@ pub struct KernelMapping {
     addr: VirtAddr,
     size: usize,
     segment: OwnedSegment<'static>,
-    physical_frames: x86_64::structures::paging::frame::PhysFrameRangeInclusive<Size4KiB>,
+    physical_frames: PhysFrameRangeInclusive<Size4KiB>,
 }
 
 impl KernelMapping {

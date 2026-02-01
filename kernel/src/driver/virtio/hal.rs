@@ -15,12 +15,12 @@ use virtio_drivers::transport::pci::bus::{DeviceFunction, PciRoot};
 
 use virtio_drivers::{BufferDirection, Hal};
 
+use crate::arch::types::{
+    PhysAddr, PhysFrame, PhysFrameRangeInclusive, Size4KiB,
+};
+
 #[cfg(target_arch = "x86_64")]
-use x86_64::structures::paging::frame::PhysFrameRangeInclusive;
-#[cfg(target_arch = "x86_64")]
-use x86_64::structures::paging::{PageSize, PageTableFlags, PhysFrame, Size4KiB};
-#[cfg(target_arch = "x86_64")]
-use x86_64::{PhysAddr, VirtAddr};
+use crate::arch::types::{PageSize, PageTableFlags, VirtAddr};
 
 #[cfg(target_arch = "x86_64")]
 use crate::driver::pci::VirtIoCam;
@@ -38,7 +38,7 @@ use crate::arch::aarch64::{
     mem::{self, pte_flags, PAGE_SIZE},
     mm,
     paging::{self, PageTableWalker},
-    phys::{self, PhysFrame, PhysFrameRangeInclusive},
+    phys,
 };
 #[cfg(target_arch = "aarch64")]
 use core::sync::atomic::{AtomicUsize, Ordering};
@@ -86,7 +86,7 @@ unsafe impl Hal for HalImpl {
         #[cfg(target_arch = "aarch64")]
         {
             // 1. Allocate contiguous physical frames
-            let range = phys::allocate_frames::<crate::arch::types::Size4KiB>(pages).expect("dma_alloc: out of memory");
+            let range = phys::allocate_frames::<Size4KiB>(pages).expect("dma_alloc: out of memory");
             let phys_addr = range.start.addr();
 
             // 2. Use direct map for virtual address
@@ -134,14 +134,14 @@ unsafe impl Hal for HalImpl {
         }
         #[cfg(target_arch = "aarch64")]
         {
-            let start_frame: PhysFrame<crate::arch::types::Size4KiB> = PhysFrame::containing_address(crate::arch::PhysAddr::new(paddr));
-            let end_frame: PhysFrame<crate::arch::types::Size4KiB> = PhysFrame::containing_address(crate::arch::PhysAddr::new(paddr + (pages as u64 - 1) * PAGE_SIZE as u64));
+            let start_frame: PhysFrame<Size4KiB> = PhysFrame::containing_address(PhysAddr::new(paddr));
+            let end_frame: PhysFrame<Size4KiB> = PhysFrame::containing_address(PhysAddr::new(paddr + (pages as u64 - 1) * PAGE_SIZE as u64));
             let range = PhysFrameRangeInclusive {
                 start: start_frame,
                 end: end_frame,
             };
 
-            phys::deallocate_frames::<crate::arch::types::Size4KiB>(range);
+            phys::deallocate_frames::<Size4KiB>(range);
             0
         }
     }

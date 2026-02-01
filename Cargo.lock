@@ -873,6 +873,7 @@ dependencies = [
 name = "kernel_virtual_memory"
 version = "0.1.0"
 dependencies = [
+ "kernel_physical_memory",
  "log",
  "thiserror",
  "x86_64",

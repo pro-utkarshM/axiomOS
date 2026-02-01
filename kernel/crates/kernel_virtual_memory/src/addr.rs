@@ -1,5 +1,7 @@
 use core::fmt;
 use core::ops::{Add, AddAssign, Sub, SubAssign};
+use kernel_physical_memory::{PageSize, Size4KiB};
+use crate::Segment;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
@@ -90,5 +92,76 @@ impl Sub<VirtAddr> for VirtAddr {
     type Output = u64;
     fn sub(self, rhs: VirtAddr) -> Self::Output {
         self.0 - rhs.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(transparent)]
+pub struct Page<S: PageSize = Size4KiB> {
+    pub start_address: VirtAddr,
+    pub size: core::marker::PhantomData<S>,
+}
+
+impl<S: PageSize> Page<S> {
+    pub const fn containing_address(address: VirtAddr) -> Self {
+        Self {
+            start_address: VirtAddr::new(address.0 & !(S::SIZE - 1)),
+            size: core::marker::PhantomData,
+        }
+    }
+
+    pub const fn from_start_address(address: VirtAddr) -> Result<Self, ()> {
+        if address.0 & (S::SIZE - 1) != 0 {
+            return Err(());
+        }
+        Ok(Self {
+            start_address: address,
+            size: core::marker::PhantomData,
+        })
+    }
+
+    pub const fn start_address(self) -> VirtAddr {
+        self.start_address
+    }
+
+    pub const fn size(self) -> u64 {
+        S::SIZE
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PageRangeInclusive<S: PageSize = Size4KiB> {
+    pub start: Page<S>,
+    pub end: Page<S>,
+}
+
+impl<S: PageSize> Iterator for PageRangeInclusive<S> {
+    type Item = Page<S>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.start.start_address.as_u64() > self.end.start_address.as_u64() {
+            return None;
+        }
+        let page = self.start;
+        self.start = Page::containing_address(self.start.start_address + S::SIZE);
+        Some(page)
+    }
+}
+
+impl<S: PageSize> From<Segment> for PageRangeInclusive<S> {
+    fn from(segment: Segment) -> Self {
+        Self {
+            start: Page::containing_address(segment.start),
+            end: Page::containing_address(segment.start + segment.len - 1),
+        }
+    }
+}
+
+impl<S: PageSize> From<&Segment> for PageRangeInclusive<S> {
+    fn from(segment: &Segment) -> Self {
+        Self {
+            start: Page::containing_address(segment.start),
+            end: Page::containing_address(segment.start + segment.len - 1),
+        }
     }
 }

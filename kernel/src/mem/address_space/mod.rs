@@ -20,25 +20,20 @@ use x86_64::structures::paging::mapper::{
     TranslateResult,
 };
 #[cfg(target_arch = "x86_64")]
-use x86_64::structures::paging::page::PageRangeInclusive;
-#[cfg(target_arch = "x86_64")]
 use x86_64::structures::paging::{
-    MappedPageTable, Mapper, OffsetPageTable, Page, PageSize, PageTable, PageTableFlags, PhysFrame,
-    RecursivePageTable, Size4KiB, Translate,
+    MappedPageTable, Mapper, OffsetPageTable, PageTable, RecursivePageTable, Translate,
 };
-#[cfg(target_arch = "x86_64")]
-use x86_64::{PhysAddr, VirtAddr};
 
-#[cfg(target_arch = "aarch64")]
-use crate::arch::aarch64::paging::PageTableFlags;
-#[cfg(target_arch = "aarch64")]
-use crate::arch::types::{Page, PageRangeInclusive, PageSize, PhysAddr, PhysFrame, VirtAddr};
+use crate::arch::types::{
+    Page, PageRangeInclusive, PageSize, PageTableFlags, PhysAddr, PhysFrame, VirtAddr,
+};
+
+#[cfg(target_arch = "x86_64")]
+use crate::arch::types::Size4KiB;
 
 #[cfg(target_arch = "aarch64")]
 pub mod aarch64 {
     use super::*;
-    use crate::arch::aarch64::phys::PhysFrame;
-    use crate::arch::types::VirtAddr;
 
     pub fn aarch64_init() -> (VirtAddr, PhysFrame) {
         let phys = crate::arch::aarch64::mm::kernel_page_table_phys();

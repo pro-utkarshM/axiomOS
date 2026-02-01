@@ -12,9 +12,8 @@ use spin::Mutex;
 use spin::rwlock::RwLock;
 use virtio_drivers::device::gpu::VirtIOGpu;
 use virtio_drivers::transport::pci::PciTransport;
-use x86_64::VirtAddr;
-use x86_64::structures::paging::frame::PhysFrameRangeInclusive;
-use x86_64::structures::paging::{PhysFrame, Size4KiB};
+
+use crate::arch::types::{PhysFrame, PhysFrameRangeInclusive, Size4KiB, VirtAddr};
 
 use crate::UsizeExt;
 use crate::driver::KernelDeviceId;

@@ -2,7 +2,10 @@ pub mod traits;
 pub mod types;
 
 // Re-export common types
-pub use types::{PageSize, PhysAddr, PhysFrame, PhysFrameRange, Size4KiB, VirtAddr};
+pub use types::{
+    PageRangeInclusive, PageSize, PageTableFlags, PhysAddr, PhysFrame, PhysFrameRange, Size4KiB,
+    VirtAddr,
+};
 
 #[cfg(target_arch = "x86_64")]
 pub mod gdt;

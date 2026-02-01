@@ -6,7 +6,7 @@ use core::ops::Deref;
 
 use conquer_once::spin::OnceCell;
 use kernel_virtual_memory::{AlreadyReserved, Segment, VirtualMemoryManager, VirtAddr};
-use crate::arch::types::{VirtAddr as ArchVirtAddr, PageSize, Size4KiB};
+use crate::arch::types::{PageSize, Size4KiB};
 #[cfg(target_arch = "x86_64")]
 use limine::memory_map::EntryType;
 use spin::RwLock;
@@ -28,17 +28,17 @@ fn vmm() -> &'static RwLock<VirtualMemoryManager> {
 pub fn init() {
     VMM.init_once(|| {
         #[cfg(target_arch = "x86_64")]
-        let start = ArchVirtAddr::new(0xFFFF_8000_0000_0000);
+        let start = VirtAddr::new(0xFFFF_8000_0000_0000);
         #[cfg(target_arch = "x86_64")]
         let size = 0x0000_8000_0000_0000;
 
         #[cfg(target_arch = "aarch64")]
-        let start = ArchVirtAddr::new(0xFFFF_0000_0000_0000);
+        let start = VirtAddr::new(0xFFFF_0000_0000_0000);
         #[cfg(target_arch = "aarch64")]
         let size = 0x0001_0000_0000_0000;
 
         RwLock::new(VirtualMemoryManager::new(
-            VirtAddr::new(start.as_u64()),
+            start,
             size,
         ))
     });
@@ -49,9 +49,9 @@ pub fn init() {
         let recursive_index = *RECURSIVE_INDEX
             .get()
             .expect("recursive index should be initialized");
-        let vaddr = ArchVirtAddr::new(sign_extend_vaddr((recursive_index as u64) << 39));
+        let vaddr = VirtAddr::new(sign_extend_vaddr((recursive_index as u64) << 39));
         let len = 512 * 1024 * 1024 * 1024; // 512 GiB
-        let segment = Segment::new(VirtAddr::new(vaddr.as_u64()), len);
+        let segment = Segment::new(vaddr, len);
         let _ = VirtualMemoryHigherHalf
             .mark_as_reserved(segment)
             .expect("recursive index should not be reserved yet")

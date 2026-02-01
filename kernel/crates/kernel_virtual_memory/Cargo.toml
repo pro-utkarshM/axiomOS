@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 log.workspace = true
 thiserror.workspace = true
+kernel_physical_memory = { path = "../kernel_physical_memory" }
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 x86_64.workspace = true

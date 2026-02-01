@@ -2,22 +2,19 @@ use core::sync::atomic::AtomicBool;
 use core::sync::atomic::Ordering::Relaxed;
 
 use conquer_once::spin::OnceCell;
-use kernel_virtual_memory::VirtAddr;
 use log::info;
 
 #[cfg(target_arch = "x86_64")]
-use x86_64::structures::paging::page::PageRangeInclusive;
-#[cfg(target_arch = "x86_64")]
-use x86_64::structures::paging::{Page, PageTableFlags, Size2MiB, Size4KiB};
+use crate::arch::types::Size2MiB;
+use crate::arch::types::{
+    Page, PageRangeInclusive, PageTableFlags, Size4KiB, VirtAddr,
+};
+
 #[cfg(target_arch = "x86_64")]
 use crate::mem::address_space::virt_addr_from_page_table_indices;
 #[cfg(target_arch = "x86_64")]
 use crate::mem::phys::PhysicalMemory;
 
-#[cfg(target_arch = "aarch64")]
-use crate::arch::aarch64::paging::PageTableFlags;
-#[cfg(target_arch = "aarch64")]
-use crate::arch::types::{Page, PageRangeInclusive, Size4KiB};
 #[cfg(target_arch = "aarch64")]
 use crate::arch::aarch64::phys;
 #[cfg(target_arch = "aarch64")]

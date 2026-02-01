@@ -3,18 +3,14 @@ use x86_64::registers::control::Cr3;
 #[cfg(target_arch = "x86_64")]
 use x86_64::structures::paging::mapper::{FlagUpdateError, MapToError, TranslateResult};
 #[cfg(target_arch = "x86_64")]
-use x86_64::structures::paging::page::PageRangeInclusive;
-#[cfg(target_arch = "x86_64")]
-use x86_64::structures::paging::{
-    Mapper, Page, PageSize, PageTable, PageTableFlags, PhysFrame, RecursivePageTable, Translate,
-};
-#[cfg(target_arch = "x86_64")]
-use x86_64::{PhysAddr, VirtAddr};
+use x86_64::structures::paging::{Mapper, PageTable, RecursivePageTable, Translate};
 
 #[cfg(target_arch = "aarch64")]
-use crate::arch::aarch64::paging::{PageTableWalker, PageTableFlags};
-#[cfg(target_arch = "aarch64")]
-use crate::arch::types::{Page, PageRangeInclusive, PageSize, PhysAddr, PhysFrame, VirtAddr};
+use crate::arch::aarch64::paging::PageTableWalker;
+
+use crate::arch::types::{
+    Page, PageRangeInclusive, PageSize, PageTableFlags, PhysAddr, PhysFrame, VirtAddr,
+};
 
 #[cfg(target_arch = "x86_64")]
 use crate::mem::phys::PhysicalMemory;

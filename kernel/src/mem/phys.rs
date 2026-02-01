@@ -268,16 +268,16 @@ where
         let res = match self {
             Self::Stage1(a) => {
                 if S::SIZE == Size4KiB::SIZE {
-                    Some(PhysFrame::<S>::from_start_address(PhysAddr::new(a.allocate_frame()?.start_address().as_u64())).unwrap())
+                    // Stage1 allocator (BumpAllocator) works with u64 addresses internally
+                    // but we need to cast the result to the generic PhysFrame<S>
+                    // Since we checked S::SIZE == 4KiB, this is safe-ish for now.
+                    let frame_4k = a.allocate_frame()?;
+                    Some(PhysFrame::<S>::from_start_address(PhysAddr::new(frame_4k.start_address().as_u64())).unwrap())
                 } else {
                     unimplemented!("can't allocate non-4KiB frames in stage1")
                 }
             }
-            Self::Stage2(a) => {
-                a.allocate_frame().map(|f| {
-                    PhysFrame::from_start_address(PhysAddr::new(f.start_address().as_u64())).unwrap()
-                })
-            }
+            Self::Stage2(a) => a.allocate_frame(),
         };
         if res.is_none() {
             warn!("out of physical memory");
@@ -288,10 +288,7 @@ where
     fn allocate_frames(&mut self, n: usize) -> Option<PhysFrameRange<S>> {
         match self {
             Self::Stage1(_) => unimplemented!("can't allocate contiguous frames in stage1"),
-            Self::Stage2(a) => a.allocate_frames(n).map(|r| PhysFrameRange {
-                start: PhysFrame::from_start_address(PhysAddr::new(r.start.start_address().as_u64())).unwrap(),
-                end: PhysFrame::from_start_address(PhysAddr::new(r.end.start_address().as_u64())).unwrap(),
-            }),
+            Self::Stage2(a) => a.allocate_frames(n),
         }
     }
 

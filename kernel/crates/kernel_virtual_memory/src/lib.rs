@@ -10,9 +10,13 @@ use thiserror::Error;
 
 #[cfg(target_arch = "x86_64")]
 pub use x86_64::VirtAddr;
+#[cfg(target_arch = "x86_64")]
+pub use x86_64::structures::paging::page::PageRangeInclusive;
+#[cfg(target_arch = "x86_64")]
+pub use x86_64::structures::paging::Page;
 
 #[cfg(not(target_arch = "x86_64"))]
-pub use addr::VirtAddr;
+pub use addr::{Page, PageRangeInclusive, VirtAddr};
 
 mod segment;
 #[cfg(not(target_arch = "x86_64"))]

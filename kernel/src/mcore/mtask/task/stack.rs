@@ -5,15 +5,12 @@ use core::slice::from_raw_parts_mut;
 
 use kernel_virtual_memory::Segment;
 use thiserror::Error;
-use crate::arch::{PageSize, Size4KiB, VirtAddr};
+use crate::arch::{PageSize, PageTableFlags, Size4KiB, VirtAddr};
+#[cfg(target_arch = "aarch64")]
+use crate::arch::PageRangeInclusive;
 #[cfg(target_arch = "x86_64")]
 use x86_64::registers::rflags::RFlags;
-#[cfg(target_arch = "x86_64")]
-use x86_64::structures::paging::PageTableFlags;
-#[cfg(target_arch = "aarch64")]
-use crate::arch::aarch64::paging::PageTableFlags;
-#[cfg(target_arch = "aarch64")]
-use crate::arch::types::PageRangeInclusive;
+
 #[cfg(target_arch = "aarch64")]
 use crate::arch::aarch64::context::init_task_stack_with_arg;
 use crate::mem::address_space::AddressSpace;

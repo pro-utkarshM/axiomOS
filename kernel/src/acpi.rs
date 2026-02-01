@@ -4,8 +4,8 @@ use acpi::{AcpiHandler, AcpiTables, PhysicalMapping};
 use conquer_once::spin::OnceCell;
 use kernel_virtual_memory::Segment;
 use spin::Mutex;
-use x86_64::structures::paging::{Page, PageSize, PageTableFlags, PhysFrame, Size4KiB};
-use x86_64::{PhysAddr, VirtAddr};
+
+use crate::arch::types::{Page, PageSize, PageTableFlags, PhysAddr, PhysFrame, Size4KiB, VirtAddr};
 
 use crate::U64Ext;
 use crate::limine::RSDP_REQUEST;

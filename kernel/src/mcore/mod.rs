@@ -19,10 +19,9 @@ use x86_64::registers::control::{Cr3, Cr3Flags};
 use x86_64::registers::model_specific::KernelGsBase;
 #[cfg(target_arch = "x86_64")]
 use x86_64::registers::segmentation::Segment;
+
 #[cfg(target_arch = "x86_64")]
-use x86_64::structures::paging::PhysFrame;
-#[cfg(target_arch = "x86_64")]
-use x86_64::{PhysAddr, VirtAddr};
+use crate::arch::types::{PhysAddr, PhysFrame, VirtAddr};
 
 #[cfg(target_arch = "x86_64")]
 use crate::apic::io_apic;
