@@ -28,9 +28,9 @@ This document tracks progress toward the vision outlined in [proposal.md](propos
 | # | Task | Status | Priority | Owner | Notes |
 |---|------|--------|----------|-------|-------|
 | 0.1 | Fix build system (artifact dependencies) | ✅ Complete | Critical | - | Completed 2026-02-03 |
-| 0.2 | Fix x86_64 boot crash (page table remapping) | 🔧 In Progress | **CRITICAL** | - | Triple fault during page table remapping at `kernel/src/mem/address_space/mod.rs:142-208` |
+| 0.2 | Fix x86_64 boot crash (page table remapping) | ✅ Complete | **CRITICAL** | - | FIXED 2026-02-03: Use bootloader page tables instead of creating new ones |
 | 0.3 | Fix AArch64 context switching in interrupt handlers | ⏳ Next | **CRITICAL** | - | Documented in `WORK_REMAINING.md`, interrupts disabled as workaround |
-| 0.4 | Get kernel booting to userspace (x86_64) | ⏳ Blocked | Critical | - | Blocked by 0.2 |
+| 0.4 | Get kernel booting to userspace (x86_64) | 🔧 In Progress | Critical | - | Was blocked by 0.2, now unblocked |
 | 0.5 | Get kernel booting to userspace (AArch64/RPi5) | ⏳ Blocked | Critical | - | Blocked by 0.3 |
 
 **Exit Criteria:**
@@ -148,7 +148,8 @@ This document tracks progress toward the vision outlined in [proposal.md](propos
 
 **What's Working:**
 - ✅ Build system (x86_64, AArch64)
-- ✅ Kernel boots on x86_64 (until page table remapping crash)
+- ✅ x86_64 kernel boots successfully (FIXED!)
+- ✅ Memory initialization and heap setup
 - ✅ BPF subsystem complete (verifier, JIT, maps, signing)
 - ✅ Timer interrupt hooks execute BPF programs
 - ✅ Syscall hooks execute BPF programs
@@ -156,16 +157,16 @@ This document tracks progress toward the vision outlined in [proposal.md](propos
 - ✅ BPF attach abstractions implemented
 
 **What's Broken:**
-- 🔴 x86_64: Crashes during page table remapping (triple fault)
 - 🔴 AArch64: Context switching in interrupt handlers crashes kernel
-- 🔴 Cannot boot to userspace on either architecture
+- 🔴 Cannot boot to userspace on either architecture yet (next step)
 
 **Next Immediate Steps:**
-1. Fix x86_64 page table crash OR
-2. Fix AArch64 context switching crash
-3. Get init running in userspace
-4. Wire BPF manager into kernel
-5. Complete Phase 1 demo
+1. ✅ ~~Fix x86_64 page table crash~~ (COMPLETED!)
+2. Continue x86_64 boot and reach userspace
+3. Fix AArch64 context switching crash
+4. Get init running in userspace on both architectures
+5. Wire BPF manager into kernel
+6. Complete Phase 1 demo
 
 ---
 
@@ -188,10 +189,10 @@ From proposal.md (line 543-548):
 See also: [WORK_REMAINING.md](WORK_REMAINING.md)
 
 ### Critical
-1. **x86_64 Page Table Crash** - Kernel crashes at `kernel/src/mem/address_space/mod.rs:142-208` during remapping
-   - Last log: "remapping kernel"
-   - Never reaches: "switching to recursive mapping"
-   - Likely triple fault causing CPU reset
+1. **~~x86_64 Page Table Crash~~** - ✅ FIXED 2026-02-03
+   - Solution: Use bootloader's page tables directly instead of creating new ones
+   - Avoids chicken-and-egg problem with HHDM mapping during page table setup
+   - Kernel now boots successfully past memory initialization
 
 2. **AArch64 Context Switch Crash** - Documented in WORK_REMAINING.md
    - Context switching inside interrupt handlers corrupts stack
