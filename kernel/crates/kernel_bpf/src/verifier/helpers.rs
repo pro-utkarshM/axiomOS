@@ -32,40 +32,39 @@ pub enum HelperId {
     KtimeGetNs = 1,
     /// Print debug message (debug builds only)
     TracePrintk = 2,
-    /// Get pseudo-random u32
-    GetPrandomU32 = 3,
-    /// Get current CPU ID
-    GetSmpProcessorId = 4,
-
-    // ===== Map Helpers (5-10) =====
     /// Look up element in map
-    MapLookupElem = 5,
+    MapLookupElem = 3,
     /// Update element in map
-    MapUpdateElem = 6,
+    MapUpdateElem = 4,
     /// Delete element from map
-    MapDeleteElem = 7,
-
-    // ===== Memory Helpers (8-20) =====
-    /// Read from arbitrary memory (with safety checks)
-    ProbeRead = 8,
-
-    // ===== Process Helpers (9-20) =====
-    /// Get current PID and TGID
-    GetCurrentPidTgid = 9,
-    /// Get current UID and GID
-    GetCurrentUidGid = 10,
-    /// Get current process command name
-    GetCurrentComm = 11,
-
-    // ===== Ring Buffer Helpers (130-140) =====
-    /// Reserve space in ring buffer
-    RingbufReserve = 131,
-    /// Submit reserved ring buffer entry
-    RingbufSubmit = 132,
-    /// Discard reserved ring buffer entry
-    RingbufDiscard = 133,
+    MapDeleteElem = 5,
     /// Output to ring buffer (reserve + submit)
-    RingbufOutput = 134,
+    RingbufOutput = 6,
+
+    /// Get pseudo-random u32
+    GetPrandomU32 = 7,
+    /// Get current CPU ID
+    GetSmpProcessorId = 8,
+
+    // ===== Memory Helpers (20-30) =====
+    /// Read from arbitrary memory (with safety checks)
+    ProbeRead = 20,
+
+    // ===== Process Helpers (30-40) =====
+    /// Get current PID and TGID
+    GetCurrentPidTgid = 30,
+    /// Get current UID and GID
+    GetCurrentUidGid = 31,
+    /// Get current process command name
+    GetCurrentComm = 32,
+
+    // ===== Ring Buffer Helpers (Advanced) (40-50) =====
+    /// Reserve space in ring buffer
+    RingbufReserve = 40,
+    /// Submit reserved ring buffer entry
+    RingbufSubmit = 41,
+    /// Discard reserved ring buffer entry
+    RingbufDiscard = 42,
 
     // ===== rkBPF Robotics Helpers (1000+) =====
     /// Emergency stop all motors
@@ -92,19 +91,19 @@ impl HelperId {
         match id {
             1 => Some(Self::KtimeGetNs),
             2 => Some(Self::TracePrintk),
-            3 => Some(Self::GetPrandomU32),
-            4 => Some(Self::GetSmpProcessorId),
-            5 => Some(Self::MapLookupElem),
-            6 => Some(Self::MapUpdateElem),
-            7 => Some(Self::MapDeleteElem),
-            8 => Some(Self::ProbeRead),
-            9 => Some(Self::GetCurrentPidTgid),
-            10 => Some(Self::GetCurrentUidGid),
-            11 => Some(Self::GetCurrentComm),
-            131 => Some(Self::RingbufReserve),
-            132 => Some(Self::RingbufSubmit),
-            133 => Some(Self::RingbufDiscard),
-            134 => Some(Self::RingbufOutput),
+            3 => Some(Self::MapLookupElem),
+            4 => Some(Self::MapUpdateElem),
+            5 => Some(Self::MapDeleteElem),
+            6 => Some(Self::RingbufOutput),
+            7 => Some(Self::GetPrandomU32),
+            8 => Some(Self::GetSmpProcessorId),
+            20 => Some(Self::ProbeRead),
+            30 => Some(Self::GetCurrentPidTgid),
+            31 => Some(Self::GetCurrentUidGid),
+            32 => Some(Self::GetCurrentComm),
+            40 => Some(Self::RingbufReserve),
+            41 => Some(Self::RingbufSubmit),
+            42 => Some(Self::RingbufDiscard),
             1000 => Some(Self::MotorEmergencyStop),
             1001 => Some(Self::TimeseriesPush),
             1002 => Some(Self::SensorLastTimestamp),
@@ -544,7 +543,7 @@ mod tests {
     #[test]
     fn helper_id_from_raw() {
         assert_eq!(HelperId::from_raw(1), Some(HelperId::KtimeGetNs));
-        assert_eq!(HelperId::from_raw(5), Some(HelperId::MapLookupElem));
+        assert_eq!(HelperId::from_raw(3), Some(HelperId::MapLookupElem));
         assert_eq!(HelperId::from_raw(1000), Some(HelperId::MotorEmergencyStop));
         assert_eq!(HelperId::from_raw(9999), None);
     }
@@ -578,7 +577,7 @@ mod tests {
         args[0] = RegType::ConstPtrToMap; // R1 = map
         args[1] = RegType::PtrToStack; // R2 = key on stack
 
-        let result = validate_helper_call(5, &args);
+        let result = validate_helper_call(3, &args);
         assert!(matches!(result, HelperValidation::Valid(_)));
     }
 
@@ -588,7 +587,7 @@ mod tests {
         args[0] = RegType::Scalar; // Wrong! Should be map pointer
         args[1] = RegType::PtrToStack;
 
-        let result = validate_helper_call(5, &args);
+        let result = validate_helper_call(3, &args);
         assert!(matches!(
             result,
             HelperValidation::ArgTypeMismatch { arg_idx: 0, .. }
