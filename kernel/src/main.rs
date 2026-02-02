@@ -97,8 +97,12 @@ unsafe extern "C" fn main() -> ! {
     // Initialize per-CPU context for CPU 0
     kernel::arch::aarch64::cpu::init_current_cpu(0);
 
+    info!("About to enable interrupts...");
     // Enable interrupts
-    kernel::arch::aarch64::Aarch64::enable_interrupts();
+    // TODO: Re-enable this once context switching is fixed
+    // kernel::arch::aarch64::Aarch64::enable_interrupts();
+
+    info!("Interrupts NOT enabled (disabled for debugging)");
 
     {
         info!("mounting root filesystem");
