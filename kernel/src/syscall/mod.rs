@@ -159,12 +159,23 @@ pub fn dispatch_syscall(
 /// - No mutable references to the memory exist during the slice's lifetime
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 unsafe fn slice_from_ptr_and_len<'a, T>(ptr: usize, len: usize) -> Result<&'a [T], Errno> {
-    if ptr == 0 || len == 0 {
+    if ptr == 0 {
         return Err(EINVAL);
     }
+    if len == 0 {
+        return Ok(&[]);
+    }
+
+    // SAFETY: We validate that ptr is in the userspace address range (canonical lower half)
+    // via try_from_usize, which rejects kernel addresses.
+    let user_ptr = unsafe { UserspacePtr::<T>::try_from_usize(ptr)? };
+
+    // Check if the memory range is valid for userspace access
+    user_ptr.validate_range(len * core::mem::size_of::<T>())?;
+
     // SAFETY: Caller guarantees ptr points to valid memory for len elements of T,
-    // is properly aligned, and no mutable references exist. The null check above
-    // ensures ptr is non-null.
+    // is properly aligned, and no mutable references exist. The checks above
+    // ensure it is within userspace bounds.
     let slice = unsafe { from_raw_parts(ptr as *mut T, len) };
     Ok(slice)
 }
@@ -180,12 +191,23 @@ unsafe fn slice_from_ptr_and_len<'a, T>(ptr: usize, len: usize) -> Result<&'a [T
 /// - No other references (mutable or immutable) to the memory exist
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 unsafe fn slice_from_ptr_and_len_mut<'a, T>(ptr: usize, len: usize) -> Result<&'a mut [T], Errno> {
-    if ptr == 0 || len == 0 {
+    if ptr == 0 {
         return Err(EINVAL);
     }
+    if len == 0 {
+        return Ok(&mut []);
+    }
+
+    // SAFETY: We validate that ptr is in the userspace address range (canonical lower half)
+    // via try_from_usize, which rejects kernel addresses.
+    let user_ptr = unsafe { UserspaceMutPtr::<T>::try_from_usize(ptr)? };
+
+    // Check if the memory range is valid for userspace access
+    user_ptr.validate_range(len * core::mem::size_of::<T>())?;
+
     // SAFETY: Caller guarantees ptr points to valid memory for len elements of T,
-    // is properly aligned, and no other references exist. The null check above
-    // ensures ptr is non-null.
+    // is properly aligned, and no other references exist. The checks above
+    // ensure it is within userspace bounds.
     let slice = unsafe { from_raw_parts_mut(ptr as *mut T, len) };
     Ok(slice)
 }
