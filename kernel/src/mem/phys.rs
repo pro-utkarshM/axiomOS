@@ -135,7 +135,8 @@ pub fn init_stage1(entries: &[&Entry]) -> usize {
 
     let mut count = 0;
     for entry in entries {
-        if count < 128 {
+        // Only add USABLE memory regions - skip reserved, ACPI, firmware, etc.
+        if entry.entry_type == EntryType::USABLE && count < 128 {
             unsafe {
                 BOOT_REGIONS[count] = MemoryRegion {
                     base: entry.base,
