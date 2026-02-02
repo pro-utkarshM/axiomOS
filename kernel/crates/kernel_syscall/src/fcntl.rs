@@ -20,6 +20,8 @@ pub fn sys_open<Cx: CwdAccess + FileAccess>(
         return Err(ENAMETOOLONG);
     }
 
+    path.validate_range(path_len).map_err(|_| EINVAL)?;
+
     let path = {
         // SAFETY: We verified path_len is within reasonable limits (PATH_MAX).
         // The pointer comes from a UserspacePtr which we assume points to valid memory

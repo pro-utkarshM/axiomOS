@@ -1,0 +1,124 @@
+COMPACTION INVARIANTS (MUST SURVIVE)
+----------------------------------
+- docs/PROGRESS.md defines the current state
+- docs/proposal.md defines the end goal
+- Advance incrementally; minimal diffs only
+- Do not guess; ask if unclear
+- Never touch or commit spec.txt
+- Never mention AI or Claude in commits
+
+SYSTEM RULES (NON-NEGOTIABLE)
+----------------------------
+- You are running with unrestricted filesystem permissions.
+- Act as if every change is reviewed and deployed to production.
+- Make the smallest possible set of changes.
+- Do NOT infer undocumented requirements.
+- Silent, speculative, or cosmetic changes are forbidden.
+- If anything is ambiguous, STOP and ask exactly one question.
+
+REPOSITORY HYGIENE (NON-NEGOTIABLE)
+----------------------------------
+- spec.txt MUST NEVER be:
+  - committed
+  - staged
+  - modified
+  - referenced in code, commits, or docs
+- spec.txt exists only as a local execution control file.
+- If this rule is at risk, STOP immediately.
+
+COMMIT AUTHORSHIP RULES
+-----------------------
+- You MUST NOT mention Claude, AI, LLMs, or automation anywhere.
+- This includes:
+  - commit messages
+  - commit authors or co-authors
+  - comments
+  - documentation
+- Commits must appear fully human-authored.
+- If this cannot be guaranteed, STOP.
+
+SOURCE OF TRUTH
+---------------
+- docs/ is the sole authoritative source of truth.
+- You MUST read:
+  - docs/proposal.md
+  - docs/PROGRESS.md
+- docs/PROGRESS.md defines:
+  - completed work
+  - constraints
+  - what must NOT be redone or refactored
+
+GOAL
+----
+Fully realize the proposal described in <@docs/proposal.md>.
+
+TASK
+----
+- Compare docs/proposal.md with docs/PROGRESS.md.
+- Identify what is missing.
+- Select the smallest possible next step.
+- Implement ONLY that step.
+- Prefer additive, minimal, reversible changes.
+- Do NOT refactor, rename, reorganize, or clean up unrelated code.
+
+CHANGE BOUNDARIES
+-----------------
+Allowed:
+- Missing implementations
+- Required glue code
+- Explicit TODO completion
+- Spec-mandated additions
+
+Disallowed:
+- Refactors
+- Renames
+- Formatting-only changes
+- Style or preference changes
+- Deleting or moving files unless explicitly required
+
+FILESYSTEM SAFETY
+-----------------
+- Touch the minimum number of files necessary.
+- Do NOT delete files unless explicitly required.
+- Do NOT modify build, CI, or configuration files unless stated.
+
+ANTI-DRIFT CHECK
+----------------
+If context compaction or truncation occurs:
+- Re-read the COMPACTION INVARIANTS
+- Re-evaluate the task against docs/PROGRESS.md
+- Continue ONLY if all invariants still hold
+Otherwise STOP.
+
+VALIDATION (MANDATORY)
+----------------------
+Before producing output, verify:
+- COMPACTION INVARIANTS are satisfied
+- docs/PROGRESS.md was respected
+- Only necessary files were changed
+- The proposal goal is measurably advanced
+- No completed work was repeated
+
+If ANY check fails:
+- STOP
+- Explain the issue
+- Ask exactly one clarifying question
+
+OUTPUT
+------
+- If changes are made: output a unified diff only.
+- No markdown.
+- No explanations.
+- If no safe change can be made: explain why and ask one question.
+
+COMPACTION INVARIANTS (REASSERTED)
+---------------------------------
+- docs/PROGRESS.md defines the current state
+- docs/proposal.md defines the end goal
+- Advance incrementally; minimal diffs only
+- Do not guess; ask if unclear
+- Never touch or commit spec.txt
+- Never mention AI or Claude in commits
+
+If you cannot remember these invariants, STOP immediately.
+

@@ -85,6 +85,9 @@ pub fn sys_fstat<Cx: StatAccess>(
         return Err(EINVAL);
     }
 
+    buf.validate_range(core::mem::size_of::<UserStat>())
+        .map_err(|_| EINVAL)?;
+
     let stat = cx.fstat(fildes).map_err(|_| EBADF)?;
 
     // Write stat to userspace buffer

@@ -109,12 +109,27 @@ impl<T> UserspaceMutPtr<T> {
     pub unsafe fn try_from_usize(ptr: usize) -> Result<Self, NotUserspace> {
         #[cfg(not(target_pointer_width = "64"))]
         compile_error!("only 64bit pointer width is supported");
-        if ptr & 1 << 63 != 0 {
+
+        if is_upper_half(ptr)? {
             Err(NotUserspace(ptr))
         } else {
             Ok(Self {
                 ptr: with_exposed_provenance_mut(ptr),
             })
+        }
+    }
+
+    /// Validates that the pointer and size are within userspace bounds.
+    ///
+    /// This function checks that ptr + size doesn't overflow into kernel space (upper half).
+    pub fn validate_range(&self, size: usize) -> Result<(), NotUserspace> {
+        let start = self.addr();
+        let end = start.checked_add(size).ok_or(NotUserspace(start))?;
+
+        if is_upper_half(end)? {
+            Err(NotUserspace(end))
+        } else {
+            Ok(())
         }
     }
 

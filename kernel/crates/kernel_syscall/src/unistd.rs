@@ -22,6 +22,8 @@ pub fn sys_getcwd<Cx: CwdAccess>(
         return Err(EINVAL);
     }
 
+    buf.validate_range(size).map_err(|_| EINVAL)?;
+
     let mut buf = buf;
     // SAFETY: We checked that the buffer pointer is not null and size is non-zero.
     // The UserspaceMutPtr type ensures basic validity, and we trust the syscall caller

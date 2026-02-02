@@ -44,7 +44,15 @@ pub fn create_gdt_and_tss() -> (GlobalDescriptorTable, Selectors, &'static mut T
     let kernel_data = gdt.append(Descriptor::kernel_data_segment());
 
     let tss = Box::leak(Box::new(create_tss()));
-    let tss_sel = gdt.append(Descriptor::tss_segment(tss));
+    // SAFETY: We need to pass a static reference to the GDT to create the segment descriptor.
+    // However, we also need to return a mutable reference to the TSS so that the scheduler
+    // can update RSP0 during context switches. Since the GDT only uses the base address
+    // encoded in the descriptor and does not hold the reference, and RSP0 updates are
+    // atomic/safe in this context, we create an aliasing immutable reference here via
+    // raw pointers to satisfy the borrow checker.
+    let tss_ptr = tss as *mut TaskStateSegment;
+    let tss_ref = unsafe { &*tss_ptr };
+    let tss_sel = gdt.append(Descriptor::tss_segment(tss_ref));
     let mut user_code = gdt.append(Descriptor::user_code_segment());
     user_code.set_rpl(PrivilegeLevel::Ring3);
     let mut user_data = gdt.append(Descriptor::user_data_segment());
@@ -58,6 +66,6 @@ pub fn create_gdt_and_tss() -> (GlobalDescriptorTable, Selectors, &'static mut T
             user_code,
             user_data,
         },
-        tss,
+        unsafe { &mut *tss_ptr },
     )
 }
