@@ -8,12 +8,12 @@ default-run = "muffinos"
 [build-dependencies]
 ovmf-prebuilt = "0.2.3"
 file_structure = { path = "userspace/file_structure" }
-kernel = { path = "kernel", artifact = "bin", target = "target" }
-init = { path = "userspace/init", artifact = "bin", target = "target" }
-gpio_demo = { path = "userspace/gpio_demo", artifact = "bin", target = "target" }
-iio_demo = { path = "userspace/iio_demo", artifact = "bin", target = "target" }
-syscall_demo = { path = "userspace/syscall_demo", artifact = "bin", target = "target" }
-file_io_demo = { path = "userspace/file_io_demo", artifact = "bin", target = "target" }
+kernel = { path = "kernel", artifact = "bin", target = "x86_64-unknown-none" }
+init = { path = "userspace/init", artifact = "bin", target = "x86_64-unknown-none" }
+gpio_demo = { path = "userspace/gpio_demo", artifact = "bin", target = "x86_64-unknown-none" }
+iio_demo = { path = "userspace/iio_demo", artifact = "bin", target = "x86_64-unknown-none" }
+syscall_demo = { path = "userspace/syscall_demo", artifact = "bin", target = "x86_64-unknown-none" }
+file_io_demo = { path = "userspace/file_io_demo", artifact = "bin", target = "x86_64-unknown-none" }
 
 [workspace]
 exclude = [
