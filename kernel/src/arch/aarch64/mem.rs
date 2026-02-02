@@ -29,7 +29,7 @@ pub const L2_BLOCK_SIZE: usize = 1 << L2_SHIFT; // 2MB
 pub mod kernel {
     /// Start of kernel address space (upper half)
     /// In ARM64 with 48-bit VA, this is the base of the TTBR1 range.
-    pub const BASE: usize = 0xFFFF_0000_0000_0000;
+    pub const BASE: usize = 0xFFFF_8000_0000_0000;
 
     /// Physical memory direct map region (HHDM)
     /// Maps all physical memory starting here.

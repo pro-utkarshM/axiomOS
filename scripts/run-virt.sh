@@ -20,8 +20,9 @@ cargo build --target aarch64-unknown-none --features virt -p kernel
 
 # Run in QEMU
 # Added virtio-blk-device for disk.img
-timeout 15s qemu-system-aarch64 \
+timeout 60s qemu-system-aarch64 \
     -machine virt \
+    -m 1G \
     -cpu cortex-a57 \
     -nographic \
     -kernel target/aarch64-unknown-none/debug/kernel \

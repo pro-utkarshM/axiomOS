@@ -52,7 +52,7 @@ unsafe extern "C" {
 /// (SVC, Aborts, etc.). It is called from the vector table with register state
 /// saved on the stack. It must not unwind.
 #[unsafe(no_mangle)]
-pub extern "C" fn handle_sync_exception() {
+pub extern "C" fn handle_sync_exception(ctx: &mut ExceptionContext) {
     let esr: u64;
     let elr: u64;
     let far: u64;
@@ -72,7 +72,7 @@ pub extern "C" fn handle_sync_exception() {
     match ec {
         0x15 => {
             // SVC instruction execution in AArch64 state
-            crate::arch::aarch64::syscall::handle_syscall();
+            crate::arch::aarch64::syscall::handle_syscall(ctx);
         }
         0x20 | 0x21 => {
             // Instruction abort from lower/same EL
@@ -113,6 +113,9 @@ enum DataFaultCode {
 
     // Alignment fault
     AlignmentFault = 0b100001,
+
+    // Synchronous External Abort
+    SyncExternalAbort = 0b010000,
 }
 
 impl DataFaultCode {
@@ -130,6 +133,7 @@ impl DataFaultCode {
             0b001110 => Some(Self::PermissionFaultL2),
             0b001111 => Some(Self::PermissionFaultL3),
             0b100001 => Some(Self::AlignmentFault),
+            0b010000 => Some(Self::SyncExternalAbort),
             _ => None,
         }
     }
@@ -216,6 +220,12 @@ fn handle_data_abort(elr: u64, far: u64, iss: u64) {
         }
         Some(DataFaultCode::AlignmentFault) => {
             panic!("Alignment fault at PC={:#x}, address={:#x}", elr, far);
+        }
+        Some(DataFaultCode::SyncExternalAbort) => {
+            panic!(
+                "Synchronous External Abort at PC={:#x}, address={:#x}",
+                elr, far
+            );
         }
         Some(code) => {
             // Access flag faults - need to set AF bit

@@ -34,7 +34,7 @@ impl MemoryAccess for KernelAccess<'_> {
             self.process
                 .vmm()
                 .mark_as_reserved(Segment::new(
-                    VirtAddr::from_ptr(addr.as_ptr()),
+                    VirtAddr::new(addr.as_ptr() as u64),
                     page_aligned_size.into_u64(),
                 ))
                 .map_err(|_| CreateMappingError::LocationAlreadyMapped)?

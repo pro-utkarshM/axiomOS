@@ -1,11 +1,11 @@
 use core::ops::Neg;
-#[cfg(target_arch = "x86_64")]
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 use core::slice::{from_raw_parts, from_raw_parts_mut};
 
-#[cfg(target_arch = "x86_64")]
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 use access::KernelAccess;
 use kernel_abi::{EINVAL, Errno, syscall_name};
-#[cfg(target_arch = "x86_64")]
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 use kernel_syscall::{
     UserspaceMutPtr, UserspacePtr,
     access::FileAccess,
@@ -14,10 +14,10 @@ use kernel_syscall::{
     stat::sys_fstat,
     unistd::{sys_close, sys_getcwd, sys_lseek, sys_read, sys_write},
 };
-#[cfg(target_arch = "x86_64")]
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 use kernel_vfs::path::AbsolutePath;
-#[cfg(target_arch = "x86_64")]
-#[cfg(target_arch = "x86_64")]
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 use crate::mcore::mtask::process::Process;
 use log::{error, trace};
 #[cfg(target_arch = "x86_64")]
@@ -41,7 +41,7 @@ fn hlt() {
     }
 }
 
-#[cfg(target_arch = "x86_64")]
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 mod access;
 pub mod bpf;
 #[cfg(all(target_arch = "aarch64", feature = "rpi5"))]
@@ -64,7 +64,7 @@ pub fn dispatch_syscall(
     );
 
     // Run BPF hooks (AttachType::Syscall = 2) at syscall entry
-    #[cfg(target_arch = "x86_64")]
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     if let Some(manager) = crate::BPF_MANAGER.get() {
         use kernel_bpf::execution::SyscallTraceContext;
 
@@ -92,7 +92,7 @@ pub fn dispatch_syscall(
     }
 
     let result: Result<usize, Errno> = match n {
-        #[cfg(target_arch = "x86_64")]
+        #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
         kernel_abi::SYS_EXIT => {
             let status = i32::try_from(arg1).unwrap_or(0);
             let task = crate::mcore::context::ExecutionContext::load().current_task();
@@ -103,9 +103,9 @@ pub fn dispatch_syscall(
                 hlt();
             }
         }
-        #[cfg(not(target_arch = "x86_64"))]
+        #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
         kernel_abi::SYS_EXIT => {
-            error!("SYS_EXIT not implemented for aarch64/riscv64");
+            error!("SYS_EXIT not implemented for this architecture");
             loop {
                 hlt();
             }
@@ -157,7 +157,7 @@ pub fn dispatch_syscall(
 /// - The memory is properly aligned for type `T`
 /// - The memory remains valid for the lifetime `'a`
 /// - No mutable references to the memory exist during the slice's lifetime
-#[cfg(target_arch = "x86_64")]
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 unsafe fn slice_from_ptr_and_len<'a, T>(ptr: usize, len: usize) -> Result<&'a [T], Errno> {
     if ptr == 0 || len == 0 {
         return Err(EINVAL);
@@ -178,7 +178,7 @@ unsafe fn slice_from_ptr_and_len<'a, T>(ptr: usize, len: usize) -> Result<&'a [T
 /// - The memory is properly aligned for type `T`
 /// - The memory remains valid for the lifetime `'a`
 /// - No other references (mutable or immutable) to the memory exist
-#[cfg(target_arch = "x86_64")]
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 unsafe fn slice_from_ptr_and_len_mut<'a, T>(ptr: usize, len: usize) -> Result<&'a mut [T], Errno> {
     if ptr == 0 || len == 0 {
         return Err(EINVAL);
@@ -190,7 +190,7 @@ unsafe fn slice_from_ptr_and_len_mut<'a, T>(ptr: usize, len: usize) -> Result<&'
     Ok(slice)
 }
 
-#[cfg(target_arch = "x86_64")]
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 fn dispatch_sys_getcwd(path: usize, size: usize) -> Result<usize, Errno> {
     let cx = KernelAccess::new();
 
@@ -200,7 +200,7 @@ fn dispatch_sys_getcwd(path: usize, size: usize) -> Result<usize, Errno> {
     sys_getcwd(&cx, path, size)
 }
 
-#[cfg(target_arch = "x86_64")]
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 fn dispatch_sys_mmap(
     addr: usize,
     len: usize,
@@ -220,7 +220,7 @@ fn dispatch_sys_mmap(
     sys_mmap(&cx, addr, len, prot, flags, fd, offset)
 }
 
-#[cfg(target_arch = "x86_64")]
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 fn dispatch_sys_open(
     path: usize,
     path_len: usize,
@@ -235,7 +235,7 @@ fn dispatch_sys_open(
     sys_open(&cx, path, path_len, oflag as i32, mode as i32)
 }
 
-#[cfg(target_arch = "x86_64")]
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 fn dispatch_sys_read(fd: usize, buf: usize, nbyte: usize) -> Result<usize, Errno> {
     let cx = KernelAccess::new();
 
@@ -249,7 +249,7 @@ fn dispatch_sys_read(fd: usize, buf: usize, nbyte: usize) -> Result<usize, Errno
     sys_read(&cx, fd, slice)
 }
 
-#[cfg(target_arch = "x86_64")]
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 fn dispatch_sys_write(fd: usize, buf: usize, nbyte: usize) -> Result<usize, Errno> {
     let cx = KernelAccess::new();
 
@@ -269,7 +269,7 @@ fn dispatch_sys_bpf(cmd: usize, attr: usize, size: usize) -> Result<usize, Errno
     Ok(ret as usize)
 }
 
-#[cfg(target_arch = "x86_64")]
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 fn dispatch_sys_close(fd: usize) -> Result<usize, Errno> {
     let cx = KernelAccess::new();
 
@@ -279,7 +279,7 @@ fn dispatch_sys_close(fd: usize) -> Result<usize, Errno> {
     sys_close(&cx, fd)
 }
 
-#[cfg(target_arch = "x86_64")]
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 fn dispatch_sys_lseek(fd: usize, offset: usize, whence: usize) -> Result<usize, Errno> {
     let cx = KernelAccess::new();
 
@@ -291,7 +291,7 @@ fn dispatch_sys_lseek(fd: usize, offset: usize, whence: usize) -> Result<usize, 
     sys_lseek(&cx, fd, offset, whence)
 }
 
-#[cfg(target_arch = "x86_64")]
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 fn dispatch_sys_fstat(fd: usize, statbuf: usize) -> Result<usize, Errno> {
     use kernel_syscall::stat::UserStat;
 
@@ -307,12 +307,12 @@ fn dispatch_sys_fstat(fd: usize, statbuf: usize) -> Result<usize, Errno> {
     sys_fstat::<KernelAccess>(&cx, fd, buf)
 }
 
-#[cfg(not(target_arch = "x86_64"))]
+#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
 fn dispatch_sys_getcwd(_path: usize, _size: usize) -> Result<usize, Errno> {
     Err(EINVAL)
 }
 
-#[cfg(not(target_arch = "x86_64"))]
+#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
 fn dispatch_sys_mmap(
     _addr: usize,
     _len: usize,
@@ -324,7 +324,7 @@ fn dispatch_sys_mmap(
     Err(EINVAL)
 }
 
-#[cfg(not(target_arch = "x86_64"))]
+#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
 fn dispatch_sys_open(
     _path: usize,
     _path_len: usize,
@@ -334,12 +334,12 @@ fn dispatch_sys_open(
     Err(EINVAL)
 }
 
-#[cfg(not(target_arch = "x86_64"))]
+#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
 fn dispatch_sys_read(_fd: usize, _buf: usize, _nbyte: usize) -> Result<usize, Errno> {
     Err(EINVAL)
 }
 
-#[cfg(not(target_arch = "x86_64"))]
+#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
 fn dispatch_sys_write(_fd: usize, _buf: usize, _nbyte: usize) -> Result<usize, Errno> {
     Err(EINVAL)
 }
@@ -349,17 +349,17 @@ fn dispatch_sys_bpf(_cmd: usize, _attr: usize, _size: usize) -> Result<usize, Er
     Err(EINVAL)
 }
 
-#[cfg(not(target_arch = "x86_64"))]
+#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
 fn dispatch_sys_close(_fd: usize) -> Result<usize, Errno> {
     Err(EINVAL)
 }
 
-#[cfg(not(target_arch = "x86_64"))]
+#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
 fn dispatch_sys_lseek(_fd: usize, _offset: usize, _whence: usize) -> Result<usize, Errno> {
     Err(EINVAL)
 }
 
-#[cfg(not(target_arch = "x86_64"))]
+#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
 fn dispatch_sys_fstat(_fd: usize, _statbuf: usize) -> Result<usize, Errno> {
     Err(EINVAL)
 }
@@ -452,7 +452,7 @@ fn dispatch_sys_nanosleep(req: usize, _rem: usize) -> Result<usize, Errno> {
     Ok(0)
 }
 
-#[cfg(target_arch = "x86_64")]
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 fn dispatch_sys_spawn(path_ptr: usize, path_len: usize) -> Result<usize, Errno> {
     use kernel_abi::ENAMETOOLONG;
 
@@ -489,7 +489,7 @@ fn dispatch_sys_spawn(path_ptr: usize, path_len: usize) -> Result<usize, Errno> 
     Ok(child_proc.pid().as_u64().into_usize())
 }
 
-#[cfg(not(target_arch = "x86_64"))]
+#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
 fn dispatch_sys_spawn(_path: usize, _len: usize) -> Result<usize, Errno> {
     Err(EINVAL)
 }

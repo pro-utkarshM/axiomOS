@@ -18,7 +18,8 @@ SECTIONS
 {
     /* Raspberry Pi 5 loads kernel at 0x80000 physical address */
     /* We start without MMU enabled, so use physical addresses */
-    . = 0x80000;
+    /* QEMU virt loads kernel at 0x40080000 */
+    . = 0x40080000;
 
     /* Boot code must come first */
     .text : {

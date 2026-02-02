@@ -33,9 +33,9 @@ pub fn init() {
         let size = 0x0000_8000_0000_0000;
 
         #[cfg(target_arch = "aarch64")]
-        let start = VirtAddr::new(0xFFFF_0000_0000_0000);
+        let start = VirtAddr::new(0xFFFF_8000_0000_0000);
         #[cfg(target_arch = "aarch64")]
-        let size = 0x0001_0000_0000_0000;
+        let size = 0x0000_8000_0000_0000;
 
         RwLock::new(VirtualMemoryManager::new(
             start,

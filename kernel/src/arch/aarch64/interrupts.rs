@@ -70,6 +70,8 @@ pub fn init() {
     );
 }
 
+use super::exceptions::ExceptionContext;
+
 /// Handle IRQ interrupt (called from exception vector)
 ///
 /// # Safety
@@ -78,7 +80,7 @@ pub fn init() {
 /// (via assembly stubs that save register state). It assumes the GIC is initialized
 /// and that it's safe to interact with hardware state. It must not unwind.
 #[unsafe(no_mangle)]
-pub extern "C" fn handle_irq() {
+pub extern "C" fn handle_irq(_ctx: &mut ExceptionContext) {
     // Acknowledge the interrupt and get its ID
     let irq = gic::acknowledge();
 

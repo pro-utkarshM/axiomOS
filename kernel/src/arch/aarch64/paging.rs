@@ -26,13 +26,15 @@ bitflags! {
         const USER_ACCESSIBLE = pte_flags::AP_RW_ALL;
         /// Bit 1: Table bit (0 for block/page).
         const HUGE_PAGE = 0;
+        /// Custom bit to mark this as a device mapping (Device-nGnRE)
+        const MMIO_DEVICE = 1 << 62;
     }
 }
 
 impl PageTableFlags {
     /// Convert PageTableFlags to raw AArch64 PTE bits.
     pub fn to_pte_bits(self) -> u64 {
-        let mut bits = self.bits() & !(1 << 63); // Remove our WRITABLE placeholder
+        let mut bits = self.bits() & !((1 << 63) | (1 << 62)); // Remove our placeholders
 
         if self.contains(PageTableFlags::WRITABLE) {
             bits &= !(1 << 7);
@@ -41,7 +43,20 @@ impl PageTableFlags {
         }
 
         if self.contains(PageTableFlags::PRESENT) {
-            bits |= pte_flags::AF | pte_flags::SH_INNER | pte_flags::attr_index(mair::NORMAL_WB);
+            bits |= pte_flags::AF | pte_flags::SH_INNER;
+
+            // Set memory attributes based on MMIO_DEVICE flag
+            if self.contains(PageTableFlags::MMIO_DEVICE) {
+                // Device-nGnRE (Index 1) - used for MMIO
+                bits |= pte_flags::attr_index(mair::DEVICE_NGNRE);
+                // Device memory is typically outer shareable or non-shareable,
+                // but SH_INNER is ignored for Device-nGnRnE/nGnRE on some implementations.
+                // Keeping SH_INNER for consistency, but MAIR rules apply.
+            } else {
+                // Normal WB (Index 2) - used for RAM
+                bits |= pte_flags::attr_index(mair::NORMAL_WB);
+            }
+
             bits |= pte_flags::PAGE;
         }
 
@@ -66,6 +81,11 @@ impl PageTableFlags {
 
         if bits & (1 << 6) != 0 {
             flags |= PageTableFlags::USER_ACCESSIBLE;
+        }
+
+        // Check for Device-nGnRE attribute (Index 1)
+        if (bits >> 2) & 0x7 == mair::DEVICE_NGNRE as u64 {
+            flags |= PageTableFlags::MMIO_DEVICE;
         }
 
         flags
