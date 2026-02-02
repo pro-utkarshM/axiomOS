@@ -95,39 +95,21 @@ fn make_mapping_recursive() -> (VirtAddr, PhysFrame) {
         .expect("should have a HHDM response")
         .offset();
 
+    // Instead of creating a new page table and copying mappings (which is complex and error-prone),
+    // we'll use the bootloader's existing page tables and just add a recursive mapping to them.
+    // This is simpler and avoids the triple-fault issues with map_to().
+
     let (level_4_table, level_4_table_frame) = {
-        let frame = PhysicalMemory::allocate_frame().unwrap();
-        // SAFETY: We allocated a fresh frame, so we have exclusive access.
-        // The HHDM offset allows us to access physical memory at this virtual address.
+        // Get the current CR3 (bootloader's page tables)
+        let current_cr3_frame = Cr3::read().0;
+
+        // Access the level 4 table via HHDM
         let pt = unsafe {
-            &mut *VirtAddr::new(frame.start_address().as_u64() + hhdm_offset)
+            &mut *VirtAddr::new(current_cr3_frame.start_address().as_u64() + hhdm_offset)
                 .as_mut_ptr::<PageTable>()
         };
-        pt.zero();
-        (pt, frame)
-    };
 
-    // SAFETY: We are creating an OffsetPageTable using the current active page table (Cr3).
-    // The HHDM offset is valid as guaranteed by the bootloader/limine.
-    let mut current_pt = unsafe {
-        OffsetPageTable::new(
-            &mut *VirtAddr::new(Cr3::read().0.start_address().as_u64() + hhdm_offset)
-                .as_mut_ptr::<PageTable>(),
-            VirtAddr::new(hhdm_offset),
-        )
-    };
-
-    let mut new_pt = {
-        struct Offset(u64);
-        // SAFETY: The frame_to_pointer implementation uses the fixed HHDM offset
-        // which maps all physical memory.
-        unsafe impl PageTableFrameMapping for Offset {
-            fn frame_to_pointer(&self, frame: PhysFrame) -> *mut PageTable {
-                VirtAddr::new(frame.start_address().as_u64() + self.0).as_mut_ptr::<PageTable>()
-            }
-        }
-        // SAFETY: Creating a MappedPageTable with our new level 4 table and the valid offset mapper.
-        unsafe { MappedPageTable::new(level_4_table, Offset(hhdm_offset)) }
+        (pt, current_cr3_frame)
     };
 
     let kernel_addr = KERNEL_ADDRESS_REQUEST
@@ -139,61 +121,26 @@ fn make_mapping_recursive() -> (VirtAddr, PhysFrame) {
         "kernel address should be 0xffff_ffff_8000_0000, if it isn't, either check the linker file or you know what you're doing"
     );
 
-    info!("remapping kernel");
-    remap(
-        &mut current_pt,
-        &mut new_pt,
-        VirtAddr::new(kernel_addr),
-        usize::MAX - kernel_addr.into_usize() + 1, // remap from the kernel base until the end of the address space
-    );
+    info!("setting up recursive page table mapping in bootloader's page tables");
 
-    MEMORY_MAP_REQUEST
-        .get_response()
-        .unwrap()
-        .entries()
-        .iter()
-        .filter(|e| e.entry_type == EntryType::EXECUTABLE_AND_MODULES)
-        .for_each(|e| {
-            info!(
-                "remapping module of size ~{}MiB ({} bytes) at virt={:p}",
-                e.length / 1024 / 1024,
-                e.length,
-                VirtAddr::new(e.base + hhdm_offset),
-            );
-            remap(
-                &mut current_pt,
-                &mut new_pt,
-                VirtAddr::new(e.base + hhdm_offset),
-                e.length.into_usize(),
-            );
-        });
-
-    MEMORY_MAP_REQUEST
-        .get_response()
-        .unwrap()
-        .entries()
-        .iter()
-        .filter(|e| e.entry_type == EntryType::BOOTLOADER_RECLAIMABLE)
-        .for_each(|e| {
-            remap(
-                &mut current_pt,
-                &mut new_pt,
-                VirtAddr::new(e.base + hhdm_offset),
-                e.length.into_usize(),
-            );
-        });
-
+    // Find an unused entry in the level 4 table for our recursive mapping
     let recursive_index = (0..512)
         .rposition(|p| level_4_table[p].is_unused())
         .expect("should have an unused index in the level 4 table");
+
+    // Set up the recursive mapping: PML4[recursive_index] points to the PML4 itself
     level_4_table[recursive_index].set_frame(
         level_4_table_frame,
         PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::NO_EXECUTE,
     );
+
     let vaddr = recursive_index_to_virtual_address(recursive_index);
-    debug!("recursive index: {recursive_index:?}, vaddr: {vaddr:p}");
+    info!("recursive mapping: PML4[{}] -> {:#x}", recursive_index, vaddr.as_u64());
     RECURSIVE_INDEX.init_once(|| recursive_index);
 
+    // Fill in any unused higher-half PML4 entries with new page tables
+    // This ensures we have page tables available for kernel allocations
+    info!("initializing unused higher-half PML4 entries");
     level_4_table
         .iter_mut()
         .skip(256)
@@ -205,14 +152,7 @@ fn make_mapping_recursive() -> (VirtAddr, PhysFrame) {
             );
         });
 
-    info!("switching to recursive mapping");
-    // SAFETY: We have constructed a valid level 4 page table with all necessary mappings
-    // (kernel, HHDM, modules) and a recursive mapping. We are switching CR3 to use it.
-    unsafe {
-        let cr3_flags = Cr3::read().1;
-        Cr3::write(level_4_table_frame, cr3_flags);
-    }
-
+    info!("kernel address space initialized (using bootloader page tables)");
     (vaddr, level_4_table_frame)
 }
 
@@ -225,8 +165,19 @@ fn remap(
 ) {
     let mut current_addr = start_vaddr;
 
-    while current_addr.as_u64() <= start_vaddr.as_u64() - 1 + len as u64 {
+    // Calculate the end address with overflow protection
+    let end_addr = start_vaddr.as_u64().saturating_add(len as u64);
+
+    debug!("remap: starting at {:#x}, end at {:#x}", start_vaddr.as_u64(), end_addr);
+
+    while current_addr.as_u64() < end_addr {
+        if (current_addr.as_u64() - start_vaddr.as_u64()) % (16 * 1024 * 1024) == 0 {
+            debug!("remap: progress at {:#x}", current_addr.as_u64());
+        }
+
+        debug!("remap: about to translate {:#x}", current_addr.as_u64());
         let result = current_pt.translate(current_addr);
+        debug!("remap: translated {:#x}", current_addr.as_u64());
         let TranslateResult::Mapped {
             frame,
             offset,
@@ -242,6 +193,8 @@ fn remap(
                 | PageTableFlags::NO_EXECUTE
                 | PageTableFlags::HUGE_PAGE,
         );
+
+        debug!("remap: offset={}, frame size={}", offset, frame.size());
 
         if offset != 0 {
             // There are cases where limine maps huge pages across borders of memory regions
@@ -276,39 +229,52 @@ fn remap(
                 off += page.size();
             }
         } else {
+            debug!("remap: entering else branch, about to match frame type");
             // SAFETY: We are mapping pages in the new page table. The frames are valid as they
             // were obtained from translation of the current page table.
             unsafe {
                 match frame {
                     MappedFrame::Size4KiB(f) => {
-                        let _ = new_pt
-                            .map_to(
-                                Page::containing_address(current_addr),
-                                f,
-                                flags,
-                                &mut PhysicalMemory,
-                            )
-                            .unwrap();
+                        debug!("remap: mapping 4KiB page at {:#x}", current_addr.as_u64());
+                        match new_pt.map_to(
+                            Page::containing_address(current_addr),
+                            f,
+                            flags,
+                            &mut PhysicalMemory,
+                        ) {
+                            Ok(_) => debug!("remap: mapped 4KiB page"),
+                            Err(e) => {
+                                panic!("remap: failed to map 4KiB page at {:#x}: {:?}", current_addr.as_u64(), e);
+                            }
+                        }
                     }
                     MappedFrame::Size2MiB(f) => {
-                        let _ = new_pt
-                            .map_to(
-                                Page::containing_address(current_addr),
-                                f,
-                                flags,
-                                &mut PhysicalMemory,
-                            )
-                            .unwrap();
+                        debug!("remap: mapping 2MiB page at {:#x}", current_addr.as_u64());
+                        match new_pt.map_to(
+                            Page::containing_address(current_addr),
+                            f,
+                            flags,
+                            &mut PhysicalMemory,
+                        ) {
+                            Ok(_) => debug!("remap: mapped 2MiB page"),
+                            Err(e) => {
+                                panic!("remap: failed to map 2MiB page at {:#x}: {:?}", current_addr.as_u64(), e);
+                            }
+                        }
                     }
                     MappedFrame::Size1GiB(f) => {
-                        let _ = new_pt
-                            .map_to(
-                                Page::containing_address(current_addr),
-                                f,
-                                flags,
-                                &mut PhysicalMemory,
-                            )
-                            .unwrap();
+                        debug!("remap: mapping 1GiB page at {:#x}", current_addr.as_u64());
+                        match new_pt.map_to(
+                            Page::containing_address(current_addr),
+                            f,
+                            flags,
+                            &mut PhysicalMemory,
+                        ) {
+                            Ok(_) => debug!("remap: mapped 1GiB page"),
+                            Err(e) => {
+                                panic!("remap: failed to map 1GiB page at {:#x}: {:?}", current_addr.as_u64(), e);
+                            }
+                        }
                     }
                 }
             }
