@@ -88,8 +88,22 @@ impl FileAccess for KernelAccess<'_> {
 
         let desc = guard.get(&fd).ok_or(())?;
         let ofd = desc.file_description();
-        let offset = ofd.position().fetch_add(buf.len() as u64, Relaxed); // TODO: respect file max len
-        ofd.read(buf, offset.into_usize()).map_err(|_| ())
+        let len = buf.len() as u64;
+        let offset = ofd.position().fetch_add(len, Relaxed); // TODO: respect file max len
+
+        match ofd.read(buf, offset.into_usize()) {
+            Ok(bytes_read) => {
+                let bytes_read_u64 = bytes_read as u64;
+                if bytes_read_u64 < len {
+                    ofd.position().fetch_sub(len - bytes_read_u64, Relaxed);
+                }
+                Ok(bytes_read)
+            }
+            Err(_) => {
+                ofd.position().fetch_sub(len, Relaxed);
+                Err(())
+            }
+        }
     }
 
     fn write(&self, fd: Self::Fd, buf: &[u8]) -> Result<usize, ()> {
@@ -98,8 +112,22 @@ impl FileAccess for KernelAccess<'_> {
 
         let desc = guard.get(&fd).ok_or(())?;
         let ofd = desc.file_description();
-        let offset = ofd.position().fetch_add(buf.len() as u64, Relaxed); // TODO: respect file max len
-        ofd.write(buf, offset.into_usize()).map_err(|_| ())
+        let len = buf.len() as u64;
+        let offset = ofd.position().fetch_add(len, Relaxed); // TODO: respect file max len
+
+        match ofd.write(buf, offset.into_usize()) {
+            Ok(bytes_written) => {
+                let bytes_written_u64 = bytes_written as u64;
+                if bytes_written_u64 < len {
+                    ofd.position().fetch_sub(len - bytes_written_u64, Relaxed);
+                }
+                Ok(bytes_written)
+            }
+            Err(_) => {
+                ofd.position().fetch_sub(len, Relaxed);
+                Err(())
+            }
+        }
     }
 
     fn close(&self, fd: Self::Fd) -> Result<(), ()> {

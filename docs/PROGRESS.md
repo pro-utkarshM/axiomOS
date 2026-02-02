@@ -112,7 +112,7 @@ This document tracks progress toward the vision outlined in [proposal.md](propos
 |---|------|--------|--------------|-------|
 | 3.1 | Safety interlock demo (limit switch → e-stop) | ⏳ Ready | 2.2 | **KEY DEMO** - Kernel-enforced safety |
 | 3.2 | IMU sensor integration and kernel filtering | ⏳ Ready | 2.6 | Drop invalid readings before userspace |
-| 3.3 | Implement remaining syscalls (33 more) | ⏸️ Partial | - | Currently 8/41 implemented |
+| 3.3 | Implement remaining syscalls (28 more) | ⏸️ Partial | - | Currently 13/41 implemented (added lseek, fstat, spawn, clock, sleep) |
 | 3.4 | Performance benchmarks vs Linux | ⏳ Ready | 2.7 | Boot time, memory, latency, interrupt overhead |
 | 3.5 | Create 10 example BPF programs | ⏳ Ready | 2.7 | Proposal target: 10 examples minimum |
 | 3.6 | Field testing on actual robot hardware | ⏸️ Future | 3.1, 3.2 | Requires robot partner |
