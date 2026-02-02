@@ -28,6 +28,9 @@ pub fn init() {
             .register_file(AbsolutePath::try_new("/stdin").unwrap(), || Ok(Null))
             .expect("should be able to register stdin");
         guard
+            .register_file(AbsolutePath::try_new("/null").unwrap(), || Ok(Null))
+            .expect("should be able to register null");
+        guard
             .register_file(AbsolutePath::try_new("/stdout").unwrap(), || {
                 Ok(Serial::<SerialWrite>::default())
             })
