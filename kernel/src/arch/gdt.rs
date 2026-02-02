@@ -38,13 +38,13 @@ pub struct Selectors {
     pub user_data: SegmentSelector,
 }
 
-pub fn create_gdt_and_tss() -> (GlobalDescriptorTable, Selectors) {
+pub fn create_gdt_and_tss() -> (GlobalDescriptorTable, Selectors, &'static mut TaskStateSegment) {
     let mut gdt = GlobalDescriptorTable::new();
     let kernel_code = gdt.append(Descriptor::kernel_code_segment());
     let kernel_data = gdt.append(Descriptor::kernel_data_segment());
 
     let tss = Box::leak(Box::new(create_tss()));
-    let tss = gdt.append(Descriptor::tss_segment(tss));
+    let tss_sel = gdt.append(Descriptor::tss_segment(tss));
     let mut user_code = gdt.append(Descriptor::user_code_segment());
     user_code.set_rpl(PrivilegeLevel::Ring3);
     let mut user_data = gdt.append(Descriptor::user_data_segment());
@@ -54,9 +54,10 @@ pub fn create_gdt_and_tss() -> (GlobalDescriptorTable, Selectors) {
         Selectors {
             kernel_code,
             kernel_data,
-            tss,
+            tss: tss_sel,
             user_code,
             user_data,
         },
+        tss,
     )
 }

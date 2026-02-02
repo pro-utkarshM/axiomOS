@@ -19,6 +19,7 @@ use crate::arch::traits::Architecture;
 use crate::mcore::mtask::scheduler::global::GlobalTaskQueue;
 use crate::mcore::mtask::scheduler::switch::switch_impl;
 use crate::mcore::mtask::task::Task;
+use crate::mcore::context::ExecutionContext;
 
 pub mod cleanup;
 pub mod global;
@@ -84,6 +85,14 @@ impl Scheduler {
 
             #[cfg(target_arch = "x86_64")]
             let cr3_value = next_task.process().address_space().cr3_value();
+            #[cfg(target_arch = "x86_64")]
+            {
+                if let Some(kstack) = next_task.kstack() {
+                    let segment = kstack.mapped_segment();
+                    let rsp0 = (segment.start + segment.len).as_u64();
+                    ExecutionContext::load().set_tss_rsp0(rsp0);
+                }
+            }
             #[cfg(target_arch = "aarch64")]
             let cr3_value = next_task.process().address_space().ttbr0_value();
 

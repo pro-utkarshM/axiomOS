@@ -9,6 +9,8 @@ use x86_64::registers::model_specific::KernelGsBase;
 use x86_64::structures::gdt::GlobalDescriptorTable;
 #[cfg(target_arch = "x86_64")]
 use x86_64::structures::idt::InterruptDescriptorTable;
+#[cfg(target_arch = "x86_64")]
+use x86_64::structures::tss::TaskStateSegment;
 
 #[cfg(target_arch = "x86_64")]
 use crate::arch::gdt::Selectors;
@@ -33,6 +35,8 @@ pub struct ExecutionContext {
     sel: Selectors,
     #[cfg(target_arch = "x86_64")]
     _idt: &'static InterruptDescriptorTable,
+    #[cfg(target_arch = "x86_64")]
+    tss: UnsafeCell<&'static mut TaskStateSegment>,
 
     scheduler: UnsafeCell<Scheduler>,
 }
@@ -44,6 +48,7 @@ impl ExecutionContext {
         gdt: &'static GlobalDescriptorTable,
         sel: Selectors,
         idt: &'static InterruptDescriptorTable,
+        tss: &'static mut TaskStateSegment,
         lapic: Lapic,
     ) -> Self {
         ExecutionContext {
@@ -53,6 +58,7 @@ impl ExecutionContext {
             _gdt: gdt,
             sel,
             _idt: idt,
+            tss: UnsafeCell::new(tss),
             scheduler: UnsafeCell::new(Scheduler::new_cpu_local()),
         }
     }
@@ -171,5 +177,17 @@ impl ExecutionContext {
 
     pub fn current_process(&self) -> &Arc<Process> {
         self.current_task().process()
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    pub fn set_tss_rsp0(&self, rsp: u64) {
+        // SAFETY: We have exclusive access to the TSS for this CPU (it's CPU-local).
+        // The UnsafeCell is used because the TSS is mutated during context switches
+        // while the ExecutionContext is effectively static/shared (though accessed per-cpu).
+        unsafe {
+            let tss = &mut *self.tss.get();
+            use x86_64::VirtAddr;
+            tss.privilege_stack_table[0] = VirtAddr::new(rsp);
+        }
     }
 }

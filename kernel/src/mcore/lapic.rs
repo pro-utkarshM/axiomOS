@@ -33,20 +33,30 @@ pub fn init() -> Lapic {
     // as we trust the hardware/bootloader configuration at this stage.
     let xapic_base = unsafe { xapic_base() };
     let phys_addr = PhysAddr::new(xapic_base);
+    let frame = PhysFrame::containing_address(phys_addr);
+
     let segment = VirtualMemoryHigherHalf
         .reserve(1)
         .expect("should have enough virtual memory for LAPIC");
+    let virt_page = Page::containing_address(segment.start);
 
-    AddressSpace::kernel()
+    let address_space = AddressSpace::kernel();
+
+    // Unmap first in case bootloader left something mapped here
+    // (ignore errors if nothing was mapped)
+    let _ = address_space.unmap(virt_page);
+
+    // Now map our LAPIC region
+    address_space
         .map::<Size4KiB>(
-            Page::containing_address(segment.start),
-            PhysFrame::containing_address(phys_addr),
+            virt_page,
+            frame,
             PageTableFlags::PRESENT
                 | PageTableFlags::WRITABLE
                 | PageTableFlags::NO_CACHE
                 | PageTableFlags::NO_EXECUTE,
         )
-        .unwrap();
+        .expect("should be able to map LAPIC region after unmapping");
 
     let mut lapic = LocalApicBuilder::new()
         .timer_vector(InterruptIndex::Timer.as_usize())
