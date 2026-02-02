@@ -194,7 +194,18 @@ impl Task {
         let name = format!("task-{tid}");
         let process = Process::root().clone();
         let should_terminate = AtomicBool::new(false);
-        let last_stack_ptr = Box::pin(0);
+
+        // Get the current stack pointer
+        #[cfg(target_arch = "aarch64")]
+        let current_sp = {
+            let sp: usize;
+            core::arch::asm!("mov {}, sp", out(reg) sp, options(nomem, nostack));
+            sp
+        };
+        #[cfg(not(target_arch = "aarch64"))]
+        let current_sp = 0;
+
+        let last_stack_ptr = Box::pin(current_sp);
         let state = State::Running;
         Self {
             tid,

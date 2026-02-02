@@ -109,10 +109,22 @@ unsafe fn setup_kernel_page_tables(total_memory: usize) {
         let phys_addr = i << 30; // 1GB per entry
 
         // L1 block descriptor for 1GB mapping
-        let block_flags = pte_flags::VALID
+        let mut block_flags = pte_flags::VALID
             | pte_flags::AF
-            | pte_flags::SH_INNER
-            | pte_flags::attr_index(mem::mair::NORMAL_WB);
+            | pte_flags::SH_INNER;
+
+        // QEMU virt memory map:
+        // 0x0000_0000 - 0x3FFF_FFFF: Devices (Flash, GIC, UART, etc.)
+        // 0x4000_0000 - ...        : RAM
+        //
+        // Map the first 1GB as Device-nGnRE.
+        // Map the rest as Normal WB.
+        if i == 0 {
+            block_flags |= pte_flags::attr_index(mem::mair::DEVICE_NGNRE);
+            block_flags |= pte_flags::UXN | pte_flags::PXN;
+        } else {
+            block_flags |= pte_flags::attr_index(mem::mair::NORMAL_WB);
+        }
 
         *boot_tables.l1_low.entry_mut(i) = paging::PageTableEntry::block(phys_addr, block_flags);
 
@@ -158,7 +170,7 @@ pub fn create_user_address_space() -> Option<*mut PageTable> {
         }
 
         // Copy identity mapping (entry 0) from l0_user so kernel physical addresses work
-        // This is required because the kernel is linked at physical addresses (0x80000)
+        // This is required because the kernel is linked at physical addresses (0x40080000)
         // and functions like TaskCleanup::run will be resolved to these low addresses.
         #[allow(clippy::deref_addrof)]
         let boot_l0_user = &*(&raw const BOOT_TABLES.l0_user);
