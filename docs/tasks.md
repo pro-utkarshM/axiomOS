@@ -35,7 +35,7 @@ Axiom is a **complete operating system kernel** with BPF as a first-class primit
 │  Architectures            Userspace                         │
 │  ─────────────            ─────────                         │
 │  ✅ x86_64 (full)         ✅ init (minimal)                 │
-│  ✅ AArch64 (full)        ✅ minilib (syscalls)             │
+│  ⚠️ AArch64 (interrupt)   ✅ minilib (syscalls)             │
 │  ✅ RPi5 platform         ✅ rk-cli (tooling)               │
 │  ⚠️ RISC-V (boot)         ✅ rk-bridge (events)             │
 └──────────────────────────────────────────────────────────────┘
