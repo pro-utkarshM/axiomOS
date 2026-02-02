@@ -48,17 +48,25 @@ impl AcpiHandler for AcpiHandlerImpl {
         assert!(size_of::<T>() <= Size4KiB::SIZE.into_usize());
 
         let phys_addr = PhysAddr::new(physical_address as u64);
+        let frame = PhysFrame::containing_address(phys_addr);
 
         let segment = VirtualMemoryHigherHalf.reserve(1).unwrap().leak();
+        let virt_page = Page::<Size4KiB>::containing_address(segment.start);
 
         let address_space = AddressSpace::kernel();
+
+        // Unmap first in case bootloader left something mapped here
+        // (ignore errors if nothing was mapped)
+        let _ = address_space.unmap(virt_page);
+
+        // Now map our ACPI region
         address_space
             .map(
-                Page::<Size4KiB>::containing_address(segment.start),
-                PhysFrame::containing_address(phys_addr),
+                virt_page,
+                frame,
                 PageTableFlags::PRESENT | PageTableFlags::NO_EXECUTE | PageTableFlags::WRITABLE,
             )
-            .expect("should be able to map the ACPI region");
+            .expect("should be able to map ACPI region after unmapping");
 
         // SAFETY: We have just mapped the physical memory to the virtual segment.start.
         // The pointers and lengths are derived from this successful mapping.
