@@ -145,7 +145,46 @@ pub extern "C" fn bpf_gpio_set_output(pin: u32, initial_high: u32) -> i64 {
 ///
 /// This function is an entry point for BPF programs. It accesses hardware registers
 /// but validates inputs (pwm_id, channel) to prevent invalid access.
-#[unsafe(no_mangle)]
+/// BPF helper: Emergency motor stop
+///
+/// Immediately stops all motor PWM outputs.
+/// Arguments:
+/// - reason: A numeric code indicating the reason for the stop
+///
+/// Returns 0 on success, -1 on failure.
+///
+/// # Safety
+///
+/// This function is an entry point for BPF programs. It accesses hardware registers
+/// to disable motor outputs in an emergency.
+#[no_mangle]
+pub extern "C" fn bpf_motor_emergency_stop(reason: u32) -> i64 {
+    log::error!("EMERGENCY STOP TRIGGERED! Reason: {}", reason);
+    #[cfg(all(target_arch = "aarch64", feature = "rpi5"))]
+    {
+        use crate::arch::aarch64::platform::rpi5::pwm::{PWM0, PWM1};
+
+        {
+            let pwm0 = PWM0.lock();
+            pwm0.set_duty_cycle(1, 0);
+            pwm0.set_duty_cycle(2, 0);
+        }
+
+        {
+            let pwm1 = PWM1.lock();
+            pwm1.set_duty_cycle(1, 0);
+            pwm1.set_duty_cycle(2, 0);
+        }
+        0
+    }
+    #[cfg(not(all(target_arch = "aarch64", feature = "rpi5")))]
+    {
+        let _ = reason;
+        -1
+    }
+}
+
+#[no_mangle]
 pub extern "C" fn bpf_pwm_write(pwm_id: u32, channel: u32, duty_percent: u32) -> i64 {
     #[cfg(all(target_arch = "aarch64", feature = "rpi5"))]
     {
@@ -306,6 +345,51 @@ pub extern "C" fn bpf_ringbuf_output(
 
         if manager.ringbuf_output(map_id, data, flags).is_ok() {
             return 0;
+        }
+    }
+    -1
+}
+
+/// BPF helper: Push data to a time-series map.
+///
+/// # Arguments
+/// * `map_id` - The time-series map ID
+/// * `key_ptr` - Pointer to the timestamp (u64)
+/// * `value_ptr` - Pointer to the value
+///
+/// # Returns
+/// 0 on success, negative error code on failure.
+///
+/// # Safety
+/// Called from verified BPF programs. The verifier ensures pointers are valid.
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn bpf_timeseries_push(
+    map_id: u32,
+    key_ptr: *const u8,
+    value_ptr: *const u8,
+) -> i64 {
+    use crate::BPF_MANAGER;
+
+    if key_ptr.is_null() || value_ptr.is_null() {
+        return -1;
+    }
+
+    if let Some(manager) = BPF_MANAGER.get() {
+        let manager = manager.lock();
+        if let Some(def) = manager.get_map_def(map_id) {
+            let key_size = def.key_size as usize;
+            let value_size = def.value_size as usize;
+
+            // SAFETY: Verifier ensures valid memory access for key_ptr
+            let key = unsafe { core::slice::from_raw_parts(key_ptr, key_size) };
+            // SAFETY: Verifier ensures valid memory access for value_ptr
+            let value = unsafe { core::slice::from_raw_parts(value_ptr, value_size) };
+
+            // TimeSeriesMap uses update() to handle push (key treated as timestamp)
+            if manager.map_update(map_id, key, value, 0).is_ok() {
+                return 0;
+            }
         }
     }
     -1

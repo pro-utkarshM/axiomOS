@@ -59,6 +59,7 @@ pub fn sys_mmap<Cx: MemoryRegionAccess>(
         .map_err(|e| match e {
             crate::access::CreateMappingError::LocationAlreadyMapped => EINVAL,
             crate::access::CreateMappingError::OutOfMemory => ENOMEM,
+            crate::access::CreateMappingError::NotFound => EINVAL,
         })?;
 
     Ok(mapped_addr.addr())

@@ -3,7 +3,7 @@ use core::mem::size_of;
 
 use kernel_abi::{
     BPF_MAP_CREATE, BPF_MAP_DELETE_ELEM, BPF_MAP_LOOKUP_ELEM, BPF_MAP_UPDATE_ELEM, BPF_PROG_ATTACH,
-    BPF_PROG_LOAD, BPF_PROG_LOAD_ELF, BpfAttr,
+    BPF_PROG_DETACH, BPF_PROG_LOAD, BPF_PROG_LOAD_ELF, BpfAttr,
 };
 use kernel_bpf::bytecode::insn::BpfInsn;
 
@@ -255,6 +255,36 @@ pub fn sys_bpf(cmd: usize, attr_ptr: usize, size: usize) -> isize {
                     }
                     Err(e) => {
                         log::error!("sys_bpf: attach failed: {}", e);
+                        -1
+                    }
+                }
+            } else {
+                -1
+            }
+        }
+        BPF_PROG_DETACH => {
+            log::info!("sys_bpf: PROG_DETACH");
+            let attr = match copy_from_userspace::<BpfAttr>(attr_ptr) {
+                Ok(a) => a,
+                Err(_) => return -1,
+            };
+
+            let attach_type = attr.attach_btf_id;
+            let prog_id = attr.attach_prog_fd;
+
+            if let Some(manager) = BPF_MANAGER.get() {
+                match manager.lock().detach(attach_type, prog_id) {
+                    Ok(_) => {
+                        log::info!("sys_bpf: detached prog {} from type {}", prog_id, attach_type);
+
+                        // For GPIO, we might want to disable hardware interrupt if no more
+                        // programs are attached, but BpfManager doesn't track per-pin
+                        // attachments yet. This is a known limitation.
+
+                        0
+                    }
+                    Err(e) => {
+                        log::error!("sys_bpf: detach failed: {}", e);
                         -1
                     }
                 }

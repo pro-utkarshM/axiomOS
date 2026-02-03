@@ -6,6 +6,7 @@ use spin::mutex::Mutex;
 use crate::arch::{PhysFrame, PhysFrameRange as PhysFrameRangeInclusive, VirtAddr};
 
 use crate::UsizeExt;
+use crate::mem::phys::PhysicalMemory;
 use crate::mem::virt::OwnedSegment;
 
 pub struct MemoryRegions {
@@ -27,6 +28,16 @@ impl MemoryRegions {
 
     pub fn add_region(&self, region: MemoryRegion) {
         self.regions.lock().push(region);
+    }
+
+    pub fn remove_region_at_address(&self, addr: VirtAddr) -> bool {
+        let mut regions = self.regions.lock();
+        if let Some(index) = regions.iter().position(|r| r.addr() == addr) {
+            regions.remove(index);
+            true
+        } else {
+            false
+        }
     }
 
     pub fn with_memory_region_for_address<F, R>(&self, addr: VirtAddr, f: F) -> Option<R>
@@ -121,7 +132,9 @@ pub struct LazyMemoryRegion {
 
 impl Drop for LazyMemoryRegion {
     fn drop(&mut self) {
-        todo!("deallocate physical memory")
+        for frame in self.physical_frames.lock().iter() {
+            PhysicalMemory::deallocate_frame(*frame);
+        }
     }
 }
 
@@ -149,7 +162,7 @@ impl MappedMemoryRegion {
 
 impl Drop for MappedMemoryRegion {
     fn drop(&mut self) {
-        todo!("deallocate physical memory")
+        PhysicalMemory::deallocate_frames(self.physical_frames);
     }
 }
 
@@ -162,6 +175,6 @@ pub struct FileBackedMemoryRegion {
 
 impl Drop for FileBackedMemoryRegion {
     fn drop(&mut self) {
-        todo!("deallocate physical memory")
+        // region dropped automatically
     }
 }

@@ -1,14 +1,9 @@
 use core::fmt::{Debug, Formatter};
 
 use conquer_once::spin::OnceCell;
-#[cfg(target_arch = "x86_64")]
-use limine::memory_map::EntryType;
 use log::info;
 use mapper::AddressSpaceMapper;
 use spin::RwLock;
-
-#[cfg(target_arch = "x86_64")]
-use log::{debug, trace};
 
 #[cfg(target_arch = "x86_64")]
 use x86_64::instructions::interrupts;
@@ -16,12 +11,11 @@ use x86_64::instructions::interrupts;
 use x86_64::registers::control::Cr3;
 #[cfg(target_arch = "x86_64")]
 use x86_64::structures::paging::mapper::{
-    FlagUpdateError, MapToError, MappedFrame, MapperAllSizes, PageTableFrameMapping,
-    TranslateResult,
+    FlagUpdateError, MapToError,
 };
 #[cfg(target_arch = "x86_64")]
 use x86_64::structures::paging::{
-    MappedPageTable, Mapper, OffsetPageTable, PageTable, RecursivePageTable, Translate,
+    Mapper, PageTable, RecursivePageTable,
 };
 
 use crate::arch::types::{
@@ -48,13 +42,13 @@ pub mod aarch64 {
 }
 
 #[cfg(target_arch = "x86_64")]
-use crate::limine::{HHDM_REQUEST, KERNEL_ADDRESS_REQUEST, MEMORY_MAP_REQUEST};
+use crate::limine::{HHDM_REQUEST, KERNEL_ADDRESS_REQUEST};
 #[cfg(target_arch = "x86_64")]
 use crate::mem::phys::PhysicalMemory;
 #[cfg(target_arch = "x86_64")]
 use crate::mem::virt::{VirtualMemoryAllocator, VirtualMemoryHigherHalf};
 #[cfg(target_arch = "x86_64")]
-use crate::{U64Ext, UsizeExt};
+use crate::U64Ext;
 
 mod mapper;
 
@@ -154,133 +148,6 @@ fn make_mapping_recursive() -> (VirtAddr, PhysFrame) {
 
     info!("kernel address space initialized (using bootloader page tables)");
     (vaddr, level_4_table_frame)
-}
-
-#[cfg(target_arch = "x86_64")]
-fn remap(
-    current_pt: &mut OffsetPageTable,
-    new_pt: &mut impl MapperAllSizes,
-    start_vaddr: VirtAddr,
-    len: usize,
-) {
-    let mut current_addr = start_vaddr;
-
-    // Calculate the end address with overflow protection
-    let end_addr = start_vaddr.as_u64().saturating_add(len as u64);
-
-    debug!("remap: starting at {:#x}, end at {:#x}", start_vaddr.as_u64(), end_addr);
-
-    while current_addr.as_u64() < end_addr {
-        if (current_addr.as_u64() - start_vaddr.as_u64()) % (16 * 1024 * 1024) == 0 {
-            debug!("remap: progress at {:#x}", current_addr.as_u64());
-        }
-
-        debug!("remap: about to translate {:#x}", current_addr.as_u64());
-        let result = current_pt.translate(current_addr);
-        debug!("remap: translated {:#x}", current_addr.as_u64());
-        let TranslateResult::Mapped {
-            frame,
-            offset,
-            flags,
-        } = result
-        else {
-            break;
-        };
-
-        let flags = flags.intersection(
-            PageTableFlags::PRESENT
-                | PageTableFlags::WRITABLE
-                | PageTableFlags::NO_EXECUTE
-                | PageTableFlags::HUGE_PAGE,
-        );
-
-        debug!("remap: offset={}, frame size={}", offset, frame.size());
-
-        if offset != 0 {
-            // There are cases where limine maps huge pages across borders of memory regions
-            // in the HHDM for example, the last pages of a 'usable' section and the first
-            // pages of a 'bootloader reclaimable' section could be mapped to the same 2MiB or 1GiB
-            // huge frame. We need to handle this accordingly.
-
-            let mut flags = flags;
-            flags.remove(PageTableFlags::HUGE_PAGE);
-
-            let MappedFrame::Size2MiB(f) = frame else {
-                todo!("support huge pages crossing region borders");
-            };
-
-            trace!(
-                "breaking up cross-region huge page ({:p} offset {:x})",
-                f.start_address(),
-                offset
-            );
-
-            let mut off = 0;
-            while (current_addr + off).as_u64() < (start_vaddr.as_u64() + len.into_u64())
-                && (offset + off < frame.size())
-            {
-                let page = Page::<Size4KiB>::containing_address(current_addr + off);
-                let f1 = PhysFrame::containing_address(f.start_address() + offset + off);
-                // SAFETY: We are splitting a huge page into 4KiB pages. The target frames exist.
-                // We are updating the new page table which is not yet active.
-                unsafe {
-                    let _ = new_pt.map_to(page, f1, flags, &mut PhysicalMemory).unwrap();
-                }
-                off += page.size();
-            }
-        } else {
-            debug!("remap: entering else branch, about to match frame type");
-            // SAFETY: We are mapping pages in the new page table. The frames are valid as they
-            // were obtained from translation of the current page table.
-            unsafe {
-                match frame {
-                    MappedFrame::Size4KiB(f) => {
-                        debug!("remap: mapping 4KiB page at {:#x}", current_addr.as_u64());
-                        match new_pt.map_to(
-                            Page::containing_address(current_addr),
-                            f,
-                            flags,
-                            &mut PhysicalMemory,
-                        ) {
-                            Ok(_) => debug!("remap: mapped 4KiB page"),
-                            Err(e) => {
-                                panic!("remap: failed to map 4KiB page at {:#x}: {:?}", current_addr.as_u64(), e);
-                            }
-                        }
-                    }
-                    MappedFrame::Size2MiB(f) => {
-                        debug!("remap: mapping 2MiB page at {:#x}", current_addr.as_u64());
-                        match new_pt.map_to(
-                            Page::containing_address(current_addr),
-                            f,
-                            flags,
-                            &mut PhysicalMemory,
-                        ) {
-                            Ok(_) => debug!("remap: mapped 2MiB page"),
-                            Err(e) => {
-                                panic!("remap: failed to map 2MiB page at {:#x}: {:?}", current_addr.as_u64(), e);
-                            }
-                        }
-                    }
-                    MappedFrame::Size1GiB(f) => {
-                        debug!("remap: mapping 1GiB page at {:#x}", current_addr.as_u64());
-                        match new_pt.map_to(
-                            Page::containing_address(current_addr),
-                            f,
-                            flags,
-                            &mut PhysicalMemory,
-                        ) {
-                            Ok(_) => debug!("remap: mapped 1GiB page"),
-                            Err(e) => {
-                                panic!("remap: failed to map 1GiB page at {:#x}: {:?}", current_addr.as_u64(), e);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        current_addr += frame.size() - offset;
-    }
 }
 
 #[cfg(target_arch = "x86_64")]
@@ -440,9 +307,8 @@ impl AddressSpace {
 
         #[cfg(target_arch = "aarch64")]
         {
-            let l0_phys_ptr = crate::arch::aarch64::mm::create_user_address_space()
+            let l0_phys = crate::arch::aarch64::mm::create_user_address_space()
                 .expect("failed to create user address space");
-            let l0_phys = l0_phys_ptr as usize;
             let frame = crate::arch::aarch64::phys::PhysFrame::containing_address(
                 crate::arch::types::PhysAddr::new(l0_phys as u64),
             );

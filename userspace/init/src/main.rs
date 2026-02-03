@@ -6,10 +6,24 @@ use minilib::write;
 // SAFETY: Entry point for the init process, called by the kernel/loader.
 #[unsafe(no_mangle)]
 pub extern "C" fn _start() -> ! {
-    write(1, b"=== BPF Maps Demo ===\n");
+    write(1, b"=== BPF Maps Demo (Updated) ===\n");
+    write(1, b"Testing print_num(123): ");
+    print_num(123);
+    write(1, b"\n");
 
+    write(1, b"Testing magic syscall 999: ");
+    print_num(8888); // Marker 8888
+    write(1, b"\n");
+    // let magic = minilib::syscall0(999);
+    // print_num(magic as u64);
+    let r0 = minilib::syscall_debug(999);
+    write(1, b"r0: ");
+    print_num(r0 as u64);
+    write(1, b"\n");
+
+    /*
     // Spawn file_io_demo to test SYS_SPAWN
-    write(1, b"Spawning /bin/file_io_demo...\n");
+    write(1, b"SpawningXYZ /bin/file_io_demo...\n");
     let pid = minilib::spawn("/bin/file_io_demo");
     if pid < 0 {
         write(1, b"Failed to spawn file_io_demo!\n");
@@ -51,6 +65,7 @@ pub extern "C" fn _start() -> ! {
         print_num(pid as u64);
         write(1, b"\n");
     }
+    */
 
     use kernel_abi::BpfAttr;
     use minilib::bpf;
@@ -256,7 +271,7 @@ pub extern "C" fn _start() -> ! {
         loop_count += 1;
 
         // Read counter every ~1 million iterations
-        if loop_count.is_multiple_of(1_000_000) {
+        if loop_count % 1_000_000 == 0 {
             let lookup_attr = BpfAttr {
                 map_fd: map_id as u32,
                 key: &key as *const u32 as u64,

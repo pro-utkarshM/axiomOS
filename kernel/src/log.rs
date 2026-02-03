@@ -6,7 +6,7 @@ use crate::serial_println;
 
 pub(crate) fn init() {
     log::set_logger(&SerialLogger).unwrap();
-    log::set_max_level(::log::LevelFilter::Trace);
+    log::set_max_level(::log::LevelFilter::Info);
 }
 
 pub struct SerialLogger;

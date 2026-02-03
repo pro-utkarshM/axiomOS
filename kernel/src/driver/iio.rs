@@ -7,20 +7,20 @@
 //! For now, it provides the mechanism to inject sensor events and trigger BPF hooks.
 
 use alloc::vec::Vec;
-#[cfg(target_arch = "x86_64")]
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 use alloc::boxed::Box;
-#[cfg(target_arch = "x86_64")]
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 use core::ffi::c_void;
 use spin::Mutex;
 use conquer_once::spin::OnceCell;
 
 use kernel_bpf::attach::{IioChannel, IioEvent};
 use kernel_bpf::execution::BpfContext;
-#[cfg(target_arch = "x86_64")]
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 use crate::mcore::mtask::task::Task;
-#[cfg(target_arch = "x86_64")]
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 use crate::mcore::mtask::process::Process;
-#[cfg(target_arch = "x86_64")]
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 use crate::mcore::mtask::scheduler::global::GlobalTaskQueue;
 
 /// Global IIO manager instance
@@ -96,7 +96,7 @@ impl IioDevice {
 }
 
 /// Simulation task entry point
-#[cfg(target_arch = "x86_64")]
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 extern "C" fn iio_simulation_task(_arg: *mut c_void) {
     let mut counter = 0;
     loop {
@@ -142,7 +142,7 @@ pub fn init_simulated_device() {
         ::log::info!("Initialized simulated IIO accelerometer (id=0)");
 
         // Spawn simulation task
-        #[cfg(target_arch = "x86_64")]
+        #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
         {
             let task = Task::create_new(Process::root(), iio_simulation_task, core::ptr::null_mut())
                 .expect("failed to create IIO simulation task");

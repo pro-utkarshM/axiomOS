@@ -1039,7 +1039,10 @@ dependencies = [
  "init",
  "kernel",
  "ovmf-prebuilt",
+ "pwm_demo",
+ "safety_demo",
  "syscall_demo",
+ "timeseries_demo",
 ]
 
 [[package]]
@@ -1131,6 +1134,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5ee95bc4ef87b8d5ba32e8b7714ccc834865276eab0aed5c9958d00ec45f49e8"
 dependencies = [
  "unicode-ident",
+]
+
+[[package]]
+name = "pwm_demo"
+version = "0.1.0"
+dependencies = [
+ "kernel_abi",
+ "minilib",
 ]
 
 [[package]]
@@ -1289,6 +1300,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "db02a82ad13df46afeba34a4e54065fa912308b9101b060e4422898eac0e06f6"
 dependencies = [
  "zerocopy 0.8.28",
+]
+
+[[package]]
+name = "safety_demo"
+version = "0.1.0"
+dependencies = [
+ "kernel_abi",
+ "minilib",
 ]
 
 [[package]]
@@ -1490,6 +1509,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f60246a4944f24f6e018aa17cdeffb7818b76356965d03b07d6a9886e8962185"
 dependencies = [
  "cfg-if",
+]
+
+[[package]]
+name = "timeseries_demo"
+version = "0.1.0"
+dependencies = [
+ "kernel_abi",
+ "minilib",
 ]
 
 [[package]]

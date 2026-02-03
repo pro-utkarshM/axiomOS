@@ -11,6 +11,12 @@ pub fn handle_syscall(ctx: &mut ExceptionContext) {
     // In ARM, syscall arguments are in x0-x5
     // Syscall number is in x8
     let n = ctx.x8 as usize;
+
+    if n == 999 {
+        panic!("DEBUG: Reached handle_syscall with n=999");
+    }
+
+    log::info!("SYSCALL: n={} arg0={:#x}", n, ctx.x0);
     let arg1 = ctx.x0 as usize;
     let arg2 = ctx.x1 as usize;
     let arg3 = ctx.x2 as usize;
@@ -21,7 +27,9 @@ pub fn handle_syscall(ctx: &mut ExceptionContext) {
     let result = crate::syscall::dispatch_syscall(n, arg1, arg2, arg3, arg4, arg5, arg6);
 
     // Return result in x0
+    log::info!("SYSCALL result: n={} ret={} (0x{:x})", n, result, result as u64);
     ctx.x0 = result as u64;
+    log::info!("SYSCALL set ctx.x0 (addr {:p}) to {}", &ctx.x0, ctx.x0);
 
     // Advance ELR past SVC instruction (4 bytes)
     // The exception handler saves ELR to the stack context, so we modify it there.

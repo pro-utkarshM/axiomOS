@@ -28,14 +28,14 @@ fn vmm() -> &'static RwLock<VirtualMemoryManager> {
 pub fn init() {
     VMM.init_once(|| {
         #[cfg(target_arch = "x86_64")]
-        let start = VirtAddr::new(0xFFFF_8000_0000_0000);
+        let start = VirtAddr::new(0xFFFF_C000_0000_0000);
         #[cfg(target_arch = "x86_64")]
-        let size = 0x0000_8000_0000_0000;
+        let size = 0x0000_1000_0000_0000;
 
         #[cfg(target_arch = "aarch64")]
-        let start = VirtAddr::new(0xFFFF_8000_0000_0000);
+        let start = VirtAddr::new(0xFFFF_F000_0000_0000);
         #[cfg(target_arch = "aarch64")]
-        let size = 0x0000_8000_0000_0000;
+        let size = 0x0000_1000_0000_0000;
 
         RwLock::new(VirtualMemoryManager::new(
             start,

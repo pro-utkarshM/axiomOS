@@ -34,6 +34,7 @@ pub fn init_exception_vector() {
     // The address is derived from a valid linker symbol.
     unsafe {
         let vbar = exception_vector_base as *const () as u64;
+        log::info!("Initializing AArch64 exception vector table at {:#x}", vbar);
         asm!("msr vbar_el1, {}", in(reg) vbar);
     }
 }
@@ -84,12 +85,18 @@ pub extern "C" fn handle_sync_exception(ctx: &mut ExceptionContext) {
     let ec = (esr >> 26) & 0x3F; // Exception class
     let iss = esr & 0x1FFFFFF; // Instruction specific syndrome
 
-    log::trace!("Sync exception: EC={:#x}, ISS={:#x}, ELR={:#x}, FAR={:#x}", ec, iss, elr, far);
+    let spsr: u64;
+    unsafe {
+        asm!("mrs {}, spsr_el1", out(reg) spsr);
+    }
+
+    log::info!("Sync exception: EC={:#x}, ISS={:#x}, ELR={:#x}, FAR={:#x}, SPSR={:#x}", ec, iss, elr, far, spsr);
 
     match ec {
         0x15 => {
             // SVC instruction execution in AArch64 state
             crate::arch::aarch64::syscall::handle_syscall(ctx);
+            log::info!("handle_sync_exception: syscall returned, ctx.x0={}", ctx.x0);
         }
         0x20 | 0x21 => {
             // Instruction abort from lower/same EL
@@ -276,7 +283,7 @@ fn handle_data_abort(elr: u64, far: u64, iss: u64) {
 /// It is called from the vector table. It must not unwind.
 #[unsafe(no_mangle)]
 pub extern "C" fn handle_fiq() {
-    log::warn!("FIQ received");
+    log::error!("FIQ received! Registers might be in an inconsistent state.");
 }
 
 /// SError handler
@@ -287,6 +294,17 @@ pub extern "C" fn handle_fiq() {
 /// It is called from the vector table. It must not unwind.
 #[unsafe(no_mangle)]
 pub extern "C" fn handle_serror() {
+    let esr: u64;
+    let elr: u64;
+    let far: u64;
+
+    unsafe {
+        asm!("mrs {}, esr_el1", out(reg) esr);
+        asm!("mrs {}, elr_el1", out(reg) elr);
+        asm!("mrs {}, far_el1", out(reg) far);
+    }
+
+    log::error!("SError received! ESR={:#x}, ELR={:#x}, FAR={:#x}", esr, elr, far);
     panic!("SError received");
 }
 
@@ -302,6 +320,11 @@ pub extern "C" fn handle_invalid_exception(kind: u64, source: u64) {
         asm!("mrs {}, elr_el1", out(reg) elr);
         asm!("mrs {}, far_el1", out(reg) far);
     }
+
+    log::error!(
+        "Invalid exception: kind={}, source={}, ESR={:#x}, ELR={:#x}, FAR={:#x}",
+        kind, source, esr, elr, far
+    );
 
     panic!(
         "Invalid exception: kind={}, source={}, ESR={:#x}, ELR={:#x}, FAR={:#x}",

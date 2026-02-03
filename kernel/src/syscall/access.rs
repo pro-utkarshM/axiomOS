@@ -251,6 +251,20 @@ impl kernel_syscall::access::MemoryRegionAccess for KernelAccess<'_> {
     fn add_memory_region(&self, region: Self::Region) {
         self.process.memory_regions().add_region(region.inner);
     }
+
+    fn remove_memory_region(
+        &self,
+        addr: kernel_syscall::UserspacePtr<u8>,
+    ) -> Result<(), kernel_syscall::access::CreateMappingError> {
+        use crate::arch::types::VirtAddr;
+        let vaddr = VirtAddr::new(addr.as_ptr() as u64);
+
+        if self.process.memory_regions().remove_region_at_address(vaddr) {
+            Ok(())
+        } else {
+            Err(kernel_syscall::access::CreateMappingError::NotFound)
+        }
+    }
 }
 
 /// A handle to a memory region that implements the MemoryRegion trait

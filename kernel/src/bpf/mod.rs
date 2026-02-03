@@ -11,7 +11,7 @@ use kernel_bpf::execution::{BpfContext, BpfError, BpfExecutor};
 #[cfg(not(target_arch = "aarch64"))]
 use kernel_bpf::execution::Interpreter;
 use kernel_bpf::loader::BpfLoader;
-use kernel_bpf::maps::{ArrayMap, BpfMap, HashMap as BpfHashMap, RingBufMap};
+use kernel_bpf::maps::{ArrayMap, BpfMap, HashMap as BpfHashMap, RingBufMap, TimeSeriesMap};
 use kernel_bpf::profile::ActiveProfile;
 
 pub const ATTACH_TYPE_TIMER: u32 = 1;
@@ -68,11 +68,14 @@ impl BpfManager {
 
         let id = self.programs.len() as u32;
         self.programs.push(bpf_prog);
+        log::info!("BpfManager: Loaded raw program. Assigned id={}. Total programs={}", id, self.programs.len());
         Ok(id)
     }
 
     pub fn attach(&mut self, attach_type: u32, prog_id: u32) -> Result<(), BpfError> {
+        log::info!("BpfManager: Attaching prog_id={} to type={}. Total programs={}", prog_id, attach_type, self.programs.len());
         if prog_id as usize >= self.programs.len() {
+            log::error!("BpfManager: Attach failed. prog_id={} >= programs.len()={}", prog_id, self.programs.len());
             return Err(BpfError::NotLoaded);
         }
 
@@ -81,6 +84,16 @@ impl BpfManager {
             list.push(prog_id);
         }
         Ok(())
+    }
+
+    pub fn detach(&mut self, attach_type: u32, prog_id: u32) -> Result<(), BpfError> {
+        if let Some(list) = self.attachments.get_mut(&attach_type) {
+            if let Some(pos) = list.iter().position(|&id| id == prog_id) {
+                list.remove(pos);
+                return Ok(());
+            }
+        }
+        Err(BpfError::NotLoaded)
     }
 
     pub fn execute(&self, program_id: u32, ctx: &BpfContext) -> Result<u64, BpfError> {
@@ -110,6 +123,8 @@ impl BpfManager {
                     Ok(res) => {
                         if attach_type == ATTACH_TYPE_IIO {
                             log::info!("IIO BPF Hook [id={}] returned: {}", prog_id, res);
+                        } else if attach_type == ATTACH_TYPE_PWM {
+                            log::info!("PWM BPF Hook [id={}] returned: {}", prog_id, res);
                         } else if attach_type == ATTACH_TYPE_SYSCALL {
                             // Log only interesting syscalls or just debug info
                             // For demo purposes, we log everything if it returns non-zero
@@ -152,6 +167,13 @@ impl BpfManager {
                 // Ring buffer map - max_entries is the buffer size (must be power of 2)
                 Box::new(
                     RingBufMap::<ActiveProfile>::new(max_entries as usize)
+                        .map_err(|_| BpfError::OutOfMemory)?,
+                )
+            }
+            100 => {
+                // Time-series map
+                Box::new(
+                    TimeSeriesMap::<ActiveProfile>::new(value_size, max_entries)
                         .map_err(|_| BpfError::OutOfMemory)?,
                 )
             }

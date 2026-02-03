@@ -1,7 +1,7 @@
 use log::info;
 
 #[cfg(target_arch = "x86_64")]
-use crate::limine::MEMORY_MAP_REQUEST;
+use crate::limine::{HHDM_REQUEST, MEMORY_MAP_REQUEST};
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 use crate::mem::address_space::AddressSpace;
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
@@ -17,6 +17,36 @@ pub mod memapi;
 pub mod phys;
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 pub mod virt;
+
+/// Convert a physical address to a virtual address using the Higher Half Direct Map (HHDM).
+///
+/// # Panics
+///
+/// Panics if the HHDM request failed (x86_64) or if the architecture is not supported.
+#[cfg(target_arch = "x86_64")]
+#[must_use]
+pub fn phys_to_virt(phys: usize) -> usize {
+    let offset = HHDM_REQUEST
+        .get_response()
+        .expect("HHDM request failed")
+        .offset();
+    phys.wrapping_add(offset as usize)
+}
+
+/// Convert a physical address to a virtual address using the Higher Half Direct Map (HHDM).
+#[cfg(target_arch = "aarch64")]
+#[must_use]
+pub fn phys_to_virt(phys: usize) -> usize {
+    crate::arch::aarch64::mem::phys_to_virt(phys)
+}
+
+#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+#[must_use]
+pub fn phys_to_virt(phys: usize) -> usize {
+    // Fallback for other architectures (e.g. RISC-V) if/when implemented
+    // For now, identity mapping or panic
+    phys
+}
 
 #[cfg(target_arch = "x86_64")]
 #[allow(clippy::missing_panics_doc)]

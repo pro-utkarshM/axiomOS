@@ -89,7 +89,7 @@ pub extern "C" fn handle_irq(_ctx: &mut ExceptionContext) {
         return;
     }
 
-    log::trace!("Handling IRQ {}", irq);
+    log::info!("Handling IRQ {}", irq);
 
     // Dispatch based on IRQ number
     if irq == TIMER_IRQ {
@@ -118,17 +118,17 @@ pub extern "C" fn handle_irq(_ctx: &mut ExceptionContext) {
 
 /// Handle timer interrupt (without rescheduling)
 fn handle_timer_interrupt() {
-    log::trace!("Timer interrupt started");
+    log::info!("Timer interrupt started");
     // Clear and reset timer for next interrupt
     clear_timer_interrupt();
     set_next_timer();
 
     // Run BPF hooks (AttachType::Timer = 1)
     if let Some(manager) = crate::BPF_MANAGER.get() {
-        log::trace!("Executing BPF timer hooks");
+        log::info!("Executing BPF timer hooks");
         let ctx = kernel_bpf::execution::BpfContext::empty();
         manager.lock().execute_hooks(1, &ctx);
-        log::trace!("BPF timer hooks executed");
+        log::info!("BPF timer hooks executed");
     }
 }
 

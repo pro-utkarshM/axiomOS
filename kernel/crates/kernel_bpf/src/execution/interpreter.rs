@@ -32,9 +32,11 @@ unsafe extern "C" {
     fn bpf_map_update_elem(map_id: u32, key: *const u8, value: *const u8, flags: u64) -> i32;
     fn bpf_map_delete_elem(map_id: u32, key: *const u8) -> i32;
     fn bpf_ringbuf_output(map_id: u32, data: *const u8, size: u64, flags: u64) -> i64;
+    fn bpf_timeseries_push(map_id: u32, key: *const u8, value: *const u8) -> i64;
     // Robotics helpers
     fn bpf_gpio_read(pin: u32) -> i64;
     fn bpf_gpio_write(pin: u32, value: u32) -> i64;
+    fn bpf_motor_emergency_stop(reason: u32) -> i64;
     fn bpf_pwm_write(pwm_id: u32, channel: u32, duty: u32) -> i64;
 }
 
@@ -284,6 +286,13 @@ impl<P: PhysicalProfile> Interpreter<P> {
                         as u64,
                 ),
 
+                // bpf_timeseries_push
+                1001 => Ok(bpf_timeseries_push(
+                    args[0] as u32,
+                    args[1] as *const u8,
+                    args[2] as *const u8,
+                ) as u64),
+
                 // Robotics Helpers
                 // bpf_gpio_set (1003) -> bpf_gpio_write
                 1003 => Ok(bpf_gpio_write(args[0] as u32, args[1] as u32) as u64),
@@ -291,6 +300,8 @@ impl<P: PhysicalProfile> Interpreter<P> {
                 // bpf_gpio_get (1004) -> bpf_gpio_read
                 1004 => Ok(bpf_gpio_read(args[0] as u32) as u64),
 
+                // bpf_motor_emergency_stop (1000)
+                1000 => Ok(bpf_motor_emergency_stop(args[0] as u32) as u64),
                 // bpf_pwm_write (1005)
                 1005 => Ok(bpf_pwm_write(args[0] as u32, args[1] as u32, args[2] as u32) as u64),
 

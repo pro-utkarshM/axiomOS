@@ -12,9 +12,17 @@ fn main() {
 
     let target_arch = std::env::var("CARGO_CFG_TARGET_ARCH").unwrap();
 
+    let kernel_env = if target_arch == "x86_64" {
+        "CARGO_BIN_FILE_KERNEL_X86_kernel"
+    } else if target_arch == "aarch64" {
+        "CARGO_BIN_FILE_KERNEL_AARCH64_kernel"
+    } else {
+        panic!("Unsupported architecture: {}", target_arch);
+    };
+
     let kernel = PathBuf::from(
-        std::env::var_os("CARGO_BIN_FILE_KERNEL_kernel")
-            .expect("CARGO_BIN_FILE_KERNEL_kernel environment variable should be set"),
+        std::env::var_os(kernel_env)
+            .unwrap_or_else(|| panic!("{} environment variable should be set", kernel_env)),
     );
     println!("cargo:rustc-env=KERNEL_BINARY={}", kernel.display());
 
@@ -41,12 +49,12 @@ fn main() {
         println!("cargo:rustc-env=OVMF_X86_64_VARS=unused");
     }
 
-    let disk_image = build_os_disk_image();
+    let disk_image = build_os_disk_image(&target_arch);
     println!("cargo:rustc-env=DISK_IMAGE={}", disk_image.display());
 }
 
-fn build_os_disk_image() -> PathBuf {
-    let disk_dir = build_os_disk_dir();
+fn build_os_disk_image(target_arch: &str) -> PathBuf {
+    let disk_dir = build_os_disk_dir(target_arch);
     let disk_image = disk_dir.with_extension("img");
 
     let _ = remove_file(&disk_image); // if this fails, doesn't matter
@@ -77,12 +85,12 @@ fn build_os_disk_image() -> PathBuf {
     disk_image
 }
 
-fn build_os_disk_dir() -> PathBuf {
+fn build_os_disk_dir(target_arch: &str) -> PathBuf {
     let disk = out_dir().join("disk");
     let _ = remove_dir_all(&disk);
     create_dir(&disk).expect("should be able to create disk directory");
 
-    build_dir(&disk, &file_structure::STRUCTURE);
+    build_dir(&disk, &file_structure::STRUCTURE, target_arch);
 
     fs::write(disk.join("var/hello.txt"), "Hello, axiom-ebpf!\n")
         .expect("should be able to write hello.txt");
@@ -90,12 +98,18 @@ fn build_os_disk_dir() -> PathBuf {
     disk
 }
 
-fn build_dir(current_path: &Path, current_dir: &Dir<'_>) {
+fn build_dir(current_path: &Path, current_dir: &Dir<'_>, target_arch: &str) {
     for file in current_dir.files {
         let file_path = current_path.join(file.name);
         match file.kind {
             Kind::Executable => {
-                let env_var = format!("CARGO_BIN_FILE_{}_{}", file.name.to_uppercase(), file.name);
+                let suffix = if target_arch == "x86_64" {
+                    "x86"
+                } else {
+                    target_arch
+                };
+                let dep_name = format!("{}_{}", file.name, suffix);
+                let env_var = format!("CARGO_BIN_FILE_{}_{}", dep_name.to_uppercase(), file.name);
                 let bindep = std::env::var_os(&env_var).unwrap_or_else(|| {
                     panic!("could not find the bindep {env_var} in the environment variables")
                 });
@@ -111,7 +125,7 @@ fn build_dir(current_path: &Path, current_dir: &Dir<'_>) {
         let subdir_path = current_path.join(subdir.name);
         create_dir(&subdir_path).expect("should be able to create subdirectory");
 
-        build_dir(&subdir_path, subdir);
+        build_dir(&subdir_path, subdir, target_arch);
     }
 }
 

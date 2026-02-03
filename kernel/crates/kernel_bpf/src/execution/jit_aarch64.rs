@@ -1029,6 +1029,12 @@ impl<P: PhysicalProfile> Arm64JitCompiler<P> {
             ) -> i32;
             fn bpf_map_delete_elem(map_id: u32, key: *const u8) -> i32;
             fn bpf_ringbuf_output(map_id: u32, data: *const u8, size: u64, flags: u64) -> i64;
+            fn bpf_timeseries_push(map_id: u32, key: *const u8, value: *const u8) -> i64;
+            // Robotics Helpers
+            fn bpf_gpio_read(pin: u32) -> i64;
+            fn bpf_gpio_write(pin: u32, value: u32) -> i64;
+            fn bpf_motor_emergency_stop(reason: u32) -> i64;
+            fn bpf_pwm_write(pwm_id: u32, channel: u32, duty: u32) -> i64;
         }
 
         match helper_id {
@@ -1038,6 +1044,12 @@ impl<P: PhysicalProfile> Arm64JitCompiler<P> {
             4 => Ok(bpf_map_update_elem as *const () as u64),
             5 => Ok(bpf_map_delete_elem as *const () as u64),
             6 => Ok(bpf_ringbuf_output as *const () as u64),
+            1001 => Ok(bpf_timeseries_push as *const () as u64),
+            // Robotics Helpers
+            1000 => Ok(bpf_motor_emergency_stop as *const () as u64),
+            1003 => Ok(bpf_gpio_write as *const () as u64),
+            1004 => Ok(bpf_gpio_read as *const () as u64),
+            1005 => Ok(bpf_pwm_write as *const () as u64),
             _ => Err(Arm64JitError::UnsupportedInstruction),
         }
     }

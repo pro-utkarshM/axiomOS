@@ -12,7 +12,7 @@ use kernel_syscall::{
     fcntl::sys_open,
     mman::sys_mmap,
     stat::sys_fstat,
-    unistd::{sys_close, sys_getcwd, sys_lseek, sys_read, sys_write},
+    unistd::{sys_close, sys_getcwd, sys_lseek, sys_read, sys_write, sys_writev},
 };
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 use kernel_vfs::path::AbsolutePath;
@@ -115,10 +115,24 @@ pub fn dispatch_syscall(
         kernel_abi::SYS_OPEN => dispatch_sys_open(arg1, arg2, arg3, arg4),
         kernel_abi::SYS_READ => dispatch_sys_read(arg1, arg2, arg3),
         kernel_abi::SYS_WRITE => dispatch_sys_write(arg1, arg2, arg3),
+        kernel_abi::SYS_WRITEV => dispatch_sys_writev(arg1, arg2, arg3),
         kernel_abi::SYS_CLOSE => dispatch_sys_close(arg1),
         kernel_abi::SYS_FSTAT => dispatch_sys_fstat(arg1, arg2),
         kernel_abi::SYS_LSEEK => dispatch_sys_lseek(arg1, arg2, arg3),
         kernel_abi::SYS_BPF => dispatch_sys_bpf(arg1, arg2, arg3),
+        kernel_abi::SYS_ABORT => {
+            // Abort the process (equivalent to exit(134) - SIGABRT)
+            let status = 134;
+            let task = crate::mcore::context::ExecutionContext::load().current_task();
+            let process = task.process();
+            *process.exit_code().write() = Some(status);
+            task.set_should_terminate(true);
+            loop {
+                hlt();
+            }
+        }
+        kernel_abi::SYS_MALLOC => dispatch_sys_malloc(arg1),
+        kernel_abi::SYS_FREE => dispatch_sys_free(arg1),
         #[cfg(all(target_arch = "aarch64", feature = "rpi5"))]
         kernel_abi::SYS_PWM_CONFIG => dispatch_sys_pwm_config(arg1, arg2),
         #[cfg(all(target_arch = "aarch64", feature = "rpi5"))]
@@ -128,6 +142,10 @@ pub fn dispatch_syscall(
         kernel_abi::SYS_CLOCK_GETTIME => dispatch_sys_clock_gettime(arg1, arg2),
         kernel_abi::SYS_NANOSLEEP => dispatch_sys_nanosleep(arg1, arg2),
         kernel_abi::SYS_SPAWN => dispatch_sys_spawn(arg1, arg2),
+        999 => {
+            trace!("Magic syscall 999 called");
+            Ok(0xDEADBEEF)
+        }
         _ => {
             error!("unimplemented syscall: {} ({n})", syscall_name(n));
             loop {
@@ -243,6 +261,18 @@ fn dispatch_sys_mmap(
 }
 
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+fn dispatch_sys_malloc(size: usize) -> Result<usize, Errno> {
+    let cx = KernelAccess::new();
+    kernel_syscall::malloc::sys_malloc(&cx, size)
+}
+
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+fn dispatch_sys_free(ptr: usize) -> Result<usize, Errno> {
+    let cx = KernelAccess::new();
+    kernel_syscall::malloc::sys_free(&cx, ptr)
+}
+
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 fn dispatch_sys_open(
     path: usize,
     path_len: usize,
@@ -283,6 +313,20 @@ fn dispatch_sys_write(fd: usize, buf: usize, nbyte: usize) -> Result<usize, Errn
     // ensuring the buffer is valid and readable for nbyte bytes.
     let slice = unsafe { slice_from_ptr_and_len(buf, nbyte) }?;
     sys_write(&cx, fd, slice)
+}
+
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+fn dispatch_sys_writev(fd: usize, iov_ptr: usize, iovcnt: usize) -> Result<usize, Errno> {
+    let cx = KernelAccess::new();
+
+    let fd = i32::try_from(fd).map_err(|_| EINVAL)?;
+    let fd = <KernelAccess as FileAccess>::Fd::from(fd);
+
+    // SAFETY: iov_ptr comes from userspace syscall arguments. UserspacePtr::try_from_usize
+    // validates that the address is in the userspace address range.
+    let iov_ptr = unsafe { UserspacePtr::<kernel_abi::iovec>::try_from_usize(iov_ptr)? };
+
+    sys_writev(&cx, fd, iov_ptr, iovcnt)
 }
 
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
@@ -347,6 +391,16 @@ fn dispatch_sys_mmap(
 }
 
 #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+fn dispatch_sys_malloc(_size: usize) -> Result<usize, Errno> {
+    Err(EINVAL)
+}
+
+#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+fn dispatch_sys_free(_ptr: usize) -> Result<usize, Errno> {
+    Err(EINVAL)
+}
+
+#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
 fn dispatch_sys_open(
     _path: usize,
     _path_len: usize,
@@ -363,6 +417,11 @@ fn dispatch_sys_read(_fd: usize, _buf: usize, _nbyte: usize) -> Result<usize, Er
 
 #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
 fn dispatch_sys_write(_fd: usize, _buf: usize, _nbyte: usize) -> Result<usize, Errno> {
+    Err(EINVAL)
+}
+
+#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+fn dispatch_sys_writev(_fd: usize, _iov_ptr: usize, _iovcnt: usize) -> Result<usize, Errno> {
     Err(EINVAL)
 }
 

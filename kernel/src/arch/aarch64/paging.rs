@@ -233,6 +233,12 @@ impl PageTableWalker {
         }
 
         *entry = PageTableEntry::page(phys, flags);
+
+        // Ensure the write is visible to the MMU
+        unsafe {
+            core::arch::asm!("dsb ishst", options(nostack, preserves_flags));
+        }
+
         Ok(())
     }
 
@@ -353,6 +359,11 @@ impl PageTableWalker {
             }
 
             *entry = PageTableEntry::table(phys_addr);
+
+            // Ensure the write is visible to the MMU before it's used for translation
+            unsafe {
+                core::arch::asm!("dsb ishst", options(nostack, preserves_flags));
+            }
 
             Ok(table_ptr)
         }

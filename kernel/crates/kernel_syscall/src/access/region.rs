@@ -28,4 +28,8 @@ pub trait MemoryRegionAccess {
     /// Adds a memory region to the process's memory region tracking.
     /// This makes the region available to other kernel components.
     fn add_memory_region(&self, region: Self::Region);
+
+    /// Removes a memory region from the process's memory region tracking.
+    /// This effectively frees the memory associated with the region.
+    fn remove_memory_region(&self, addr: UserspacePtr<u8>) -> Result<(), CreateMappingError>;
 }

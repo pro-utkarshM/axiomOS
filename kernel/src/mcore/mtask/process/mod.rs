@@ -119,11 +119,14 @@ impl Process {
             current_working_directory: RwLock::new(parent.current_working_directory.read().clone()),
             address_space: Some(address_space),
             lower_half_memory: Arc::new(RwLock::new(VirtualMemoryManager::new(
+                #[cfg(target_arch = "x86_64")]
                 VirtAddr::new(0xF000),
+                #[cfg(target_arch = "aarch64")]
+                VirtAddr::new(0x0000_8000_0000_0000), // Start at 512GB to avoid identity map (L0[0])
                 #[cfg(target_arch = "x86_64")]
                 0x0000_7FFF_FFFF_0FFF,
                 #[cfg(target_arch = "aarch64")]
-                0x0000_FFFF_FFFF_0FFF,
+                0x0000_7F80_0000_0000, // Size: ~128TB (Total user space is 256TB, minus 512GB start)
             ))),
             telemetry: Telemetry::default(),
             memory_regions: MemoryRegions::new(),
@@ -253,26 +256,33 @@ pub enum CreateProcessError {
 extern "C" fn trampoline(_arg: *mut c_void) {
     log::info!("Trampoline started");
     let ctx = ExecutionContext::load();
+    log::info!("Trampoline: context loaded");
     let current_task = ctx.scheduler().current_task();
+    log::info!("Trampoline: current task got");
     let current_process = current_task.process().clone();
+    log::info!("Trampoline: current process got");
 
     let executable_path = current_process
         .executable_path
         .as_ref()
         .expect("should have an executable path");
+    log::info!("Trampoline: opening executable {:?}", executable_path);
     let node = vfs()
         .write()
         .open(executable_path)
         .expect("should be able to open executable");
+    log::info!("Trampoline: executable opened");
     let stat = {
         let mut stat = Stat::default();
         node.stat(&mut stat)
             .expect("should be able to stat executable");
         stat
     };
+    log::info!("Trampoline: executable stated, size={}", stat.size);
 
     let mut memapi = LowerHalfMemoryApi::new(current_process.clone());
 
+    log::info!("Trampoline: allocating memory for executable");
     let mut executable_file_allocation = memapi
         .allocate(
             Location::Anywhere,
@@ -281,6 +291,7 @@ extern "C" fn trampoline(_arg: *mut c_void) {
             Guarded::No,
         )
         .expect("should be able to allocate memory for executable file");
+    log::info!("Trampoline: memory allocated");
     let buf = executable_file_allocation.as_mut();
     let mut offset = 0;
     loop {
@@ -292,17 +303,22 @@ extern "C" fn trampoline(_arg: *mut c_void) {
         }
         offset += read;
     }
+    log::info!("Trampoline: executable read into memory");
     let executable_file_allocation = memapi
         .make_executable(executable_file_allocation)
         .expect("should be able to make allocation executable");
 
+    log::info!("Trampoline: parsing ELF");
     let elf_file = ElfFile::try_parse(executable_file_allocation.as_ref())
         .expect("should be able to parse elf binary");
+    log::info!("Trampoline: ELF parsed, loading...");
     let elf_image = ElfLoader::new(memapi.clone())
         .load(elf_file)
         .expect("should be able to load elf file");
+    log::info!("Trampoline: ELF loaded");
 
     if let Some(master_tls) = elf_image.tls_allocation() {
+        log::info!("Trampoline: setting up TLS");
         let mut tls_alloc = memapi
             .allocate(
                 Location::Anywhere,
@@ -333,6 +349,7 @@ extern "C" fn trampoline(_arg: *mut c_void) {
         }
     }
 
+    log::info!("Trampoline: allocating user stack");
     let mut memapi = LowerHalfMemoryApi::new(current_process.clone());
     let ustack_allocation = memapi
         .allocate(
@@ -346,6 +363,7 @@ extern "C" fn trampoline(_arg: *mut c_void) {
             Guarded::Yes,
         )
         .expect("should be able to allocate userspace stack");
+
 
     let ustack_rsp = ustack_allocation.start() + ustack_allocation.len().into_u64();
     {
@@ -421,7 +439,11 @@ extern "C" fn trampoline(_arg: *mut c_void) {
     {
         // SAFETY: We have set up the user stack and code pointer correctly.
         // We are entering userspace (EL0).
+        // Before entering, we must ensure the process's address space is active.
         unsafe {
+            let ttbr0 = current_process.address_space().ttbr0_value();
+            crate::arch::aarch64::paging::set_ttbr0(ttbr0);
+
             crate::arch::aarch64::context::enter_userspace(
                 code_ptr as usize,
                 ustack_rsp.as_u64() as usize,

@@ -52,6 +52,13 @@ impl MemoryApi for LowerHalfMemoryApi {
             }
             Location::Fixed(v) => {
                 let v = VirtAddr::new(v);
+
+                // We don't enforce strict alignment check here because ELF segments might not be page-aligned.
+                // The logic below ensures we map the containing pages.
+                if !v.is_aligned(layout.align() as u64) {
+                    log::warn!("LowerHalfMemoryApi: Fixed location {:p} is not aligned to {}, but proceeding by mapping containing pages.", v.as_ptr::<()>(), layout.align());
+                }
+
                 let aligned_start_addr = v.align_down(Size4KiB::SIZE)
                     - match guarded {
                         Guarded::Yes => Size4KiB::SIZE,
@@ -113,6 +120,15 @@ impl MemoryApi for LowerHalfMemoryApi {
         &mut self,
         allocation: Self::WritableAllocation,
     ) -> Result<Self::ExecutableAllocation, Self::WritableAllocation> {
+        #[cfg(target_arch = "aarch64")]
+        unsafe {
+            extern "C" {
+                fn aarch64_jit_sync_cache(start: usize, len: usize);
+            }
+            // Sync caches before marking executable to ensure I-cache sees the written instructions
+            aarch64_jit_sync_cache(allocation.start().as_u64() as usize, allocation.len());
+        }
+
         let res = self.process.address_space().remap_range::<Size4KiB, _>(
             &*allocation.segment,
             |mut flags| {

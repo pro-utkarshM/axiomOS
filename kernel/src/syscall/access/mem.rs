@@ -11,6 +11,7 @@ use crate::mcore::mtask::process::mem::{MappedMemoryRegion, MemoryRegion};
 use crate::mem::phys::PhysicalMemory;
 use crate::mem::virt::{OwnedSegment, VirtualMemoryAllocator};
 use crate::syscall::access::{KernelAccess, KernelMemoryRegionHandle};
+use crate::mem::phys_to_virt;
 
 impl MemoryAccess for KernelAccess<'_> {
     type Mapping = KernelMapping;
@@ -49,6 +50,18 @@ impl MemoryAccess for KernelAccess<'_> {
         // TODO: Optimize by using 2MiB and 1GiB frames when possible instead of only 4KiB frames
         let frames = PhysicalMemory::allocate_frames::<Size4KiB>(page_count)
             .ok_or(CreateMappingError::OutOfMemory)?;
+
+        // Zero the allocated frames for security
+        // We use the direct map (phys_to_virt) to access the physical memory.
+        for frame in frames.clone() {
+            let paddr = frame.start_address().as_u64();
+            let vaddr = phys_to_virt(paddr as usize);
+            // SAFETY: We just allocated this frame, so we have exclusive access to it.
+            // The direct map is always valid for physical memory.
+            unsafe {
+                core::ptr::write_bytes(vaddr as *mut u8, 0, Size4KiB::SIZE as usize);
+            }
+        }
 
         self.process
             .address_space()

@@ -117,7 +117,7 @@ pub fn init() {
         pci::init();
     }
 
-    #[cfg(all(target_arch = "aarch64", any(feature = "virt", feature = "rpi5")))]
+    #[cfg(all(target_arch = "aarch64", feature = "virt"))]
     {
         info!("Initializing VirtIO MMIO...");
         driver::virtio::mmio::init();

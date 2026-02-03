@@ -21,6 +21,7 @@ pub trait Mapping {
 pub enum CreateMappingError {
     LocationAlreadyMapped,
     OutOfMemory,
+    NotFound,
 }
 
 pub trait MemoryAccess {

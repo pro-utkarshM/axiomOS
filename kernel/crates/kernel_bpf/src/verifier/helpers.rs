@@ -362,14 +362,14 @@ pub fn get_helper_signature(id: HelperId) -> HelperSignature {
         // Map helpers
         HelperId::MapLookupElem => HelperSignature::new(
             id,
-            &[ArgType::PtrToMap, ArgType::PtrToMapKey],
+            &[ArgType::Scalar, ArgType::PtrToMapKey],
             ReturnType::PtrToMapValueOrNull,
         ),
 
         HelperId::MapUpdateElem => HelperSignature::new(
             id,
             &[
-                ArgType::PtrToMap,
+                ArgType::Scalar,
                 ArgType::PtrToMapKey,
                 ArgType::PtrToMapValue,
                 ArgType::Const,
@@ -379,7 +379,7 @@ pub fn get_helper_signature(id: HelperId) -> HelperSignature {
 
         HelperId::MapDeleteElem => HelperSignature::new(
             id,
-            &[ArgType::PtrToMap, ArgType::PtrToMapKey],
+            &[ArgType::Scalar, ArgType::PtrToMapKey],
             ReturnType::Integer,
         ),
 
@@ -423,7 +423,7 @@ pub fn get_helper_signature(id: HelperId) -> HelperSignature {
         HelperId::RingbufOutput => HelperSignature::new(
             id,
             &[
-                ArgType::PtrToRingbuf,
+                ArgType::Scalar,
                 ArgType::PtrToMem,
                 ArgType::MemSize,
                 ArgType::Const,
@@ -438,7 +438,7 @@ pub fn get_helper_signature(id: HelperId) -> HelperSignature {
 
         HelperId::TimeseriesPush => HelperSignature::new(
             id,
-            &[ArgType::PtrToMap, ArgType::PtrToMapKey, ArgType::PtrToMem],
+            &[ArgType::Scalar, ArgType::PtrToMapKey, ArgType::PtrToMapValue],
             ReturnType::Integer,
         ),
 

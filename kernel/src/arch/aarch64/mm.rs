@@ -82,7 +82,7 @@ pub fn init() {
 unsafe fn setup_kernel_page_tables(total_memory: usize) {
     #[allow(clippy::deref_addrof)]
     // SAFETY: We are in early boot (single core) and this is the only access to BOOT_TABLES.
-    let boot_tables = unsafe { &mut *(&raw mut BOOT_TABLES) };
+    let boot_tables = &mut *(&raw mut BOOT_TABLES);
 
     // Clear all tables
     boot_tables.l0_user.zero();
@@ -155,34 +155,63 @@ pub fn kernel_page_table_phys() -> usize {
 /// Create a new user address space
 ///
 /// Allocates a new L0 table and copies kernel mappings into it.
-pub fn create_user_address_space() -> Option<*mut PageTable> {
+/// Returns the physical address of the new L0 table.
+pub fn create_user_address_space() -> Option<usize> {
     // Allocate a new L0 table
     let frame = phys::allocate_frame::<crate::arch::types::Size4KiB>()?;
-    let l0_ptr = frame.addr() as *mut PageTable;
+    let l0_phys = frame.addr() as usize;
+    let l0_ptr = mem::phys_to_virt(l0_phys) as *mut PageTable;
 
     // SAFETY: We allocated a fresh frame, so writing to it is safe.
     unsafe {
         // Zero the table
         ptr::write_bytes(l0_ptr, 0, 1);
 
-        // Copy kernel mappings (upper half - entry 256-511)
-        #[allow(clippy::deref_addrof)]
-        let boot_l0_kernel = &*(&raw const BOOT_TABLES.l0_kernel);
-        let new_l0 = &mut *l0_ptr;
+        // We need to map the kernel (which runs in low memory 0x40080000+)
+        // and devices (UART, GIC, VirtIO) into the user's TTBR0.
+        // BUT we cannot simply copy the 1GB identity block (Index 0) from l1_low
+        // because that would prevent userspace from mapping anything in 0-1GB (like init at 0x200000).
 
-        for i in 256..512 {
-            *new_l0.entry_mut(i) = *boot_l0_kernel.entry(i);
-        }
+        // 1. Allocate a new L1 table for the first 512GB (L0 index 0)
+        let l1_frame = phys::allocate_frame::<crate::arch::types::Size4KiB>()?;
+        let l1_phys = l1_frame.addr() as usize;
+        let l1_ptr = mem::phys_to_virt(l1_phys) as *mut PageTable;
+        ptr::write_bytes(l1_ptr, 0, 1);
 
-        // Copy identity mapping (entry 0) from l0_user so kernel physical addresses work
-        // This is required because the kernel is linked at physical addresses (0x40080000)
-        // and functions like TaskCleanup::run will be resolved to these low addresses.
+        // Link L1 to L0
+        (*l0_ptr).entry_mut(0).set(paging::PageTableEntry::table(l1_phys).raw());
+
+        // 2. Copy the Kernel RAM mapping (Index 1 of L1: 1GB-2GB)
+        // This covers 0x40000000 - 0x7FFFFFFF, where the kernel code/data resides.
         #[allow(clippy::deref_addrof)]
-        let boot_l0_user = &*(&raw const BOOT_TABLES.l0_user);
-        *new_l0.entry_mut(0) = *boot_l0_user.entry(0);
+        let boot_tables = &mut *(&raw mut BOOT_TABLES);
+        let kernel_entry = *boot_tables.l1_low.entry(1);
+        *(*l1_ptr).entry_mut(1) = kernel_entry;
+
+        log::info!("create_user_address_space: L0={:#x}, L1={:#x}, KernelEntry[1]={:#x}", l0_phys, l1_phys, kernel_entry.raw());
+
+        // 3. Map necessary devices in the first 1GB (Index 0 of L1)
+        // We use PageTableWalker to map specific ranges instead of a 1GB block.
+        let mut walker = paging::PageTableWalker::new(l0_ptr);
+        let device_flags = paging::PageTableFlags::PRESENT
+            | paging::PageTableFlags::WRITABLE
+            | paging::PageTableFlags::MMIO_DEVICE
+            | paging::PageTableFlags::NO_EXECUTE; // Devices shouldn't be executable
+
+        // UART (PL011) at 0x0900_0000
+        let _ = walker.map_page(0x0900_0000, 0x0900_0000, device_flags.to_pte_bits());
+
+        // GICv2 at 0x0800_0000
+        // Distributor: 0x0800_0000, CPU Interface: 0x0801_0000
+        let _ = walker.map_range(0x0800_0000, 0x0800_0000, 0x20000, device_flags.to_pte_bits());
+
+        // VirtIO MMIO at 0x0a00_0000 (32 devices * 512 bytes = 16KB)
+        let _ = walker.map_range(0x0a00_0000, 0x0a00_0000, 0x4000, device_flags.to_pte_bits());
+
+        // Note: We leave the rest of 0-1GB unmapped so userspace can use it.
     }
 
-    Some(l0_ptr)
+    Some(l0_phys)
 }
 
 /// Initialize stage 2 of memory management (after heap is available)

@@ -21,99 +21,6 @@ irq_stack_top:
 
 .section .text
 
-// Macro to define a vector table entry
-.macro vector_entry label
-    .balign 0x80
-    b \label
-.endm
-
-.balign 2048
-exception_vector_base:
-    // Current EL with SP0
-    vector_entry curr_el_sp0_sync_handler
-    vector_entry curr_el_sp0_irq_handler
-    vector_entry curr_el_sp0_fiq_handler
-    vector_entry curr_el_sp0_serror_handler
-
-    // Current EL with SPx
-    vector_entry curr_el_spx_sync_handler
-    vector_entry curr_el_spx_irq_handler
-    vector_entry curr_el_spx_fiq_handler
-    vector_entry curr_el_spx_serror_handler
-
-    // Lower EL using AArch64
-    vector_entry lower_el_aarch64_sync_handler
-    vector_entry lower_el_aarch64_irq_handler
-    vector_entry lower_el_aarch64_fiq_handler
-    vector_entry lower_el_aarch64_serror_handler
-
-    // Lower EL using AArch32
-    vector_entry lower_el_aarch32_sync_handler
-    vector_entry lower_el_aarch32_irq_handler
-    vector_entry lower_el_aarch32_fiq_handler
-    vector_entry lower_el_aarch32_serror_handler
-
-// Real handlers located outside the 2KB table
-.section .text
-
-.macro define_invalid_handler name, kind, source
-\name:
-    save_context
-    mov     x0, #\kind
-    mov     x1, #\source
-    bl      handle_invalid_exception
-    1: wfi
-    b 1b
-.endm
-
-define_invalid_handler curr_el_sp0_sync_handler, 0, 0
-define_invalid_handler curr_el_sp0_irq_handler, 1, 0
-define_invalid_handler curr_el_sp0_fiq_handler, 2, 0
-define_invalid_handler curr_el_sp0_serror_handler, 3, 0
-
-curr_el_spx_sync_handler:
-    save_context
-    mov     x0, sp
-    bl      handle_sync_exception
-    bl      check_preemption
-    restore_context
-    eret
-
-curr_el_spx_irq_handler:
-    save_context
-    mov     x0, sp
-    bl      handle_irq
-    bl      check_preemption
-    restore_context
-    eret
-
-define_invalid_handler curr_el_spx_fiq_handler, 2, 1
-define_invalid_handler curr_el_spx_serror_handler, 3, 1
-
-lower_el_aarch64_sync_handler:
-    save_context
-    mov     x0, sp
-    bl      handle_sync_exception
-    bl      check_preemption
-    restore_context
-    eret
-
-lower_el_aarch64_irq_handler:
-    save_context
-    mov     x0, sp
-    bl      handle_irq
-    bl      check_preemption
-    restore_context
-    eret
-
-define_invalid_handler lower_el_aarch64_fiq_handler, 2, 2
-define_invalid_handler lower_el_aarch64_serror_handler, 3, 2
-
-define_invalid_handler lower_el_aarch32_sync_handler, 0, 3
-define_invalid_handler lower_el_aarch32_irq_handler, 1, 3
-define_invalid_handler lower_el_aarch32_fiq_handler, 2, 3
-define_invalid_handler lower_el_aarch32_serror_handler, 3, 3
-
 // Macro to save context
 // Allocates stack space and saves x0-x30, ELR_EL1, SPSR_EL1
 .macro save_context
@@ -167,3 +74,114 @@ define_invalid_handler lower_el_aarch32_serror_handler, 3, 3
 
     add     sp, sp, #272
 .endm
+
+// Macro to define a vector table entry
+.macro vector_entry label
+    .balign 0x80
+    b \label
+.endm
+
+.balign 2048
+exception_vector_base:
+    // Current EL with SP0
+    vector_entry curr_el_sp0_sync_handler
+    vector_entry curr_el_sp0_irq_handler
+    vector_entry curr_el_sp0_fiq_handler
+    vector_entry curr_el_sp0_serror_handler
+
+    // Current EL with SPx
+    vector_entry curr_el_spx_sync_handler
+    vector_entry curr_el_spx_irq_handler
+    vector_entry curr_el_spx_fiq_handler
+    vector_entry curr_el_spx_serror_handler
+
+    // Lower EL using AArch64
+    vector_entry lower_el_aarch64_sync_handler
+    vector_entry lower_el_aarch64_irq_handler
+    vector_entry lower_el_aarch64_fiq_handler
+    vector_entry lower_el_aarch64_serror_handler
+
+    // Lower EL using AArch32
+    vector_entry lower_el_aarch32_sync_handler
+    vector_entry lower_el_aarch32_irq_handler
+    vector_entry lower_el_aarch32_fiq_handler
+    vector_entry lower_el_aarch32_serror_handler
+
+// Real handlers located outside the 2KB table
+.section .text
+
+.macro define_invalid_handler name, kind, source
+\name:
+    save_context
+    mov     x0, #\kind
+    mov     x1, #\source
+    bl      handle_invalid_exception
+    1: wfi
+    b 1b
+.endm
+
+define_invalid_handler curr_el_sp0_sync_handler, 0, 0
+    /*
+    save_context
+    mov     x0, #0
+    mov     x1, #0
+    bl      handle_invalid_exception
+    restore_context
+    mov     x0, #0x1111
+    eret
+    */
+
+define_invalid_handler curr_el_sp0_irq_handler, 1, 0
+define_invalid_handler curr_el_sp0_fiq_handler, 2, 0
+define_invalid_handler curr_el_sp0_serror_handler, 3, 0
+
+curr_el_spx_sync_handler:
+    save_context
+    mov     x0, sp
+    bl      handle_sync_exception
+    // bl      check_preemption
+    restore_context
+    mov     x0, #0x2222
+    eret
+
+curr_el_spx_irq_handler:
+    save_context
+    mov     x0, sp
+    bl      handle_irq
+    bl      check_preemption
+    restore_context
+    eret
+
+define_invalid_handler curr_el_spx_fiq_handler, 2, 1
+define_invalid_handler curr_el_spx_serror_handler, 3, 1
+
+lower_el_aarch64_sync_handler:
+    save_context
+    mov     x0, sp
+    bl      handle_sync_exception
+    // bl      check_preemption
+    restore_context
+    eret
+
+lower_el_aarch64_irq_handler:
+    save_context
+    mov     x0, sp
+    bl      handle_irq
+    // bl      check_preemption
+    restore_context
+    eret
+
+define_invalid_handler lower_el_aarch64_fiq_handler, 2, 2
+define_invalid_handler lower_el_aarch64_serror_handler, 3, 2
+
+lower_el_aarch32_sync_handler:
+    save_context
+    mov     x0, #0
+    mov     x1, #3
+    bl      handle_invalid_exception
+    restore_context
+    mov     x0, #0x4444
+    eret
+define_invalid_handler lower_el_aarch32_irq_handler, 1, 3
+define_invalid_handler lower_el_aarch32_fiq_handler, 2, 3
+define_invalid_handler lower_el_aarch32_serror_handler, 3, 3

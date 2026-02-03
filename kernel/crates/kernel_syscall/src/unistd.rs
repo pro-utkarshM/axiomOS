@@ -1,9 +1,9 @@
 use core::slice::from_raw_parts_mut;
 
-use kernel_abi::{EBADF, EINVAL, ERANGE, ESPIPE, Errno};
+use kernel_abi::{EBADF, EINVAL, ERANGE, ESPIPE, Errno, iovec, UIO_MAXIOV};
 
 use crate::access::{CwdAccess, FileAccess};
-use crate::ptr::UserspaceMutPtr;
+use crate::ptr::{UserspaceMutPtr, UserspacePtr};
 
 /// Whence values for lseek
 pub const SEEK_SET: i32 = 0;
@@ -50,6 +50,69 @@ pub fn sys_read<Cx: FileAccess>(cx: &Cx, fildes: Cx::Fd, buf: &mut [u8]) -> Resu
 
 pub fn sys_write<Cx: FileAccess>(cx: &Cx, fildes: Cx::Fd, buf: &[u8]) -> Result<usize, Errno> {
     cx.write(fildes, buf).map_err(|_| EINVAL)
+}
+
+pub fn sys_writev<Cx: FileAccess>(
+    cx: &Cx,
+    fildes: Cx::Fd,
+    iov_ptr: UserspacePtr<iovec>,
+    iovcnt: usize,
+) -> Result<usize, Errno> {
+    if iovcnt > UIO_MAXIOV {
+        return Err(EINVAL);
+    }
+    if iovcnt == 0 {
+        return Ok(0);
+    }
+
+    // Validate iov array range
+    iov_ptr.validate_range(iovcnt * core::mem::size_of::<iovec>())?;
+
+    // SAFETY: We validated the range above. We trust the caller to keep the memory valid
+    // during the call.
+    let iov_slice = unsafe { core::slice::from_raw_parts(iov_ptr.as_ptr(), iovcnt) };
+
+    let mut total_written = 0;
+
+    // We need to copy Fd because we use it in the loop
+    // But Fd trait doesn't enforce Copy. However, it is From<c_int> + Into<c_int>.
+    // We can convert back and forth if needed, or assume it's cheap to clone if possible.
+    // Actually, FileAccess::Fd is an associated type.
+    // We can just call write multiple times.
+    // But `fildes` is moved if it's not Copy.
+    // Let's assume Fd is Copy since it's usually an integer.
+    // If not, we have to convert it.
+    let fd_int: core::ffi::c_int = fildes.into();
+
+    for iov in iov_slice {
+        let base = iov.iov_base;
+        let len = iov.iov_len;
+
+        if len == 0 {
+            continue;
+        }
+
+        // Validate buffer
+        let buf_ptr = unsafe { UserspacePtr::<u8>::try_from_usize(base)? };
+        buf_ptr.validate_range(len)?;
+
+        // SAFETY: Range validated.
+        let buf_slice = unsafe { core::slice::from_raw_parts(base as *const u8, len) };
+
+        // We reconstruct Fd from int each time to satisfy the borrow checker/trait bounds
+        // if Fd is not Copy.
+        let current_fd = Cx::Fd::from(fd_int);
+
+        let written = cx.write(current_fd, buf_slice).map_err(|_| EINVAL)?;
+        total_written += written;
+
+        if written < len {
+            // Partial write
+            break;
+        }
+    }
+
+    Ok(total_written)
 }
 
 /// Close a file descriptor.

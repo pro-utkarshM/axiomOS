@@ -8,7 +8,7 @@ use core::ffi::c_int;
 // --- Syscall Wrappers ---
 
 pub fn syscall0(n: usize) -> usize {
-    let mut result;
+    let mut result: usize = 0;
     #[cfg(target_arch = "x86_64")]
     unsafe {
         asm!(
@@ -31,6 +31,28 @@ pub fn syscall0(n: usize) -> usize {
     result
 }
 
+pub fn syscall_debug(n: usize) -> usize {
+    let r0: usize;
+
+    #[cfg(target_arch = "aarch64")]
+    unsafe {
+        asm!(
+            "svc #0",
+            in("x8") n,
+            lateout("x0") r0,
+            options(nostack)
+        );
+    }
+    #[cfg(target_arch = "x86_64")]
+    {
+        // Debug syscall not implemented for x86_64
+        let _ = n;
+        r0 = 0;
+    }
+
+    r0
+}
+
 pub fn syscall1(n: usize, arg1: usize) -> usize {
     let mut result;
     #[cfg(target_arch = "x86_64")]
@@ -50,8 +72,7 @@ pub fn syscall1(n: usize, arg1: usize) -> usize {
         asm!(
             "svc #0",
             in("x8") n,
-            in("x0") arg1,
-            lateout("x0") result,
+            inout("x0") arg1 => result,
             options(nostack)
         );
     }
@@ -79,9 +100,8 @@ pub fn syscall2(n: usize, arg1: usize, arg2: usize) -> usize {
         asm!(
             "svc #0",
             in("x8") n,
-            in("x0") arg1,
+            inout("x0") arg1 => result,
             in("x1") arg2,
-            lateout("x0") result,
             options(nostack)
         );
     }
@@ -111,10 +131,9 @@ pub fn syscall3(n: usize, arg1: usize, arg2: usize, arg3: usize) -> usize {
         asm!(
             "svc #0",
             in("x8") n,
-            in("x0") arg1,
+            inout("x0") arg1 => result,
             in("x1") arg2,
             in("x2") arg3,
-            lateout("x0") result,
             options(nostack)
         );
     }
@@ -146,11 +165,10 @@ pub fn syscall4(n: usize, arg1: usize, arg2: usize, arg3: usize, arg4: usize) ->
         asm!(
             "svc #0",
             in("x8") n,
-            in("x0") arg1,
+            inout("x0") arg1 => result,
             in("x1") arg2,
             in("x2") arg3,
             in("x3") arg4,
-            lateout("x0") result,
             options(nostack)
         );
     }
@@ -285,4 +303,33 @@ pub fn open(path: &str, flags: c_int, mode: c_int) -> c_int {
 
 pub fn spawn(path: &str) -> c_int {
     syscall2(56, path.as_ptr() as usize, path.len()) as i32
+}
+
+pub fn abort() -> ! {
+    syscall0(32);
+    loop {
+        // Should not be reached
+        unsafe { asm!("nop") };
+    }
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct iovec {
+    pub iov_base: *const u8,
+    pub iov_len: usize,
+}
+
+pub fn writev(fd: c_int, iov: &[iovec]) -> c_int {
+    syscall3(38, fd as usize, iov.as_ptr() as usize, iov.len()) as i32
+}
+
+// --- Memory ---
+
+pub fn malloc(size: usize) -> *mut u8 {
+    syscall1(27, size) as *mut u8
+}
+
+pub fn free(ptr: *mut u8) {
+    syscall1(28, ptr as usize);
 }

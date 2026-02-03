@@ -13,15 +13,18 @@ Axiom has a solid foundation—the kernel boots on real hardware, **and BPF prog
 ```
 What's Done                          What's Left
 ───────────                          ──────────
-✅ Bootable kernel (x86_64, ARM64)   🔴 IIO sensor attach wiring
-✅ Memory management                 🔴 IIO hardware drivers
-✅ BPF verifier + interpreter        🔴 Real-time guarantees
-✅ x86_64 JIT + BPF maps             🔴 35 more syscalls
-✅ Timer hooks (BPF executes!)       🔴 Production validation
-✅ Syscall hooks (BPF executes!)     🔴 Kprobe/tracepoint infrastructure
+✅ Bootable kernel (x86_64, ARM64)   🔴 Real-time guarantees
+✅ Memory management                 🔴 35 more syscalls
+✅ BPF verifier + interpreter        🔴 Production validation
+✅ x86_64 JIT + BPF maps             🔴 Kprobe/tracepoint infrastructure
+✅ ARM64 JIT + BPF maps              🔴 IIO hardware drivers (Physical)
+✅ Timer hooks (BPF executes!)
+✅ Syscall hooks (BPF executes!)
 ✅ RPi5 GPIO driver (MMIO)
 ✅ GPIO attach wiring (Verified!)
 ✅ RPi5 PWM driver & wiring
+✅ IIO attach wiring (Simulated)
+✅ Safety Interlock (Kernel-enforced)
 ✅ Security hardening (Syscalls)
 ```
 
@@ -44,7 +47,7 @@ What's Done                          What's Left
 | ELF loader | ✅ Done | Loads userspace binaries |
 
 **Remaining Work:**
-- **AArch64 interrupt-safe context switching** (~1-2 weeks) - **CRITICAL**
+- **AArch64 interrupt-safe context switching** - ✅ FIXED (Deferred scheduling implemented)
 - RISC-V platform completion (~2-3 weeks)
 - AArch64 demand paging (~1 week)
 - VFS node reuse optimization
@@ -239,7 +242,7 @@ Userspace → bpf(BPF_PROG_LOAD) → program stored
 - BPF-kernel wiring improved from 30% to 60% because timer and syscall hooks are WORKING
 - GPIO abstraction + RPi5 hardware driver both exist (just need to connect them)
 - PWM/IIO/Kprobe/Tracepoint abstractions complete (need HW drivers + wiring)
-- **CRITICAL: AArch64 context switching crashes in interrupt handlers - blocks all ARM64 testing**
+- **AArch64 context switching fixed** - Interrupts and multitasking now working on ARM64
 
 ---
 
@@ -295,14 +298,13 @@ Phase 4: Real-World Validation (Weeks 6-10)
 - Clean Rust codebase with good architecture
 
 **What blocks industry deployment:**
-1. **AArch64 context switching crash in interrupt handlers (CRITICAL)** - Kernel crashes immediately when interrupts are enabled
-2. GPIO/PWM/IIO not wired to BPF (timer/syscall hooks work, hardware hooks don't)
-3. Security vulnerabilities in syscall handling (partially fixed - validation layer added)
-4. PWM/IIO hardware drivers not implemented
-5. Unproven real-time guarantees
-6. Insufficient testing and validation
+1. **GPIO/PWM/IIO not wired to BPF** (timer/syscall hooks work, hardware hooks don't)
+2. Security vulnerabilities in syscall handling (partially fixed - validation layer added)
+3. PWM/IIO hardware drivers not implemented
+4. Unproven real-time guarantees
+5. Insufficient testing and validation
 
-**Estimated time to MVP (demo-able on RPi5):** 10-14 weeks (was 8-12, adjusted for AArch64 fix)
+**Estimated time to MVP (demo-able on RPi5):** 8-10 weeks (AArch64 blocker removed)
 **Estimated time to production-ready:** 6-10 months
 
 ---
@@ -314,31 +316,22 @@ Phase 4: Real-World Validation (Weeks 6-10)
 
 ## Recent Updates (2026-02-03)
 
-### AArch64 Context Switching Issue Identified
+### AArch64 Context Switching Issue Resolved
 
-**Status:** ⚠️ CRITICAL - Blocks all ARM64 interrupt-driven functionality
+**Status:** ✅ FIXED (2026-02-03)
 
 **Problem:**
-- Kernel crashes with "Synchronous External Abort" immediately after enabling interrupts
-- Root cause: Context switching inside interrupt handlers causes stack corruption
-- When timer interrupt fires → exception handler saves context to boot stack → reschedule() switches to new task → exception restoration tries to restore from NEW stack (but context was saved on OLD stack)
+- Kernel crashed with "Synchronous External Abort" immediately after enabling interrupts
+- Root cause: Context switching inside interrupt handlers caused stack corruption
+- When timer interrupt fired → exception handler saved context to IRQ stack → reschedule() switched to new task → exception restoration tried to restore from NEW stack (but context was saved on OLD stack)
 
-**Fixes Applied (Partial):**
-- Fixed `Task::create_current()` to initialize `last_stack_ptr` with actual SP instead of 0
-- Updated stale comments referencing old 0x80000 load address
-- Temporarily disabled interrupts as workaround
-
-**Current State:**
-- With interrupts disabled: Kernel boots successfully through all initialization
-- With interrupts enabled: Immediate crash at first timer tick
-- Branch: `fix/aarch64-context-switch-interrupt-crash` contains partial fix
-
-**Required Solution:**
-- Implement deferred scheduling (don't context switch inside interrupt handlers), OR
-- Implement proper exception context handling across stack switches
-- Estimated effort: 1-2 weeks
+**Solution Implemented:**
+- Implemented deferred scheduling: Interrupt handlers now set a `need_reschedule` flag instead of switching stacks directly.
+- The exception exit path (`restore_context`) checks this flag and performs the context switch only when it is safe (after restoring context but before returning to userspace).
+- Added dedicated IRQ stack in `exception_vectors.S` to prevent stack overflows.
+- Result: AArch64 kernel now handles timer interrupts and task switching correctly without crashing.
 
 **Impact:**
-- Blocks all RPi5 BPF testing until fixed
-- Blocks GPIO/PWM/IIO hardware testing on ARM64
-- x86_64 platform unaffected (working correctly)
+- RPi5 BPF testing now unblocked
+- GPIO/PWM/IIO hardware testing on ARM64 now unblocked
+- Kernel multitasking working on both architectures

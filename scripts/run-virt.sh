@@ -3,12 +3,14 @@ set -e
 
 # Generate disk.img by building the root package for aarch64
 echo "Building root package for aarch64 to generate disk.img..."
-cargo build -p muffinos --target aarch64-unknown-none
+cargo build -p muffinos --target aarch64-unknown-none --no-default-features --features aarch64_deps
 
 # The build.rs generates the image in the target directory.
 # We find it and copy it to the root.
-DISK_PATH=$(find target/aarch64-unknown-none -name disk.img | head -n 1)
+# Pick the most recently modified disk.img to avoid stale build artifacts
+DISK_PATH=$(find target/aarch64-unknown-none -name disk.img -printf "%T@ %p\n" | sort -n | tail -n 1 | awk '{print $2}')
 if [ -n "$DISK_PATH" ]; then
+    echo "Using disk image: $DISK_PATH"
     cp "$DISK_PATH" disk.img
 else
     echo "Error: disk.img not found in target/aarch64-unknown-none"

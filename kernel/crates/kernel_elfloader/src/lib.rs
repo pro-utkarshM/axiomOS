@@ -82,7 +82,12 @@ where
 
             let location = Location::Fixed(hdr.vaddr as u64);
 
-            let layout = Layout::from_size_align(hdr.memsz, hdr.align)
+            // We deliberately ignore hdr.align here because:
+            // 1. The memory API only supports 4KB alignment (and panics if > 4KB)
+            // 2. We are using Location::Fixed, so we are not asking the allocator to find an aligned address for us.
+            //    We are telling it exactly where to put it. The ELF spec guarantees that vaddr % align == offset % align,
+            //    but not necessarily that vaddr is aligned to align.
+            let layout = Layout::from_size_align(hdr.memsz, 4096)
                 .map_err(|_| LoadElfError::InvalidSizeOrAlign)?;
 
             let mut alloc = self
@@ -99,6 +104,7 @@ where
                     && hdr.flags.contains(&ProgramHeaderFlags::WRITABLE)),
                 "segments that are executable and writable are not supported"
             );
+
             if hdr.flags.contains(&ProgramHeaderFlags::EXECUTABLE) {
                 let alloc = self
                     .memory_api

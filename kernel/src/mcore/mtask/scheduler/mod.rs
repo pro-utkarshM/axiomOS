@@ -19,6 +19,7 @@ use crate::arch::traits::Architecture;
 use crate::mcore::mtask::scheduler::global::GlobalTaskQueue;
 use crate::mcore::mtask::scheduler::switch::switch_impl;
 use crate::mcore::mtask::task::Task;
+#[cfg(target_arch = "x86_64")]
 use crate::mcore::context::ExecutionContext;
 
 pub mod cleanup;
@@ -56,7 +57,7 @@ impl Scheduler {
     // SAFETY: This function performs a context switch, which is inherently unsafe.
     // It manipulates raw pointers and CPU state.
     pub unsafe fn reschedule(&mut self) {
-        log::trace!("reschedule: entering");
+        log::info!("reschedule: entering");
         #[cfg(target_arch = "x86_64")]
         assert!(!interrupts::are_enabled());
         #[cfg(all(target_arch = "aarch64", feature = "aarch64_arch"))]
@@ -64,7 +65,7 @@ impl Scheduler {
 
         // in theory, we could move this to the end of this function, but I'd rather not do this right now
         if let Some(zombie_task) = self.zombie_task.take() {
-            log::trace!("reschedule: cleaning up zombie task {}", zombie_task.id());
+            log::info!("reschedule: cleaning up zombie task {}", zombie_task.id());
             if zombie_task.should_terminate() {
                 TaskCleanup::enqueue(zombie_task);
             } else {
@@ -75,13 +76,13 @@ impl Scheduler {
         let (next_task, cr3_value) = {
             let next_task_opt = self.next_task();
             if next_task_opt.is_none() {
-                log::trace!("reschedule: no next task, staying on current task {}", self.current_task.id());
+                log::info!("reschedule: no next task, staying on current task {}", self.current_task.id());
             }
             let Some(next_task) = next_task_opt else {
                 return;
             };
 
-            log::trace!("reschedule: switching to task {}", next_task.id());
+            log::info!("reschedule: switching to task {}", next_task.id());
 
             #[cfg(target_arch = "x86_64")]
             let cr3_value = next_task.process().address_space().cr3_value();
@@ -95,6 +96,9 @@ impl Scheduler {
             }
             #[cfg(target_arch = "aarch64")]
             let cr3_value = next_task.process().address_space().ttbr0_value();
+
+            #[cfg(target_arch = "aarch64")]
+            log::info!("reschedule: switching to task {} with ttbr0={:#x}", next_task.id(), cr3_value);
 
             (next_task, cr3_value)
         };

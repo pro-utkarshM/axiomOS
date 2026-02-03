@@ -13,4 +13,4 @@ kernel/demos/riscv/target/
 # already existing elements were commented out
 
 #/target
-kernel_symbols.txt
+*.txt
