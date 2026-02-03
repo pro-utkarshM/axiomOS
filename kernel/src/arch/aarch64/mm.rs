@@ -97,6 +97,11 @@ unsafe fn setup_kernel_page_tables(total_memory: usize) {
     // L0_user[0] -> L1_low (identity mapping for first 512GB)
     *boot_tables.l0_user.entry_mut(0) = paging::PageTableEntry::table(l1_low_phys);
 
+    // L0_kernel[0] -> L1_low (also identity map in kernel table for convenience)
+    // This allows the PageTableWalker to translate identity-mapped addresses
+    // using the kernel page table root.
+    *boot_tables.l0_kernel.entry_mut(0) = paging::PageTableEntry::table(l1_low_phys);
+
     // L0_kernel[256] -> L1_high (kernel higher-half mapping, 0xFFFF_8000_0000_0000+)
     // Index 256 covers 0xFFFF_8000_0000_0000 - 0xFFFF_807F_FFFF_FFFF
     *boot_tables.l0_kernel.entry_mut(256) = paging::PageTableEntry::table(l1_high_phys);

@@ -73,18 +73,8 @@ pub fn cpu_id() -> usize {
 /// Called from the timer interrupt handler.
 pub fn timer_tick() {
     if let Some(ctx) = try_current() {
-        log::trace!("timer_tick: found context for CPU {}", ctx.cpu_id());
-        // SAFETY: We are in an interrupt handler (timer tick), so we have exclusive access
-        // to this CPU's scheduler state (assuming nested interrupts are handled correctly or disabled).
-        let sched = unsafe { ctx.scheduler_mut() };
-
-        // Perform rescheduling using the mcore scheduler
-        // This will switch tasks if necessary
-        log::trace!("timer_tick: calling reschedule");
-        unsafe {
-            sched.reschedule();
-        }
-        log::trace!("timer_tick: reschedule returned");
+        log::trace!("timer_tick: setting need_reschedule for CPU {}", ctx.cpu_id());
+        ctx.set_need_reschedule();
     } else {
         log::warn!("timer_tick: no context for current CPU");
     }

@@ -13,6 +13,8 @@ use ext2::Ext2Fs;
 #[cfg(target_arch = "x86_64")]
 use kernel::limine::BASE_REVISION;
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+use kernel::arch::traits::Architecture;
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 use kernel::mcore;
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 use kernel::mcore::mtask::process::Process;
@@ -97,10 +99,9 @@ unsafe extern "C" fn main() -> ! {
 
     info!("About to enable interrupts...");
     // Enable interrupts
-    // TODO: Re-enable this once context switching is fixed
-    // kernel::arch::aarch64::Aarch64::enable_interrupts();
+    kernel::arch::aarch64::Aarch64::enable_interrupts();
 
-    info!("Interrupts NOT enabled (disabled for debugging)");
+    info!("Interrupts enabled");
 
     {
         info!("mounting root filesystem");

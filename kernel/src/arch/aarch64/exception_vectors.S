@@ -10,43 +10,109 @@
 
 .section .text
 .global exception_vector_base
-.balign 2048
+.global irq_stack_top
 
-// Macro to handle invalid exceptions
-.macro invalid_exception kind, source
+// Dedicated interrupt stack for AArch64
+.section .bss.irq_stack
+.align 16
+irq_stack_bottom:
+    .space 0x4000              // 16KB IRQ stack
+irq_stack_top:
+
+.section .text
+
+// Macro to define a vector table entry
+.macro vector_entry label
     .balign 0x80
-    // Save caller-saved registers
-    stp     x0, x1, [sp, #-16]!
-    stp     x2, x3, [sp, #-16]!
-    stp     x4, x5, [sp, #-16]!
-    stp     x6, x7, [sp, #-16]!
-    stp     x8, x9, [sp, #-16]!
-    stp     x10, x11, [sp, #-16]!
-    stp     x12, x13, [sp, #-16]!
-    stp     x14, x15, [sp, #-16]!
-    stp     x16, x17, [sp, #-16]!
-    stp     x18, x29, [sp, #-16]!
-    stp     x30, xzr, [sp, #-16]!
+    b \label
+.endm
 
-    // Call Rust handler with kind and source
+.balign 2048
+exception_vector_base:
+    // Current EL with SP0
+    vector_entry curr_el_sp0_sync_handler
+    vector_entry curr_el_sp0_irq_handler
+    vector_entry curr_el_sp0_fiq_handler
+    vector_entry curr_el_sp0_serror_handler
+
+    // Current EL with SPx
+    vector_entry curr_el_spx_sync_handler
+    vector_entry curr_el_spx_irq_handler
+    vector_entry curr_el_spx_fiq_handler
+    vector_entry curr_el_spx_serror_handler
+
+    // Lower EL using AArch64
+    vector_entry lower_el_aarch64_sync_handler
+    vector_entry lower_el_aarch64_irq_handler
+    vector_entry lower_el_aarch64_fiq_handler
+    vector_entry lower_el_aarch64_serror_handler
+
+    // Lower EL using AArch32
+    vector_entry lower_el_aarch32_sync_handler
+    vector_entry lower_el_aarch32_irq_handler
+    vector_entry lower_el_aarch32_fiq_handler
+    vector_entry lower_el_aarch32_serror_handler
+
+// Real handlers located outside the 2KB table
+.section .text
+
+.macro define_invalid_handler name, kind, source
+\name:
+    save_context
     mov     x0, #\kind
     mov     x1, #\source
     bl      handle_invalid_exception
-
-    // Should never return, but if it does, hang
-1:  wfi
-    b       1b
+    1: wfi
+    b 1b
 .endm
 
-exception_vector_base:
+define_invalid_handler curr_el_sp0_sync_handler, 0, 0
+define_invalid_handler curr_el_sp0_irq_handler, 1, 0
+define_invalid_handler curr_el_sp0_fiq_handler, 2, 0
+define_invalid_handler curr_el_sp0_serror_handler, 3, 0
 
-// =============================================================================
-// Current EL with SP0 (not typically used in kernel)
-// =============================================================================
-invalid_exception 0, 0    // Synchronous
-invalid_exception 1, 0    // IRQ
-invalid_exception 2, 0    // FIQ
-invalid_exception 3, 0    // SError
+curr_el_spx_sync_handler:
+    save_context
+    mov     x0, sp
+    bl      handle_sync_exception
+    bl      check_preemption
+    restore_context
+    eret
+
+curr_el_spx_irq_handler:
+    save_context
+    mov     x0, sp
+    bl      handle_irq
+    bl      check_preemption
+    restore_context
+    eret
+
+define_invalid_handler curr_el_spx_fiq_handler, 2, 1
+define_invalid_handler curr_el_spx_serror_handler, 3, 1
+
+lower_el_aarch64_sync_handler:
+    save_context
+    mov     x0, sp
+    bl      handle_sync_exception
+    bl      check_preemption
+    restore_context
+    eret
+
+lower_el_aarch64_irq_handler:
+    save_context
+    mov     x0, sp
+    bl      handle_irq
+    bl      check_preemption
+    restore_context
+    eret
+
+define_invalid_handler lower_el_aarch64_fiq_handler, 2, 2
+define_invalid_handler lower_el_aarch64_serror_handler, 3, 2
+
+define_invalid_handler lower_el_aarch32_sync_handler, 0, 3
+define_invalid_handler lower_el_aarch32_irq_handler, 1, 3
+define_invalid_handler lower_el_aarch32_fiq_handler, 2, 3
+define_invalid_handler lower_el_aarch32_serror_handler, 3, 3
 
 // Macro to save context
 // Allocates stack space and saves x0-x30, ELR_EL1, SPSR_EL1
@@ -101,55 +167,3 @@ invalid_exception 3, 0    // SError
 
     add     sp, sp, #272
 .endm
-
-// =============================================================================
-// Current EL with SPx (kernel mode exceptions)
-// =============================================================================
-.balign 0x80
-curr_el_spx_sync:
-    save_context
-    mov     x0, sp  // Pass context pointer
-    bl      handle_sync_exception
-    restore_context
-    eret
-
-.balign 0x80
-curr_el_spx_irq:
-    save_context
-    mov     x0, sp  // Pass context pointer
-    bl      handle_irq
-    restore_context
-    eret
-
-invalid_exception 2, 1    // FIQ
-invalid_exception 3, 1    // SError
-
-// =============================================================================
-// Lower EL using AArch64 (user space exceptions)
-// =============================================================================
-.balign 0x80
-lower_el_aarch64_sync:
-    save_context
-    mov     x0, sp  // Pass context pointer
-    bl      handle_sync_exception
-    restore_context
-    eret
-
-.balign 0x80
-lower_el_aarch64_irq:
-    save_context
-    mov     x0, sp  // Pass context pointer
-    bl      handle_irq
-    restore_context
-    eret
-
-invalid_exception 2, 2    // FIQ
-invalid_exception 3, 2    // SError
-
-// =============================================================================
-// Lower EL using AArch32 (not used - we don't support 32-bit user space)
-// =============================================================================
-invalid_exception 0, 3    // Synchronous
-invalid_exception 1, 3    // IRQ
-invalid_exception 2, 3    // FIQ
-invalid_exception 3, 3    // SError

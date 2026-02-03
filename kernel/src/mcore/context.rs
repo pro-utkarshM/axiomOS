@@ -39,6 +39,8 @@ pub struct ExecutionContext {
     tss: UnsafeCell<&'static mut TaskStateSegment>,
 
     scheduler: UnsafeCell<Scheduler>,
+    #[cfg(target_arch = "aarch64")]
+    need_reschedule: core::sync::atomic::AtomicBool,
 }
 
 impl ExecutionContext {
@@ -68,6 +70,7 @@ impl ExecutionContext {
         ExecutionContext {
             cpu_id,
             scheduler: UnsafeCell::new(Scheduler::new_cpu_local()),
+            need_reschedule: core::sync::atomic::AtomicBool::new(false),
         }
     }
 
@@ -189,5 +192,15 @@ impl ExecutionContext {
             use x86_64::VirtAddr;
             tss.privilege_stack_table[0] = VirtAddr::new(rsp);
         }
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    pub fn set_need_reschedule(&self) {
+        self.need_reschedule.store(true, core::sync::atomic::Ordering::Relaxed);
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    pub fn check_and_clear_reschedule(&self) -> bool {
+        self.need_reschedule.swap(false, core::sync::atomic::Ordering::Relaxed)
     }
 }

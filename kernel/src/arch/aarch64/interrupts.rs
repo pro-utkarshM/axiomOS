@@ -86,31 +86,37 @@ pub extern "C" fn handle_irq(_ctx: &mut ExceptionContext) {
 
     // Check for spurious interrupt
     if irq == gic::irq::SPURIOUS {
-        log::trace!("Spurious IRQ received");
         return;
     }
 
     log::trace!("Handling IRQ {}", irq);
 
     // Dispatch based on IRQ number
-    match irq {
-        TIMER_IRQ => handle_timer_interrupt(),
-        #[cfg(feature = "rpi5")]
-        RP1_GPIO_IRQ => {
-            crate::arch::aarch64::platform::rpi5::gpio::handle_interrupt();
-        }
-        _ => {
-            log::warn!("Unhandled IRQ: {}", irq);
-        }
-    }
+    if irq == TIMER_IRQ {
+        handle_timer_interrupt();
+        // Signal end of interrupt for timer
+        gic::end_of_interrupt(irq);
 
-    // Signal end of interrupt
-    if irq != gic::irq::SPURIOUS {
+        // Trigger scheduler tick (may cause context switch)
+        // We do this AFTER EOI so that new tasks don't inherit the active interrupt state
+        log::trace!("Calling timer_tick");
+        super::cpu::timer_tick();
+    } else {
+        match irq {
+            #[cfg(feature = "rpi5")]
+            RP1_GPIO_IRQ => {
+                crate::arch::aarch64::platform::rpi5::gpio::handle_interrupt();
+            }
+            _ => {
+                log::warn!("Unhandled IRQ: {}", irq);
+            }
+        }
+        // Signal end of interrupt for other IRQs
         gic::end_of_interrupt(irq);
     }
 }
 
-/// Handle timer interrupt
+/// Handle timer interrupt (without rescheduling)
 fn handle_timer_interrupt() {
     log::trace!("Timer interrupt started");
     // Clear and reset timer for next interrupt
@@ -124,11 +130,6 @@ fn handle_timer_interrupt() {
         manager.lock().execute_hooks(1, &ctx);
         log::trace!("BPF timer hooks executed");
     }
-
-    // Trigger scheduler tick (may cause context switch)
-    log::trace!("Calling timer_tick");
-    super::cpu::timer_tick();
-    log::trace!("timer_tick returned");
 }
 
 /// Clear timer interrupt

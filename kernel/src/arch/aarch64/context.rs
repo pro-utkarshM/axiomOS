@@ -160,6 +160,8 @@ pub fn init_task_stack(stack_top: usize, entry_point: usize, arg: usize) -> usiz
 #[unsafe(naked)]
 pub unsafe extern "C" fn task_entry_trampoline() {
     core::arch::naked_asm!(
+        // Enable interrupts
+        "msr daifclr, #2",
         // x19 contains the argument
         // x20 contains the actual entry point
         // x21 contains the exit function

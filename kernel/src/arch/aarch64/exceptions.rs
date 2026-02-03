@@ -44,6 +44,23 @@ unsafe extern "C" {
     fn exception_vector_base();
 }
 
+/// Check for preemption and reschedule if necessary
+///
+/// This is called from the exception return path.
+#[unsafe(no_mangle)]
+pub extern "C" fn check_preemption() {
+    if let Some(ctx) = crate::arch::aarch64::cpu::try_current() {
+        if ctx.check_and_clear_reschedule() {
+            log::trace!("check_preemption: rescheduling");
+            // SAFETY: We are in the exception return path, interrupts are disabled.
+            // It is safe to call reschedule here as we haven't started restoring registers yet.
+            unsafe {
+                ctx.scheduler_mut().reschedule();
+            }
+        }
+    }
+}
+
 /// Synchronous exception handler
 ///
 /// # Safety

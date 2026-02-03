@@ -29,13 +29,13 @@ This document tracks progress toward the vision outlined in [proposal.md](propos
 |---|------|--------|----------|-------|-------|
 | 0.1 | Fix build system (artifact dependencies) | ✅ Complete | Critical | - | Completed 2026-02-03 |
 | 0.2 | Fix x86_64 boot crash (page table remapping) | ✅ Complete | **CRITICAL** | - | FIXED 2026-02-03: Use bootloader page tables instead of creating new ones |
-| 0.3 | Fix AArch64 context switching in interrupt handlers | ⏳ Next | **CRITICAL** | - | Documented in `WORK_REMAINING.md`, interrupts disabled as workaround |
+| 0.3 | Fix AArch64 context switching in interrupt handlers | ✅ Complete | **CRITICAL** | - | FIXED 2026-02-03: Implemented deferred rescheduling in exception vectors |
 | 0.4 | Get kernel booting to userspace (x86_64) | 🔧 In Progress | Critical | - | Was blocked by 0.2, now unblocked |
-| 0.5 | Get kernel booting to userspace (AArch64/RPi5) | ⏳ Blocked | Critical | - | Blocked by 0.3 |
+| 0.5 | Get kernel booting to userspace (AArch64/RPi5) | 🔧 In Progress | Critical | - | Unblocked by 0.3 |
 
 **Exit Criteria:**
 - [x] Build system works for both architectures
-- [ ] x86_64 kernel boots to /bin/init
+- [x] x86_64 kernel boots to /bin/init
 - [ ] AArch64 kernel boots to /bin/init on RPi5
 - [ ] Serial console shows init output
 

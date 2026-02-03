@@ -280,16 +280,42 @@ impl PageTableWalker {
     /// Translate virtual address to physical address and raw flags
     pub fn translate_full(&self, virt: usize) -> Option<(usize, u64)> {
         let indices = va_to_indices(virt);
-        let offset = virt & (PAGE_SIZE - 1);
 
         let l0 = unsafe { &*self.root };
-        let l1 = self.get_table_readonly(l0, indices[0])?;
-        let l2 = self.get_table_readonly(l1, indices[1])?;
-        let l3 = self.get_table_readonly(l2, indices[2])?;
+        let entry0 = l0.entry(indices[0]);
+        if !entry0.is_valid() {
+            return None;
+        }
+        if entry0.is_block() {
+            let offset = virt & ((1 << L0_SHIFT) - 1);
+            return Some((entry0.addr() + offset, entry0.raw()));
+        }
 
-        let entry = l3.entry(indices[3]);
-        if entry.is_valid() {
-            Some((entry.addr() + offset, entry.raw()))
+        let l1 = self.get_table_readonly(l0, indices[0])?;
+        let entry1 = l1.entry(indices[1]);
+        if !entry1.is_valid() {
+            return None;
+        }
+        if entry1.is_block() {
+            let offset = virt & ((1 << L1_SHIFT) - 1);
+            return Some((entry1.addr() + offset, entry1.raw()));
+        }
+
+        let l2 = self.get_table_readonly(l1, indices[1])?;
+        let entry2 = l2.entry(indices[2]);
+        if !entry2.is_valid() {
+            return None;
+        }
+        if entry2.is_block() {
+            let offset = virt & ((1 << L2_SHIFT) - 1);
+            return Some((entry2.addr() + offset, entry2.raw()));
+        }
+
+        let l3 = self.get_table_readonly(l2, indices[2])?;
+        let entry3 = l3.entry(indices[3]);
+        if entry3.is_valid() {
+            let offset = virt & (PAGE_SIZE - 1);
+            Some((entry3.addr() + offset, entry3.raw()))
         } else {
             None
         }
