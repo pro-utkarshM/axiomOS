@@ -259,6 +259,18 @@ pub fn close(fd: c_int) -> c_int {
     syscall1(40, fd as usize) as i32
 }
 
+pub fn dup(oldfd: c_int) -> c_int {
+    syscall1(42, oldfd as usize) as i32
+}
+
+pub fn dup2(oldfd: c_int, newfd: c_int) -> c_int {
+    syscall2(43, oldfd as usize, newfd as usize) as i32
+}
+
+pub fn pipe(pipefd: *mut c_int) -> c_int {
+    syscall1(44, pipefd as usize) as i32
+}
+
 #[repr(C)]
 #[derive(Debug, Default, Clone, Copy)]
 pub struct stat {

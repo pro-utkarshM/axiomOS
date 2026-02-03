@@ -10,6 +10,12 @@ impl From<u64> for FsHandle {
     }
 }
 
+impl From<FsHandle> for u64 {
+    fn from(handle: FsHandle) -> Self {
+        handle.0
+    }
+}
+
 pub trait FileSystem: Send + Sync {
     /// # Errors
     /// Returns an error if the path does not point to a file, or if there

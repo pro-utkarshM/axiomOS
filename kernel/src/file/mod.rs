@@ -10,6 +10,7 @@ use crate::file::devfs::devfs;
 
 pub mod devfs;
 pub mod ext2;
+pub mod pipe;
 
 static VFS: RwLock<Vfs> = RwLock::new(Vfs::new());
 
@@ -20,6 +21,7 @@ pub fn vfs() -> &'static RwLock<Vfs> {
 
 pub fn init() {
     devfs::init();
+    pipe::init();
 
     VFS.write()
         .mount(AbsolutePath::try_new("/dev").unwrap(), devfs().clone())

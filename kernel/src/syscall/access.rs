@@ -53,6 +53,8 @@ impl FileAccess for KernelAccess<'_> {
     type WriteError = ();
     type CloseError = ();
     type LseekError = ();
+    type PipeError = ();
+    type DupError = ();
 
     fn file_info(&self, path: &AbsolutePath) -> Option<Self::FileInfo> {
         Some(FileInfo {
@@ -188,6 +190,101 @@ impl FileAccess for KernelAccess<'_> {
 
         ofd.position().store(new_pos, Relaxed);
         Ok(new_pos.into_usize())
+    }
+
+    fn pipe(&self) -> Result<(Self::Fd, Self::Fd), ()> {
+        use crate::file::pipe::PIPE_FS;
+        use kernel_vfs::path::AbsoluteOwnedPath;
+        use kernel_vfs::node::VfsNode;
+
+        let pipe_fs_lock = PIPE_FS.get().ok_or(())?;
+
+        // Create the VFS nodes for the pipe
+        // We need to cast the specific PipeFs to the generic FileSystem trait
+        // to satisfy the VfsNode requirement.
+        let fs_arc: Arc<RwLock<dyn kernel_vfs::fs::FileSystem>> = pipe_fs_lock.clone();
+        let fs_weak = Arc::downgrade(&fs_arc);
+
+        let mut guard = pipe_fs_lock.write();
+        let (read_handle, write_handle) = guard.create_pipe();
+
+        // Pipes are anonymous, but VfsNode requires a path. We use a dummy path.
+        // TODO: In a real implementation, we might want a proper pipefs mount point
+        let path = AbsoluteOwnedPath::try_from("/[pipe]").unwrap();
+
+        let read_node = VfsNode::new(path.clone(), read_handle, fs_weak.clone());
+        let write_node = VfsNode::new(path, write_handle, fs_weak);
+
+        let read_ofd = OpenFileDescription::from(read_node);
+        let write_ofd = OpenFileDescription::from(write_node);
+
+        let mut fds = self.process.file_descriptors().write();
+
+        // Find first free FD
+        let mut fd1_int = 0;
+        loop {
+            let fd_num = FdNum::from(fd1_int);
+            if !fds.contains_key(&fd_num) {
+                break;
+            }
+            fd1_int += 1;
+        }
+        let fd1 = FdNum::from(fd1_int);
+        fds.insert(fd1, FileDescriptor::new(fd1, FileDescriptorFlags::empty(), Arc::new(read_ofd)));
+
+        // Find second free FD
+        let mut fd2_int = fd1_int + 1;
+        loop {
+            let fd_num = FdNum::from(fd2_int);
+            if !fds.contains_key(&fd_num) {
+                break;
+            }
+            fd2_int += 1;
+        }
+        let fd2 = FdNum::from(fd2_int);
+        fds.insert(fd2, FileDescriptor::new(fd2, FileDescriptorFlags::empty(), Arc::new(write_ofd)));
+
+        Ok((fd1, fd2))
+    }
+
+    fn dup(&self, oldfd: Self::Fd) -> Result<Self::Fd, ()> {
+        let mut fds = self.process.file_descriptors().write();
+
+        let desc = fds.get(&oldfd).ok_or(())?;
+        let ofd = desc.file_description().clone();
+
+        // Find lowest available FD
+        let mut candidate = 0;
+        loop {
+            let fd_num = FdNum::from(candidate);
+            if !fds.contains_key(&fd_num) {
+                // Found free FD
+                fds.insert(fd_num, FileDescriptor::new(fd_num, FileDescriptorFlags::empty(), ofd));
+                return Ok(fd_num);
+            }
+            candidate += 1;
+        }
+    }
+
+    fn dup2(&self, oldfd: Self::Fd, newfd: Self::Fd) -> Result<Self::Fd, ()> {
+        if oldfd == newfd {
+            if self.process.file_descriptors().read().contains_key(&oldfd) {
+                return Ok(newfd);
+            } else {
+                return Err(());
+            }
+        }
+
+        let mut fds = self.process.file_descriptors().write();
+
+        let desc = fds.get(&oldfd).ok_or(())?;
+        let ofd = desc.file_description().clone();
+
+        // Insert new FD, replacing existing one if present
+        // dup2 clears FD_CLOEXEC
+        fds.insert(newfd, FileDescriptor::new(newfd, FileDescriptorFlags::empty(), ofd));
+
+        Ok(newfd)
     }
 }
 

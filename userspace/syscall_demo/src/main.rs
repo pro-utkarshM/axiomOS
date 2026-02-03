@@ -2,7 +2,7 @@
 #![no_main]
 
 use core::panic::PanicInfo;
-use minilib::{malloc, free, writev, iovec, exit, abort, write};
+use minilib::{malloc, free, writev, iovec, exit, abort, write, pipe, read, close, dup, dup2};
 
 #[no_mangle]
 pub extern "C" fn _start() -> ! {
@@ -49,11 +49,51 @@ pub extern "C" fn _start() -> ! {
     // 4. Test free
     free(ptr);
 
-    let msg = "Memory freed. Exiting successfully.\n";
-    write(1, msg.as_bytes());
+    // 5. Test pipe
+    let mut pipefd = [0i32; 2];
+    if pipe(pipefd.as_mut_ptr()) < 0 {
+        let msg = "Pipe failed\n";
+        write(1, msg.as_bytes());
+        exit(1);
+    }
 
-    // 5. Test abort (uncomment to test, but we want clean exit for CI/checks)
-    // abort();
+    let pipe_msg = "Hello through pipe!\n";
+    write(pipefd[1], pipe_msg.as_bytes());
+
+    let mut buf = [0u8; 32];
+    let n = read(pipefd[0], &mut buf);
+    if n > 0 {
+        write(1, "Pipe read: ".as_bytes());
+        write(1, &buf[..n as usize]);
+    }
+
+    close(pipefd[0]);
+    close(pipefd[1]);
+
+    // 6. Test dup
+    let stdout_dup = dup(1);
+    if stdout_dup < 0 {
+        let msg = "Dup failed\n";
+        write(1, msg.as_bytes());
+        exit(1);
+    }
+    let dup_msg = "Hello from dup-ed stdout!\n";
+    write(stdout_dup, dup_msg.as_bytes());
+    close(stdout_dup);
+
+    // 7. Test dup2
+    // Duplicate stdout (1) to fd 10
+    if dup2(1, 10) < 0 {
+        let msg = "Dup2 failed\n";
+        write(1, msg.as_bytes());
+        exit(1);
+    }
+    let dup2_msg = "Hello from dup2-ed stdout (fd 10)!\n";
+    write(10, dup2_msg.as_bytes());
+    close(10);
+
+    let msg = "All tests passed. Exiting successfully.\n";
+    write(1, msg.as_bytes());
 
     exit(0);
 }

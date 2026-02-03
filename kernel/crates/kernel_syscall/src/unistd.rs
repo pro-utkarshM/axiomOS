@@ -1,6 +1,6 @@
 use core::slice::from_raw_parts_mut;
 
-use kernel_abi::{EBADF, EINVAL, ERANGE, ESPIPE, Errno, iovec, UIO_MAXIOV};
+use kernel_abi::{EBADF, EFAULT, EINVAL, EMFILE, ERANGE, ESPIPE, Errno, iovec, UIO_MAXIOV};
 
 use crate::access::{CwdAccess, FileAccess};
 use crate::ptr::{UserspaceMutPtr, UserspacePtr};
@@ -129,6 +129,35 @@ pub fn sys_lseek<Cx: FileAccess>(
     whence: i32,
 ) -> Result<usize, Errno> {
     cx.lseek(fildes, offset, whence).map_err(|_| ESPIPE)
+}
+
+/// Create a pipe.
+pub fn sys_pipe<Cx: FileAccess>(cx: &Cx, mut pipefd: UserspaceMutPtr<i32>) -> Result<usize, Errno> {
+    pipefd
+        .validate_range(2 * core::mem::size_of::<i32>())
+        .map_err(|_| EFAULT)?;
+
+    // SAFETY: We validated the range above.
+    let slice = unsafe { core::slice::from_raw_parts_mut(pipefd.as_mut_ptr(), 2) };
+
+    let (read_fd, write_fd) = cx.pipe().map_err(|_| EMFILE)?;
+
+    slice[0] = read_fd.into();
+    slice[1] = write_fd.into();
+
+    Ok(0)
+}
+
+/// Duplicate a file descriptor.
+pub fn sys_dup<Cx: FileAccess>(cx: &Cx, oldfd: Cx::Fd) -> Result<usize, Errno> {
+    let newfd = cx.dup(oldfd).map_err(|_| EBADF)?;
+    Ok(newfd.into() as usize)
+}
+
+/// Duplicate a file descriptor to a specific value.
+pub fn sys_dup2<Cx: FileAccess>(cx: &Cx, oldfd: Cx::Fd, newfd: Cx::Fd) -> Result<usize, Errno> {
+    let res = cx.dup2(oldfd, newfd).map_err(|_| EBADF)?;
+    Ok(res.into() as usize)
 }
 
 #[cfg(test)]

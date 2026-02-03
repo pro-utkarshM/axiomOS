@@ -47,7 +47,7 @@ impl Deref for VfsNode {
 }
 
 impl VfsNode {
-    pub(crate) fn new(
+    pub fn new(
         path: AbsoluteOwnedPath,
         fs_handle: FsHandle,
         fs: Weak<RwLock<dyn FileSystem>>,

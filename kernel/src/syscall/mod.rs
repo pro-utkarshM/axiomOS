@@ -12,7 +12,7 @@ use kernel_syscall::{
     fcntl::sys_open,
     mman::sys_mmap,
     stat::sys_fstat,
-    unistd::{sys_close, sys_getcwd, sys_lseek, sys_read, sys_write, sys_writev},
+    unistd::{sys_close, sys_dup, sys_dup2, sys_getcwd, sys_lseek, sys_pipe, sys_read, sys_write, sys_writev},
 };
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 use kernel_vfs::path::AbsolutePath;
@@ -117,6 +117,9 @@ pub fn dispatch_syscall(
         kernel_abi::SYS_WRITE => dispatch_sys_write(arg1, arg2, arg3),
         kernel_abi::SYS_WRITEV => dispatch_sys_writev(arg1, arg2, arg3),
         kernel_abi::SYS_CLOSE => dispatch_sys_close(arg1),
+        kernel_abi::SYS_DUP => dispatch_sys_dup(arg1),
+        kernel_abi::SYS_DUP2 => dispatch_sys_dup2(arg1, arg2),
+        kernel_abi::SYS_PIPE => dispatch_sys_pipe(arg1),
         kernel_abi::SYS_FSTAT => dispatch_sys_fstat(arg1, arg2),
         kernel_abi::SYS_LSEEK => dispatch_sys_lseek(arg1, arg2, arg3),
         kernel_abi::SYS_BPF => dispatch_sys_bpf(arg1, arg2, arg3),
@@ -336,6 +339,33 @@ fn dispatch_sys_bpf(cmd: usize, attr: usize, size: usize) -> Result<usize, Errno
 }
 
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+fn dispatch_sys_pipe(pipefd: usize) -> Result<usize, Errno> {
+    let cx = KernelAccess::new();
+    // SAFETY: pipefd comes from userspace syscall arguments. UserspaceMutPtr::try_from_usize
+    // validates that the address is in the userspace address range.
+    let pipefd = unsafe { UserspaceMutPtr::<i32>::try_from_usize(pipefd)? };
+    sys_pipe(&cx, pipefd)
+}
+
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+fn dispatch_sys_dup(oldfd: usize) -> Result<usize, Errno> {
+    let cx = KernelAccess::new();
+    let oldfd = i32::try_from(oldfd).map_err(|_| EINVAL)?;
+    let oldfd = <KernelAccess as FileAccess>::Fd::from(oldfd);
+    sys_dup(&cx, oldfd)
+}
+
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+fn dispatch_sys_dup2(oldfd: usize, newfd: usize) -> Result<usize, Errno> {
+    let cx = KernelAccess::new();
+    let oldfd = i32::try_from(oldfd).map_err(|_| EINVAL)?;
+    let oldfd = <KernelAccess as FileAccess>::Fd::from(oldfd);
+    let newfd = i32::try_from(newfd).map_err(|_| EINVAL)?;
+    let newfd = <KernelAccess as FileAccess>::Fd::from(newfd);
+    sys_dup2(&cx, oldfd, newfd)
+}
+
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 fn dispatch_sys_close(fd: usize) -> Result<usize, Errno> {
     let cx = KernelAccess::new();
 
@@ -427,6 +457,21 @@ fn dispatch_sys_writev(_fd: usize, _iov_ptr: usize, _iovcnt: usize) -> Result<us
 
 #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
 fn dispatch_sys_bpf(_cmd: usize, _attr: usize, _size: usize) -> Result<usize, Errno> {
+    Err(EINVAL)
+}
+
+#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+fn dispatch_sys_pipe(_pipefd: usize) -> Result<usize, Errno> {
+    Err(EINVAL)
+}
+
+#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+fn dispatch_sys_dup(_oldfd: usize) -> Result<usize, Errno> {
+    Err(EINVAL)
+}
+
+#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+fn dispatch_sys_dup2(_oldfd: usize, _newfd: usize) -> Result<usize, Errno> {
     Err(EINVAL)
 }
 

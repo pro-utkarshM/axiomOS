@@ -107,19 +107,19 @@ Userspace → bpf(BPF_PROG_LOAD) → program stored
 
 ---
 
-### 4. Syscall Interface — 17% Complete 🔴
+### 4. Syscall Interface — 48% Complete ⚠️
 
-**7 of 42 syscalls implemented** (x86_64 only, stubs on other archs)
+**20 of 42 syscalls implemented** (x86_64 only, stubs on other archs)
 
-| Implemented (17) | Missing (25) |
+| Implemented (20) | Missing (22) |
 |-----------------|--------------|
 | exit, abort | fork, exec, wait, clone |
-| read | dup, dup2, pipe |
-| write, writev | socket, bind, listen, accept |
-| open, close | munmap, mprotect |
-| mmap | chdir, mkdir, rmdir |
-| getcwd | kill, signal, sigaction |
-| bpf | ioctl, fcntl, poll |
+| read, pipe, dup, dup2 | socket, bind, listen, accept |
+| write, writev | munmap, mprotect |
+| open, close | chdir, mkdir, rmdir |
+| mmap | kill, signal, sigaction |
+| getcwd | ioctl, fcntl, poll |
+| bpf | |
 | lseek, fstat | |
 | spawn | |
 | malloc, free | |
@@ -317,6 +317,17 @@ Phase 4: Real-World Validation (Weeks 6-10)
 ---
 
 ## Recent Updates (2026-02-03)
+
+### Syscall Implementation Update
+
+**Status:** ✅ 20/42 Syscalls Implemented (2026-02-03)
+
+**Added:**
+- `pipe`: Anonymous pipe creation for IPC
+- `dup`, `dup2`: File descriptor duplication
+- `malloc`, `free`: Heap memory management
+- `writev`: Scatter/gather I/O
+- `abort`: Process termination
 
 ### AArch64 Context Switching Issue Resolved
 

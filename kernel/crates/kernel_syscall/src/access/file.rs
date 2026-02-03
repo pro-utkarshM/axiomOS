@@ -12,6 +12,8 @@ pub trait FileAccess {
     type WriteError;
     type CloseError;
     type LseekError;
+    type PipeError;
+    type DupError;
 
     fn file_info(&self, path: &AbsolutePath) -> Option<Self::FileInfo>;
 
@@ -24,6 +26,12 @@ pub trait FileAccess {
     fn close(&self, fd: Self::Fd) -> Result<(), Self::CloseError>;
 
     fn lseek(&self, fd: Self::Fd, offset: i64, whence: i32) -> Result<usize, Self::LseekError>;
+
+    fn pipe(&self) -> Result<(Self::Fd, Self::Fd), Self::PipeError>;
+
+    fn dup(&self, oldfd: Self::Fd) -> Result<Self::Fd, Self::DupError>;
+
+    fn dup2(&self, oldfd: Self::Fd, newfd: Self::Fd) -> Result<Self::Fd, Self::DupError>;
 }
 
 #[cfg(test)]
@@ -115,6 +123,8 @@ pub mod testing {
         type WriteError = ();
         type CloseError = ();
         type LseekError = ();
+        type PipeError = ();
+        type DupError = ();
 
         fn file_info(&self, path: &AbsolutePath) -> Option<Self::FileInfo> {
             let guard = self.lock();
@@ -217,6 +227,18 @@ pub mod testing {
             } else {
                 Err(())
             }
+        }
+
+        fn pipe(&self) -> Result<(Self::Fd, Self::Fd), ()> {
+            Err(())
+        }
+
+        fn dup(&self, _oldfd: Self::Fd) -> Result<Self::Fd, ()> {
+            Err(())
+        }
+
+        fn dup2(&self, _oldfd: Self::Fd, _newfd: Self::Fd) -> Result<Self::Fd, ()> {
+            Err(())
         }
     }
 }
