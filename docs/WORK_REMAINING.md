@@ -111,17 +111,19 @@ Userspace → bpf(BPF_PROG_LOAD) → program stored
 
 **7 of 42 syscalls implemented** (x86_64 only, stubs on other archs)
 
-| Implemented (8) | Missing (34) |
+| Implemented (17) | Missing (25) |
 |-----------------|--------------|
-| exit | fork, exec, wait, clone |
+| exit, abort | fork, exec, wait, clone |
 | read | dup, dup2, pipe |
-| write, writev | lseek, stat, fstat |
-| open, close | socket, bind, listen, accept |
-| mmap | munmap, mprotect |
-| getcwd | chdir, mkdir, rmdir |
-| bpf | kill, signal, sigaction |
-| | clock_gettime, nanosleep |
-| | ioctl, fcntl, poll |
+| write, writev | socket, bind, listen, accept |
+| open, close | munmap, mprotect |
+| mmap | chdir, mkdir, rmdir |
+| getcwd | kill, signal, sigaction |
+| bpf | ioctl, fcntl, poll |
+| lseek, fstat | |
+| spawn | |
+| malloc, free | |
+| clock_gettime, nanosleep | |
 
 **Remaining Work:**
 - Process lifecycle: fork, exec, wait (~2 weeks)
