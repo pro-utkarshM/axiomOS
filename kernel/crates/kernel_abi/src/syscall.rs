@@ -67,4 +67,7 @@ n! {
     SYS_CLOCK_GETTIME = 54,
     SYS_NANOSLEEP = 55,
     SYS_SPAWN = 56,
+    SYS_FORK = 57,
+    SYS_EXECVE = 58,
+    SYS_WAITPID = 59,
 }
