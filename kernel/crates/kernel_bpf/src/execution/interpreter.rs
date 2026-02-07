@@ -644,6 +644,18 @@ mod helpers_stub {
         0
     }
 
+    // SAFETY: Test stub for BPF helper.
+    #[unsafe(no_mangle)]
+    pub extern "C" fn bpf_timeseries_push(_map_id: u32, _key: *const u8, _value: *const u8) -> i64 {
+        0
+    }
+
+    // SAFETY: Test stub for BPF helper.
+    #[unsafe(no_mangle)]
+    pub extern "C" fn bpf_motor_emergency_stop(_reason: u32) -> i64 {
+        0
+    }
+
     pub fn get_test_map_value() -> u64 {
         TEST_MAP_VALUE.load(Ordering::SeqCst)
     }

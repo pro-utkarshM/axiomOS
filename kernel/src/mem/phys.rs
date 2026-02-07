@@ -246,6 +246,7 @@ pub fn init_stage2() {
         }
     }
     info!("Total free frames available for Stage 2: {}", free_count);
+    // info!("Stage 2 allocator regions: {:?}", memory_regions);
 
     if free_count == 0 {
         error!("NO FREE PHYSICAL MEMORY FOR STAGE 2!");

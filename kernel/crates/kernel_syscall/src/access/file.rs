@@ -14,10 +14,16 @@ pub trait FileAccess {
     type LseekError;
     type PipeError;
     type DupError;
+    type MkdirError;
+    type RmdirError;
 
     fn file_info(&self, path: &AbsolutePath) -> Option<Self::FileInfo>;
 
     fn open(&self, info: &Self::FileInfo) -> Result<Self::Fd, Self::OpenError>;
+
+    fn mkdir(&self, path: &AbsolutePath) -> Result<(), Self::MkdirError>;
+
+    fn rmdir(&self, path: &AbsolutePath) -> Result<(), Self::RmdirError>;
 
     fn read(&self, fd: Self::Fd, buf: &mut [u8]) -> Result<usize, Self::ReadError>;
 
@@ -125,6 +131,8 @@ pub mod testing {
         type LseekError = ();
         type PipeError = ();
         type DupError = ();
+        type MkdirError = ();
+        type RmdirError = ();
 
         fn file_info(&self, path: &AbsolutePath) -> Option<Self::FileInfo> {
             let guard = self.lock();
@@ -238,6 +246,14 @@ pub mod testing {
         }
 
         fn dup2(&self, _oldfd: Self::Fd, _newfd: Self::Fd) -> Result<Self::Fd, ()> {
+            Err(())
+        }
+
+        fn mkdir(&self, _path: &AbsolutePath) -> Result<(), ()> {
+            Err(())
+        }
+
+        fn rmdir(&self, _path: &AbsolutePath) -> Result<(), ()> {
             Err(())
         }
     }

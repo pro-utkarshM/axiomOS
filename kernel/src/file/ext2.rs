@@ -9,7 +9,9 @@ use ext2::{Ext2Fs, Inode, InodeAddress, Type};
 use filesystem::BlockDevice;
 use kernel_vfs::fs::{FileSystem, FsHandle};
 use kernel_vfs::path::{AbsoluteOwnedPath, AbsolutePath, Path};
-use kernel_vfs::{CloseError, FsError, OpenError, ReadError, Stat, StatError, WriteError};
+use kernel_vfs::{
+    CloseError, FsError, MkdirError, OpenError, ReadError, RmdirError, Stat, StatError, WriteError,
+};
 use spin::RwLock;
 
 pub struct VirtualExt2Fs<T> {
@@ -113,6 +115,16 @@ where
             _ => todo!(),
         }
         Ok(())
+    }
+
+    fn mkdir(&mut self, _path: &AbsolutePath) -> Result<(), MkdirError> {
+        // TODO: implement mkdir for ext2
+        Err(MkdirError::FsError(FsError::InvalidHandle)) // Placeholder
+    }
+
+    fn rmdir(&mut self, _path: &AbsolutePath) -> Result<(), RmdirError> {
+        // TODO: implement rmdir for ext2
+        Err(RmdirError::FsError(FsError::InvalidHandle)) // Placeholder
     }
 }
 

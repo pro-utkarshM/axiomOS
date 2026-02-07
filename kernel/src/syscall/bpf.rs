@@ -191,6 +191,9 @@ pub fn sys_bpf(cmd: usize, attr_ptr: usize, size: usize) -> isize {
                 Err(_) => return -1,
             };
 
+            log::info!("sys_bpf: PROG_ATTACH attr: attach_btf_id={}, attach_prog_fd={}, map_fd={}",
+                attr.attach_btf_id, attr.attach_prog_fd, attr.map_fd);
+
             let attach_type = attr.attach_btf_id;
             let prog_id = attr.attach_prog_fd;
 

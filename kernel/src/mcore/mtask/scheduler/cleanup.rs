@@ -16,25 +16,25 @@ pub struct TaskCleanup;
 
 impl TaskCleanup {
     pub fn init() {
-        log::info!("TaskCleanup: initializing...");
+        // log::info!("TaskCleanup: initializing...");
         CLEANUP_QUEUE.init_once(TaskQueue::new);
         let task = Task::create_new(Process::root(), Self::run, ptr::null_mut())
             .expect("should be able to create task cleanup");
-        log::info!("TaskCleanup: task created, enqueuing...");
+        // log::info!("TaskCleanup: task created, enqueuing...");
         GlobalTaskQueue::enqueue(Box::pin(task));
-        log::info!("TaskCleanup: initialized");
+        // log::info!("TaskCleanup: initialized");
     }
 
     pub fn enqueue(task: Pin<Box<Task>>) {
-        log::trace!("TaskCleanup: received zombie task {}", task.id());
+        // log::trace!("TaskCleanup: received zombie task {}", task.id());
         cleanup_queue().enqueue(task);
     }
 
     extern "C" fn run(_arg: *mut core::ffi::c_void) {
-        log::info!("TaskCleanup: running");
+        // log::info!("TaskCleanup: running");
         loop {
             while let Some(task) = cleanup_queue().dequeue() {
-                log::trace!("TaskCleanup: cleaning up task {}", task.id());
+                // log::trace!("TaskCleanup: cleaning up task {}", task.id());
                 drop(task);
             }
 

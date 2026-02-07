@@ -7,172 +7,92 @@ use core::ffi::c_int;
 
 // --- Syscall Wrappers ---
 
+#[cfg(target_arch = "aarch64")]
+#[inline(always)]
+unsafe fn do_syscall(
+    n: usize,
+    x0: usize,
+    x1: usize,
+    x2: usize,
+    x3: usize,
+    x4: usize,
+    x5: usize,
+) -> usize {
+    let ret: usize;
+    asm!(
+        "svc #0",
+        in("x8") n,
+        inout("x0") x0 => ret,
+        in("x1") x1,
+        in("x2") x2,
+        in("x3") x3,
+        in("x4") x4,
+        in("x5") x5,
+        out("x6") _, out("x7") _, out("x9") _, out("x10") _,
+        out("x11") _, out("x12") _, out("x13") _, out("x14") _,
+        out("x15") _, out("x16") _, out("x17") _, out("x18") _,
+        out("x30") _,
+    );
+    ret
+}
+
 pub fn syscall0(n: usize) -> usize {
-    let mut result: usize = 0;
     #[cfg(target_arch = "x86_64")]
     unsafe {
-        asm!(
-        "mov rax, {n}",
-        "int 0x80",
-        "mov {result}, rax",
-        n = in(reg) n,
-        result = lateout(reg) result,
-        );
+        let mut rax = n;
+        asm!("int 0x80", inout("rax") rax, clobber_abi("C"));
+        rax
     }
     #[cfg(target_arch = "aarch64")]
-    unsafe {
-        asm!(
-            "svc #0",
-            in("x8") n,
-            lateout("x0") result,
-            options(nostack)
-        );
-    }
-    result
+    unsafe { do_syscall(n, 0, 0, 0, 0, 0, 0) }
 }
 
 pub fn syscall_debug(n: usize) -> usize {
-    let r0: usize;
-
-    #[cfg(target_arch = "aarch64")]
-    unsafe {
-        asm!(
-            "svc #0",
-            in("x8") n,
-            lateout("x0") r0,
-            options(nostack)
-        );
-    }
-    #[cfg(target_arch = "x86_64")]
-    {
-        // Debug syscall not implemented for x86_64
-        let _ = n;
-        r0 = 0;
-    }
-
-    r0
+    syscall0(n)
 }
 
 pub fn syscall1(n: usize, arg1: usize) -> usize {
-    let mut result;
     #[cfg(target_arch = "x86_64")]
     unsafe {
-        asm!(
-        "mov rax,{n}",
-        "mov rdi, {arg1}",
-        "int 0x80",
-        "mov {result}, rax",
-        n = in(reg) n,
-        arg1 = in(reg) arg1,
-        result = lateout(reg) result,
-        );
+        let mut rax = n;
+        asm!("int 0x80", inout("rax") rax, in("rdi") arg1, clobber_abi("C"));
+        rax
     }
     #[cfg(target_arch = "aarch64")]
-    unsafe {
-        asm!(
-            "svc #0",
-            in("x8") n,
-            inout("x0") arg1 => result,
-            options(nostack)
-        );
-    }
-    result
+    unsafe { do_syscall(n, arg1, 0, 0, 0, 0, 0) }
 }
 
 pub fn syscall2(n: usize, arg1: usize, arg2: usize) -> usize {
-    let mut result;
     #[cfg(target_arch = "x86_64")]
     unsafe {
-        asm!(
-        "mov rax,{n}",
-        "mov rdi, {arg1}",
-        "mov rsi, {arg2}",
-        "int 0x80",
-        "mov {result}, rax",
-        n = in(reg) n,
-        arg1 = in(reg) arg1,
-        arg2 = in(reg) arg2,
-        result = lateout(reg) result,
-        );
+        let mut rax = n;
+        asm!("int 0x80", inout("rax") rax, in("rdi") arg1, in("rsi") arg2, clobber_abi("C"));
+        rax
     }
     #[cfg(target_arch = "aarch64")]
-    unsafe {
-        asm!(
-            "svc #0",
-            in("x8") n,
-            inout("x0") arg1 => result,
-            in("x1") arg2,
-            options(nostack)
-        );
-    }
-    result
+    unsafe { do_syscall(n, arg1, arg2, 0, 0, 0, 0) }
 }
 
 pub fn syscall3(n: usize, arg1: usize, arg2: usize, arg3: usize) -> usize {
-    let mut result;
     #[cfg(target_arch = "x86_64")]
     unsafe {
-        asm!(
-        "mov rax,{n}",
-        "mov rdi, {arg1}",
-        "mov rsi, {arg2}",
-        "mov rdx, {arg3}",
-        "int 0x80",
-        "mov {result}, rax",
-        n = in(reg) n,
-        arg1 = in(reg) arg1,
-        arg2 = in(reg) arg2,
-        arg3 = in(reg) arg3,
-        result = lateout(reg) result,
-        );
+        let mut rax = n;
+        asm!("int 0x80", inout("rax") rax, in("rdi") arg1, in("rsi") arg2, in("rdx") arg3, clobber_abi("C"));
+        rax
     }
     #[cfg(target_arch = "aarch64")]
-    unsafe {
-        asm!(
-            "svc #0",
-            in("x8") n,
-            inout("x0") arg1 => result,
-            in("x1") arg2,
-            in("x2") arg3,
-            options(nostack)
-        );
-    }
-    result
+    unsafe { do_syscall(n, arg1, arg2, arg3, 0, 0, 0) }
 }
 
 pub fn syscall4(n: usize, arg1: usize, arg2: usize, arg3: usize, arg4: usize) -> usize {
-    let mut result;
     #[cfg(target_arch = "x86_64")]
     unsafe {
-        asm!(
-        "mov rax,{n}",
-        "mov rdi, {arg1}",
-        "mov rsi, {arg2}",
-        "mov rdx, {arg3}",
-        "mov rcx, {arg4}",
-        "int 0x80",
-        "mov {result}, rax",
-        n = in(reg) n,
-        arg1 = in(reg) arg1,
-        arg2 = in(reg) arg2,
-        arg3 = in(reg) arg3,
-        arg4 = in(reg) arg4,
-        result = lateout(reg) result,
-        );
+        let mut rax = n;
+        asm!("int 0x80", inout("rax") rax, in("rdi") arg1, in("rsi") arg2, in("rdx") arg3, in("rcx") arg4, clobber_abi("C"));
+        rax
     }
     #[cfg(target_arch = "aarch64")]
-    unsafe {
-        asm!(
-            "svc #0",
-            in("x8") n,
-            inout("x0") arg1 => result,
-            in("x1") arg2,
-            in("x2") arg3,
-            in("x3") arg4,
-            options(nostack)
-        );
-    }
-    result
+    unsafe { do_syscall(n, arg1, arg2, arg3, arg4, 0, 0) }
 }
 
 // --- libc-like functions ---
@@ -181,7 +101,7 @@ pub fn exit(code: i32) -> ! {
     syscall1(1, code as usize);
     loop {
         #[cfg(target_arch = "x86_64")]
-        _mm_pause();
+        unsafe { _mm_pause(); }
         #[cfg(target_arch = "aarch64")]
         unsafe {
             asm!("wfi");
@@ -271,6 +191,22 @@ pub fn pipe(pipefd: *mut c_int) -> c_int {
     syscall1(44, pipefd as usize) as i32
 }
 
+pub fn chdir(path: &str) -> c_int {
+    syscall2(45, path.as_ptr() as usize, path.len()) as i32
+}
+
+pub fn mkdir(path: &str, mode: c_int) -> c_int {
+    syscall3(46, path.as_ptr() as usize, path.len(), mode as usize) as i32
+}
+
+pub fn rmdir(path: &str) -> c_int {
+    syscall2(47, path.as_ptr() as usize, path.len()) as i32
+}
+
+pub fn getcwd(buf: &mut [u8]) -> c_int {
+    syscall2(35, buf.as_mut_ptr() as usize, buf.len()) as i32
+}
+
 #[repr(C)]
 #[derive(Debug, Default, Clone, Copy)]
 pub struct stat {
@@ -320,7 +256,6 @@ pub fn spawn(path: &str) -> c_int {
 pub fn abort() -> ! {
     syscall0(32);
     loop {
-        // Should not be reached
         unsafe { asm!("nop") };
     }
 }

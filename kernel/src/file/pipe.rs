@@ -4,7 +4,7 @@ use alloc::sync::Arc;
 use conquer_once::spin::OnceCell;
 use kernel_vfs::fs::{FileSystem, FsHandle};
 use kernel_vfs::{
-    CloseError, FsError, OpenError, ReadError, Stat, StatError, WriteError,
+    CloseError, FsError, MkdirError, OpenError, ReadError, RmdirError, Stat, StatError, WriteError,
 };
 use spin::{Mutex, RwLock};
 
@@ -132,6 +132,14 @@ impl FileSystem for PipeFs {
         stat.size = 0; // Unknown size
         // TODO: Set S_IFIFO
         Ok(())
+    }
+
+    fn mkdir(&mut self, _path: &kernel_vfs::path::AbsolutePath) -> Result<(), MkdirError> {
+        Err(MkdirError::FsError(FsError::InvalidHandle))
+    }
+
+    fn rmdir(&mut self, _path: &kernel_vfs::path::AbsolutePath) -> Result<(), RmdirError> {
+        Err(RmdirError::FsError(FsError::InvalidHandle))
     }
 }
 

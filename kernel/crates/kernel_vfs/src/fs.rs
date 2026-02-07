@@ -1,5 +1,5 @@
 use crate::path::AbsolutePath;
-use crate::{CloseError, OpenError, ReadError, Stat, StatError, WriteError};
+use crate::{CloseError, MkdirError, OpenError, ReadError, RmdirError, Stat, StatError, WriteError};
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub struct FsHandle(u64);
@@ -47,4 +47,8 @@ pub trait FileSystem: Send + Sync {
     fn write(&mut self, handle: FsHandle, buf: &[u8], offset: usize) -> Result<usize, WriteError>;
 
     fn stat(&mut self, handle: FsHandle, stat: &mut Stat) -> Result<(), StatError>;
+
+    fn mkdir(&mut self, path: &AbsolutePath) -> Result<(), MkdirError>;
+
+    fn rmdir(&mut self, path: &AbsolutePath) -> Result<(), RmdirError>;
 }

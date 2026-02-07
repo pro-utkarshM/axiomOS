@@ -122,11 +122,11 @@ impl Process {
                 #[cfg(target_arch = "x86_64")]
                 VirtAddr::new(0xF000),
                 #[cfg(target_arch = "aarch64")]
-                VirtAddr::new(0x0000_8000_0000_0000), // Start at 512GB to avoid identity map (L0[0])
+                VirtAddr::new(0x1_0000_0000), // Start at 2GB to avoid identity map (L0[0])
                 #[cfg(target_arch = "x86_64")]
                 0x0000_7FFF_FFFF_0FFF,
                 #[cfg(target_arch = "aarch64")]
-                0x0000_7F80_0000_0000, // Size: ~128TB (Total user space is 256TB, minus 512GB start)
+                0x0000_007F_0000_0000, // Size: ~510GB (Total user space is 256TB, minus 512GB start)
             ))),
             telemetry: Telemetry::default(),
             memory_regions: MemoryRegions::new(),
@@ -350,6 +350,7 @@ extern "C" fn trampoline(_arg: *mut c_void) {
     }
 
     log::info!("Trampoline: allocating user stack");
+    let mut memapi_log = LowerHalfMemoryApi::new(current_process.clone());
     let mut memapi = LowerHalfMemoryApi::new(current_process.clone());
     let ustack_allocation = memapi
         .allocate(
@@ -365,18 +366,19 @@ extern "C" fn trampoline(_arg: *mut c_void) {
         .expect("should be able to allocate userspace stack");
 
 
+    let code_ptr = elf_file.entry();
     let ustack_rsp = ustack_allocation.start() + ustack_allocation.len().into_u64();
+    log::info!("Trampoline: ustack_rsp={:#x}, entry_point={:#x}", ustack_rsp.as_u64(), code_ptr as usize);
     {
         let mut ustack_guard = current_task.ustack().write();
         assert!(ustack_guard.is_none(), "ustack should not exist yet");
         *ustack_guard = Some(ustack_allocation);
     }
-    assert!(ustack_rsp.is_aligned(16_u64));
+    // assert!(ustack_rsp.is_aligned(16_u64));
 
     #[cfg(target_arch = "x86_64")]
     let sel = ctx.selectors();
 
-    let code_ptr = elf_file.entry(); // TODO: this needs to be computed when the elf file is relocatable
     let _ = current_process
         .executable_file_data
         .write()

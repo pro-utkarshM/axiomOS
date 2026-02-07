@@ -57,7 +57,7 @@ impl Scheduler {
     // SAFETY: This function performs a context switch, which is inherently unsafe.
     // It manipulates raw pointers and CPU state.
     pub unsafe fn reschedule(&mut self) {
-        log::info!("reschedule: entering");
+        // log::info!("reschedule: entering");
         #[cfg(target_arch = "x86_64")]
         assert!(!interrupts::are_enabled());
         #[cfg(all(target_arch = "aarch64", feature = "aarch64_arch"))]
@@ -65,7 +65,7 @@ impl Scheduler {
 
         // in theory, we could move this to the end of this function, but I'd rather not do this right now
         if let Some(zombie_task) = self.zombie_task.take() {
-            log::info!("reschedule: cleaning up zombie task {}", zombie_task.id());
+            // log::info!("reschedule: cleaning up zombie task {}", zombie_task.id());
             if zombie_task.should_terminate() {
                 TaskCleanup::enqueue(zombie_task);
             } else {
@@ -76,13 +76,13 @@ impl Scheduler {
         let (next_task, cr3_value) = {
             let next_task_opt = self.next_task();
             if next_task_opt.is_none() {
-                log::info!("reschedule: no next task, staying on current task {}", self.current_task.id());
+                // log::info!("reschedule: no next task, staying on current task {}", self.current_task.id());
             }
             let Some(next_task) = next_task_opt else {
                 return;
             };
 
-            log::info!("reschedule: switching to task {}", next_task.id());
+            // log::info!("reschedule: switching to task {}", next_task.id());
 
             #[cfg(target_arch = "x86_64")]
             let cr3_value = next_task.process().address_space().cr3_value();
@@ -97,14 +97,13 @@ impl Scheduler {
             #[cfg(target_arch = "aarch64")]
             let cr3_value = next_task.process().address_space().ttbr0_value();
 
-            #[cfg(target_arch = "aarch64")]
-            log::info!("reschedule: switching to task {} with ttbr0={:#x}", next_task.id(), cr3_value);
+            // log::info!("reschedule: switching to task {} with ttbr0={:#x}", next_task.id(), cr3_value);
 
             (next_task, cr3_value)
         };
 
         let mut old_task = self.swap_current_task(next_task);
-        log::trace!("reschedule: swapped current task, old task was {}", old_task.id());
+        // log::trace!("reschedule: swapped current task, old task was {}", old_task.id());
         let old_stack_ptr = if old_task.should_terminate() {
             self.dummy_old_stack_ptr.get()
         } else {
@@ -139,8 +138,8 @@ impl Scheduler {
         assert!(self.zombie_task.is_none());
         self.zombie_task = Some(old_task);
 
-        log::trace!("reschedule: calling switch_impl (old_sp_ptr={:p}, new_sp={:#x}, ttbr0={:#x})",
-            old_stack_ptr, *self.current_task.last_stack_ptr(), cr3_value);
+        // log::trace!("reschedule: calling switch_impl (old_sp_ptr={:p}, new_sp={:#x}, ttbr0={:#x})",
+        //     old_stack_ptr, *self.current_task.last_stack_ptr(), cr3_value);
 
         // SAFETY: Performing the actual context switch.
         // We provide valid pointers to the old task's stack pointer location and the new task's stack.
@@ -152,7 +151,7 @@ impl Scheduler {
                 cr3_value,
             );
         }
-        log::trace!("reschedule: switch_impl returned");
+        // log::trace!("reschedule: switch_impl returned");
     }
 
     // SAFETY: Low-level context switch implementation.

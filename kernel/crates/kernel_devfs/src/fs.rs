@@ -6,7 +6,9 @@ use core::sync::atomic::Ordering::Relaxed;
 
 use kernel_vfs::fs::{FileSystem, FsHandle};
 use kernel_vfs::path::{AbsolutePath, ROOT};
-use kernel_vfs::{CloseError, FsError, OpenError, ReadError, Stat, StatError, WriteError};
+use kernel_vfs::{
+    CloseError, FsError, MkdirError, OpenError, ReadError, RmdirError, Stat, StatError, WriteError,
+};
 use thiserror::Error;
 
 use crate::node::{DevDirectoryNode, DevFileNode, DevNode, DevNodeKind};
@@ -173,6 +175,56 @@ impl FileSystem for DevFs {
 
     fn stat(&mut self, handle: FsHandle, stat: &mut Stat) -> Result<(), StatError> {
         self.resolve_handle(handle)?.stat(stat)
+    }
+
+    fn mkdir(&mut self, path: &AbsolutePath) -> Result<(), MkdirError> {
+        let parent = path.parent().unwrap_or(ROOT);
+        // Can't create root, but parent() returns None for root, unwrap_or(ROOT) gives ROOT.
+        // If path is ROOT, file_name() is None.
+        let filename = path.file_name().ok_or(MkdirError::AlreadyExists)?;
+
+        let parent_node = self.resolve_node_mut(parent).map_err(|_| MkdirError::NotFound)?;
+        let parent_dir = parent_node
+            .directory_mut()
+            .ok_or(MkdirError::NotFound)?; // Should be NotDirectory but generic error for now
+
+        if parent_dir.lookup_child(filename).is_some() {
+            return Err(MkdirError::AlreadyExists);
+        }
+
+        let new_dir = DevNode::new(
+            filename.to_string(),
+            DevNodeKind::Directory(DevDirectoryNode::new()),
+        );
+        parent_dir.children_mut().push(new_dir);
+        Ok(())
+    }
+
+    fn rmdir(&mut self, path: &AbsolutePath) -> Result<(), RmdirError> {
+        let parent = path.parent().unwrap_or(ROOT);
+        let filename = path.file_name().ok_or(RmdirError::NotFound)?; // Can't remove root
+
+        let parent_node = self.resolve_node_mut(parent).map_err(|_| RmdirError::NotFound)?;
+        let parent_dir = parent_node
+            .directory_mut()
+            .ok_or(RmdirError::NotADirectory)?;
+
+        let pos = parent_dir
+            .children_mut()
+            .iter()
+            .position(|child| child.name() == filename)
+            .ok_or(RmdirError::NotFound)?;
+
+        {
+            let child = &parent_dir.children()[pos];
+            let dir = child.directory().ok_or(RmdirError::NotADirectory)?;
+            if !dir.children().is_empty() {
+                return Err(RmdirError::NotEmpty);
+            }
+        }
+
+        parent_dir.children_mut().remove(pos);
+        Ok(())
     }
 }
 

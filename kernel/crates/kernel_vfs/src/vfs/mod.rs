@@ -104,6 +104,40 @@ impl Vfs {
             .map(|handle| VfsNode::new(path.to_owned(), handle, Arc::downgrade(&fs)))
     }
 
+    pub fn mkdir<P>(&self, path: P) -> Result<(), MkdirError>
+    where
+        P: AsRef<AbsolutePath>,
+    {
+        let path = path.as_ref();
+        let (mount_path, fs) = self.find_mount(path).ok_or(MkdirError::NotFound)?;
+        let relative_path = if mount_path == ROOT {
+            path
+        } else {
+            path.strip_prefix(&***mount_path).unwrap()
+        };
+        // SAFETY: We are treating the relative path as an AbsolutePath for the filesystem's internal use.
+        let relative_path = unsafe { AbsolutePath::new_unchecked((&relative_path).as_ref()) };
+        let mut guard = fs.write();
+        guard.mkdir(relative_path)
+    }
+
+    pub fn rmdir<P>(&self, path: P) -> Result<(), RmdirError>
+    where
+        P: AsRef<AbsolutePath>,
+    {
+        let path = path.as_ref();
+        let (mount_path, fs) = self.find_mount(path).ok_or(RmdirError::NotFound)?;
+        let relative_path = if mount_path == ROOT {
+            path
+        } else {
+            path.strip_prefix(&***mount_path).unwrap()
+        };
+        // SAFETY: We are treating the relative path as an AbsolutePath for the filesystem's internal use.
+        let relative_path = unsafe { AbsolutePath::new_unchecked((&relative_path).as_ref()) };
+        let mut guard = fs.write();
+        guard.rmdir(relative_path)
+    }
+
     fn find_mount<'a>(&'a self, path: &'a AbsolutePath) -> Option<(&'a AbsolutePath, Fs)> {
         let mut current = path;
         if let Some(fs) = self.file_systems.get(current) {

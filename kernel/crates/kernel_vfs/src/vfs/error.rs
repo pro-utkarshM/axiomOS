@@ -74,3 +74,33 @@ pub enum StatError {
         FsError,
     ),
 }
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Error)]
+pub enum MkdirError {
+    #[error("{0}")]
+    FsError(
+        #[from]
+        #[source]
+        FsError,
+    ),
+    #[error("already exists")]
+    AlreadyExists,
+    #[error("parent not found")]
+    NotFound,
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Error)]
+pub enum RmdirError {
+    #[error("{0}")]
+    FsError(
+        #[from]
+        #[source]
+        FsError,
+    ),
+    #[error("not found")]
+    NotFound,
+    #[error("not a directory")]
+    NotADirectory,
+    #[error("directory not empty")]
+    NotEmpty,
+}

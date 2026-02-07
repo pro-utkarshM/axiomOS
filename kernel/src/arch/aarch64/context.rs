@@ -41,14 +41,14 @@ impl SwitchFrame {
 /// Perform a context switch from one task to another
 ///
 /// # Arguments
-/// * `old_sp` - Pointer to where the old stack pointer should be saved
+/// * `old_sp_ptr` - Pointer to where the old stack pointer should be saved
 /// * `new_sp` - The new stack pointer to load
 /// * `new_ttbr0` - The new TTBR0 value (user page table), or 0 to keep current
 ///
 /// # Safety
 ///
 /// The caller must ensure:
-/// - `old_sp` points to valid, writable memory for storing a usize
+/// - `old_sp_ptr` points to valid, writable memory for storing a usize
 /// - `new_sp` points to a valid stack with a properly initialized SwitchFrame
 /// - `new_ttbr0` is either 0 or a valid page table physical address
 /// - This function is only called from the scheduler with proper locking
@@ -56,8 +56,8 @@ impl SwitchFrame {
 /// `naked` attribute is used because we strictly control the stack layout and
 /// register saving/restoring in assembly.
 #[unsafe(naked)]
-pub unsafe extern "C" fn switch_impl(_old_sp: *mut usize, _new_sp: usize, _new_ttbr0: usize) {
-    // x0 = old_sp (pointer to save current SP)
+pub unsafe extern "C" fn switch_impl(_old_sp_ptr: *mut usize, _new_sp: usize, _new_ttbr0: usize) {
+    // x0 = old_sp_ptr (pointer to save current SP)
     // x1 = new_sp (new stack pointer value)
     // x2 = new_ttbr0 (new page table, 0 = don't switch)
     core::arch::naked_asm!(
@@ -69,11 +69,14 @@ pub unsafe extern "C" fn switch_impl(_old_sp: *mut usize, _new_sp: usize, _new_t
         "stp x23, x24, [sp, #-16]!",
         "stp x21, x22, [sp, #-16]!",
         "stp x19, x20, [sp, #-16]!",
-        // Save current SP to *old_sp
+
+        // Save current SP to *old_sp_ptr
         "mov x9, sp",
         "str x9, [x0]",
+
         // Load new SP
         "mov sp, x1",
+
         // Switch page tables if new_ttbr0 != 0
         "cbz x2, 1f",
         "msr ttbr0_el1, x2",
@@ -82,6 +85,23 @@ pub unsafe extern "C" fn switch_impl(_old_sp: *mut usize, _new_sp: usize, _new_t
         "dsb ish",
         "isb",
         "1:",
+
+        // We ALSO need to switch sp_el0 because it's a system register that
+        // is NOT part of the callee-saved set on the stack, but IS task-local.
+        // However, sp_el0 is typically saved/restored in the exception entry/exit.
+        // If we switch tasks via switch_impl (kernel context switch), we are 
+        // already in the kernel. The sp_el0 currently in the register belongs
+        // to the old task. If we don't save it here, and the new task didn't 
+        // come from an exception (e.g. it's a new task), it might be wrong.
+        // Actually, for AArch64, we rely on the fact that any task that was 
+        // running in userspace HAS its sp_el0 saved in its ExceptionContext on its
+        // kernel stack. When we switch kernel stacks here, we are switching
+        // to the new task's kernel stack. When THAT task eventually returns
+        // to userspace via eret (in restore_context), it will load its own 
+        // sp_el0 from its own stack.
+        // So switch_impl doesn't strictly NEED to touch sp_el0 if ALL userspace
+        // entries/exits go through the exception path.
+
         // Restore callee-saved registers from new stack
         "ldp x19, x20, [sp], #16",
         "ldp x21, x22, [sp], #16",
@@ -89,6 +109,7 @@ pub unsafe extern "C" fn switch_impl(_old_sp: *mut usize, _new_sp: usize, _new_t
         "ldp x25, x26, [sp], #16",
         "ldp x27, x28, [sp], #16",
         "ldp x29, x30, [sp], #16",
+
         // Return to new task (x30/LR has the return address)
         "ret",
     );
@@ -109,10 +130,6 @@ pub unsafe extern "C" fn switch_impl(_old_sp: *mut usize, _new_sp: usize, _new_t
 pub fn init_task_stack(stack_top: usize, entry_point: usize, arg: usize) -> usize {
     // Stack must be 16-byte aligned
     let stack_top = stack_top & !0xF;
-
-    // We need space for:
-    // 1. SwitchFrame (96 bytes) - what switch_impl expects
-    // 2. The entry trampoline sets up x0 with arg
 
     let frame_ptr = (stack_top - SwitchFrame::SIZE) as *mut SwitchFrame;
 
@@ -223,12 +240,14 @@ pub unsafe fn enter_userspace(entry_point: usize, stack_pointer: usize) -> ! {
     // SPSR_EL1 for EL0 entry:
     // M[3:0] = 0000 (EL0t)
     // DAIF = 0000 (Unmasked) -> Interrupts enabled
+    // Note: We MUST ensure we are using EL0t, which is mode 0.
     let spsr: u64 = 0;
 
     core::arch::asm!(
         "msr sp_el0, {sp}",
         "msr elr_el1, {entry}",
         "msr spsr_el1, {spsr}",
+        "isb",
         "eret",
         sp = in(reg) stack_pointer,
         entry = in(reg) entry_point,

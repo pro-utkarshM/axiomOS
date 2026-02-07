@@ -9,6 +9,8 @@ use core::error::Error;
 use core::panic::PanicInfo;
 
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+use kernel::arch::traits::Architecture;
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 use ext2::Ext2Fs;
 #[cfg(target_arch = "x86_64")]
 use kernel::limine::BASE_REVISION;

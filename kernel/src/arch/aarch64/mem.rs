@@ -64,7 +64,7 @@ pub mod user {
     pub const END: usize = 0x0001_0000_0000_0000; // 256TB
 
     /// User stack grows down from here
-    pub const STACK_TOP: usize = 0x0000_8000_0000_0000;
+    pub const STACK_TOP: usize = 0x0000_007F_0000_0000;
 
     /// User heap starts here
     pub const HEAP_BASE: usize = 0x0000_0000_1000_0000;

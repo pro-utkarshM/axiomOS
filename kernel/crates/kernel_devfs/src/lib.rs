@@ -14,7 +14,7 @@ mod node;
 pub use fs::*;
 use kernel_vfs::fs::{FileSystem, FsHandle};
 use kernel_vfs::path::AbsolutePath;
-use kernel_vfs::{CloseError, OpenError, ReadError, Stat, StatError, WriteError};
+use kernel_vfs::{CloseError, MkdirError, OpenError, ReadError, RmdirError, Stat, StatError, WriteError};
 
 #[derive(Clone)]
 pub struct ArcLockedDevFs {
@@ -67,5 +67,13 @@ impl FileSystem for ArcLockedDevFs {
 
     fn stat(&mut self, handle: FsHandle, stat: &mut Stat) -> Result<(), StatError> {
         self.inner.write().stat(handle, stat)
+    }
+
+    fn mkdir(&mut self, path: &AbsolutePath) -> Result<(), MkdirError> {
+        self.inner.write().mkdir(path)
+    }
+
+    fn rmdir(&mut self, path: &AbsolutePath) -> Result<(), RmdirError> {
+        self.inner.write().rmdir(path)
     }
 }

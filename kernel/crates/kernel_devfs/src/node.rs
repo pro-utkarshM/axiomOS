@@ -95,6 +95,10 @@ impl DevDirectoryNode {
     pub fn children_mut(&mut self) -> &mut Vec<DevNode> {
         &mut self.children
     }
+
+    pub fn children(&self) -> &Vec<DevNode> {
+        &self.children
+    }
 }
 
 pub struct DevFileNode {

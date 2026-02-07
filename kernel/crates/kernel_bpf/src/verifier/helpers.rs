@@ -559,7 +559,7 @@ mod tests {
     fn helper_signature_map_lookup() {
         let sig = get_helper_signature(HelperId::MapLookupElem);
         assert_eq!(sig.args.len(), 2);
-        assert_eq!(sig.args[0], ArgType::PtrToMap);
+        assert_eq!(sig.args[0], ArgType::Scalar);
         assert_eq!(sig.args[1], ArgType::PtrToMapKey);
         assert_eq!(sig.ret, ReturnType::PtrToMapValueOrNull);
     }
@@ -574,7 +574,7 @@ mod tests {
     #[test]
     fn validate_map_lookup_valid() {
         let mut args = [RegType::NotInit; 5];
-        args[0] = RegType::ConstPtrToMap; // R1 = map
+        args[0] = RegType::Scalar; // R1 = map ID
         args[1] = RegType::PtrToStack; // R2 = key on stack
 
         let result = validate_helper_call(3, &args);
@@ -584,7 +584,7 @@ mod tests {
     #[test]
     fn validate_map_lookup_invalid_arg() {
         let mut args = [RegType::NotInit; 5];
-        args[0] = RegType::Scalar; // Wrong! Should be map pointer
+        args[0] = RegType::PtrToStack; // Wrong! Should be map ID (Scalar)
         args[1] = RegType::PtrToStack;
 
         let result = validate_helper_call(3, &args);

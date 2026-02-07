@@ -145,10 +145,6 @@ pub fn dispatch_syscall(
         kernel_abi::SYS_CLOCK_GETTIME => dispatch_sys_clock_gettime(arg1, arg2),
         kernel_abi::SYS_NANOSLEEP => dispatch_sys_nanosleep(arg1, arg2),
         kernel_abi::SYS_SPAWN => dispatch_sys_spawn(arg1, arg2),
-        999 => {
-            trace!("Magic syscall 999 called");
-            Ok(0xDEADBEEF)
-        }
         _ => {
             error!("unimplemented syscall: {} ({n})", syscall_name(n));
             loop {

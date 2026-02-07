@@ -14,3 +14,4 @@ kernel/demos/riscv/target/
 
 #/target
 *.txt
+*.log

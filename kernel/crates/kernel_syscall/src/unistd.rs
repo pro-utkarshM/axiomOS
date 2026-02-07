@@ -1,6 +1,7 @@
 use core::slice::from_raw_parts_mut;
 
-use kernel_abi::{EBADF, EFAULT, EINVAL, EMFILE, ERANGE, ESPIPE, Errno, iovec, UIO_MAXIOV};
+use kernel_abi::{EBADF, EFAULT, EINVAL, EMFILE, ENAMETOOLONG, ENOENT, ERANGE, ESPIPE, Errno, PATH_MAX, iovec, UIO_MAXIOV};
+use kernel_vfs::path::{AbsolutePath, Path};
 
 use crate::access::{CwdAccess, FileAccess};
 use crate::ptr::{UserspaceMutPtr, UserspacePtr};
@@ -158,6 +159,67 @@ pub fn sys_dup<Cx: FileAccess>(cx: &Cx, oldfd: Cx::Fd) -> Result<usize, Errno> {
 pub fn sys_dup2<Cx: FileAccess>(cx: &Cx, oldfd: Cx::Fd, newfd: Cx::Fd) -> Result<usize, Errno> {
     let res = cx.dup2(oldfd, newfd).map_err(|_| EBADF)?;
     Ok(res.into() as usize)
+}
+
+fn resolve_path<Cx: CwdAccess>(
+    cx: &Cx,
+    path: UserspacePtr<u8>,
+    path_len: usize,
+) -> Result<alloc::borrow::Cow<'static, AbsolutePath>, Errno> {
+    use alloc::borrow::Cow;
+    use alloc::borrow::ToOwned;
+
+    if path_len > PATH_MAX {
+        return Err(ENAMETOOLONG);
+    }
+
+    path.validate_range(path_len).map_err(|_| EFAULT)?;
+
+    // SAFETY: We verified path_len is within reasonable limits (PATH_MAX).
+    // The pointer comes from a UserspacePtr which we assume points to valid memory
+    // for the specified length.
+    let path_bytes = unsafe { core::slice::from_raw_parts(path.as_ptr(), path_len) };
+    let path_str = core::str::from_utf8(path_bytes).map_err(|_| EINVAL)?;
+    let path = Path::new(path_str);
+
+    if let Ok(p) = AbsolutePath::try_new(path) {
+        Ok(Cow::Owned(p.to_owned()))
+    } else {
+        let mut p = cx.current_working_directory().read().clone();
+        p.push(path);
+        Ok(Cow::Owned(p))
+    }
+}
+
+pub fn sys_chdir<Cx: CwdAccess>(
+    cx: &Cx,
+    path: UserspacePtr<u8>,
+    path_len: usize,
+) -> Result<usize, Errno> {
+    let path = resolve_path(cx, path, path_len)?;
+    cx.chdir(&path).map_err(|e| e)?;
+    Ok(0)
+}
+
+pub fn sys_mkdir<Cx: CwdAccess + FileAccess>(
+    cx: &Cx,
+    path: UserspacePtr<u8>,
+    path_len: usize,
+    _mode: usize,
+) -> Result<usize, Errno> {
+    let path = resolve_path(cx, path, path_len)?;
+    cx.mkdir(&path).map_err(|_| ENOENT)?; // TODO: Better error mapping from MkdirError
+    Ok(0)
+}
+
+pub fn sys_rmdir<Cx: CwdAccess + FileAccess>(
+    cx: &Cx,
+    path: UserspacePtr<u8>,
+    path_len: usize,
+) -> Result<usize, Errno> {
+    let path = resolve_path(cx, path, path_len)?;
+    cx.rmdir(&path).map_err(|_| ENOENT)?; // TODO: Better error mapping from RmdirError
+    Ok(0)
 }
 
 #[cfg(test)]

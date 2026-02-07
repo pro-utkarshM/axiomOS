@@ -127,7 +127,7 @@ define_invalid_handler curr_el_sp0_sync_handler, 0, 0
     mov     x1, #0
     bl      handle_invalid_exception
     restore_context
-    mov     x0, #0x1111
+    
     eret
     */
 
@@ -139,9 +139,9 @@ curr_el_spx_sync_handler:
     save_context
     mov     x0, sp
     bl      handle_sync_exception
-    // bl      check_preemption
+    bl      check_preemption
     restore_context
-    mov     x0, #0x2222
+    
     eret
 
 curr_el_spx_irq_handler:
@@ -159,7 +159,7 @@ lower_el_aarch64_sync_handler:
     save_context
     mov     x0, sp
     bl      handle_sync_exception
-    // bl      check_preemption
+    bl      check_preemption
     restore_context
     eret
 
@@ -167,7 +167,7 @@ lower_el_aarch64_irq_handler:
     save_context
     mov     x0, sp
     bl      handle_irq
-    // bl      check_preemption
+    bl      check_preemption
     restore_context
     eret
 
@@ -180,7 +180,7 @@ lower_el_aarch32_sync_handler:
     mov     x1, #3
     bl      handle_invalid_exception
     restore_context
-    mov     x0, #0x4444
+    
     eret
 define_invalid_handler lower_el_aarch32_irq_handler, 1, 3
 define_invalid_handler lower_el_aarch32_fiq_handler, 2, 3

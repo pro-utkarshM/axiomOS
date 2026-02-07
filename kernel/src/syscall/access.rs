@@ -1,6 +1,8 @@
 use alloc::sync::Arc;
+use alloc::borrow::ToOwned;
 use core::sync::atomic::Ordering::Relaxed;
 
+use kernel_abi::{Errno, ENOENT};
 use kernel_syscall::access::{CwdAccess, FileAccess};
 use kernel_syscall::stat::{StatAccess, UserStat, mode};
 use kernel_vfs::node::VfsNode;
@@ -37,6 +39,16 @@ impl CwdAccess for KernelAccess<'_> {
     fn current_working_directory(&self) -> &RwLock<kernel_vfs::path::AbsoluteOwnedPath> {
         self.process.current_working_directory()
     }
+
+    fn chdir(&self, path: &AbsolutePath) -> Result<(), Errno> {
+        // Check if path exists
+        // TODO: check if it is a directory (needs Stat update)
+        let _node = vfs().read().open(path).map_err(|_| ENOENT)?;
+
+        let mut cwd = self.process.current_working_directory().write();
+        *cwd = path.to_owned();
+        Ok(())
+    }
 }
 
 pub struct FileInfo {
@@ -55,6 +67,8 @@ impl FileAccess for KernelAccess<'_> {
     type LseekError = ();
     type PipeError = ();
     type DupError = ();
+    type MkdirError = ();
+    type RmdirError = ();
 
     fn file_info(&self, path: &AbsolutePath) -> Option<Self::FileInfo> {
         Some(FileInfo {
@@ -285,6 +299,14 @@ impl FileAccess for KernelAccess<'_> {
         fds.insert(newfd, FileDescriptor::new(newfd, FileDescriptorFlags::empty(), ofd));
 
         Ok(newfd)
+    }
+
+    fn mkdir(&self, path: &AbsolutePath) -> Result<(), ()> {
+        vfs().read().mkdir(path).map_err(|_| ())
+    }
+
+    fn rmdir(&self, path: &AbsolutePath) -> Result<(), ()> {
+        vfs().read().rmdir(path).map_err(|_| ())
     }
 }
 
