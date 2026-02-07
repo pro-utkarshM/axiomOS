@@ -180,7 +180,7 @@ pub struct RingBufMap<P: PhysicalProfile = ActiveProfile> {
 
 impl<P: PhysicalProfile> RingBufMap<P> {
     /// Maximum buffer size for embedded profile.
-    #[cfg(feature = "embedded-profile")]
+    #[cfg(all(feature = "embedded-profile", not(feature = "cloud-profile")))]
     const MAX_BUFFER_SIZE: usize = 64 * 1024; // 64 KB
 
     /// Maximum buffer size for cloud profile.

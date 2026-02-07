@@ -112,16 +112,7 @@ impl AttachType {
             | Self::SchedCls => true,
 
             // XDP requires network stack - may not be available on embedded
-            Self::Xdp | Self::CgroupSkb => {
-                #[cfg(feature = "cloud-profile")]
-                {
-                    true
-                }
-                #[cfg(feature = "embedded-profile")]
-                {
-                    false // Typically not used on embedded robotics
-                }
-            }
+            Self::Xdp | Self::CgroupSkb => cfg!(feature = "cloud-profile"),
 
             // Robotics attach types - always available (primary use case)
             Self::IioSensor
@@ -270,7 +261,7 @@ pub struct AttachManager<P: PhysicalProfile = ActiveProfile> {
 
 impl<P: PhysicalProfile> AttachManager<P> {
     /// Maximum attachments for embedded profile.
-    #[cfg(feature = "embedded-profile")]
+    #[cfg(all(feature = "embedded-profile", not(feature = "cloud-profile")))]
     const DEFAULT_MAX_ATTACHMENTS: usize = 16;
     /// Maximum attachments for cloud profile.
     #[cfg(feature = "cloud-profile")]

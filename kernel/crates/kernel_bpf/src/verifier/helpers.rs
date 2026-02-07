@@ -197,7 +197,7 @@ impl HelperId {
 
     /// Check if helper is available in the current profile.
     pub const fn is_available(&self) -> bool {
-        #[cfg(feature = "embedded-profile")]
+        #[cfg(all(feature = "embedded-profile", not(feature = "cloud-profile")))]
         {
             self.available_in_embedded()
         }

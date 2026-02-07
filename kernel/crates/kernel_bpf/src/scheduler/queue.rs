@@ -16,7 +16,7 @@ use crate::execution::BpfContext;
 use crate::profile::{ActiveProfile, PhysicalProfile};
 
 /// Maximum queue size for embedded profile.
-#[cfg(feature = "embedded-profile")]
+#[cfg(all(feature = "embedded-profile", not(feature = "cloud-profile")))]
 const MAX_QUEUE_SIZE: usize = 32;
 
 /// Maximum queue size for cloud profile.
@@ -55,7 +55,7 @@ impl<P: PhysicalProfile> QueuedProgram<P> {
     }
 
     /// Create a queued program from an execution request.
-    #[cfg(feature = "embedded-profile")]
+    #[cfg(all(feature = "embedded-profile", not(feature = "cloud-profile")))]
     pub fn from_request(request: BpfExecRequest<P>) -> Self {
         static COUNTER: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
         Self {

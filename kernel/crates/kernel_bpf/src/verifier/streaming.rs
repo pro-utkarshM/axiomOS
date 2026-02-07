@@ -61,7 +61,7 @@ use crate::profile::{ActiveProfile, PhysicalProfile};
 ///
 /// This limits memory usage for handling conditional branches.
 /// When exceeded, we force conservative merging.
-#[cfg(feature = "embedded-profile")]
+#[cfg(all(feature = "embedded-profile", not(feature = "cloud-profile")))]
 const MAX_WORKLIST_DEPTH: usize = 16;
 #[cfg(feature = "cloud-profile")]
 const MAX_WORKLIST_DEPTH: usize = 64;
@@ -69,7 +69,7 @@ const MAX_WORKLIST_DEPTH: usize = 64;
 /// Maximum number of merge point states to track.
 ///
 /// Merge points occur where multiple control flow paths converge.
-#[cfg(feature = "embedded-profile")]
+#[cfg(all(feature = "embedded-profile", not(feature = "cloud-profile")))]
 const MAX_MERGE_POINTS: usize = 32;
 #[cfg(feature = "cloud-profile")]
 const MAX_MERGE_POINTS: usize = 256;
@@ -77,7 +77,7 @@ const MAX_MERGE_POINTS: usize = 256;
 /// Maximum loop iterations allowed during verification.
 ///
 /// Prevents infinite loops in verification itself.
-#[cfg(feature = "embedded-profile")]
+#[cfg(all(feature = "embedded-profile", not(feature = "cloud-profile")))]
 const MAX_LOOP_ITERATIONS: usize = 100;
 #[cfg(feature = "cloud-profile")]
 const MAX_LOOP_ITERATIONS: usize = 1000;

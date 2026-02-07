@@ -74,14 +74,14 @@ pub struct BpfLoader<P: PhysicalProfile = ActiveProfile> {
 
 impl<P: PhysicalProfile> BpfLoader<P> {
     /// Maximum programs for embedded profile.
-    #[cfg(feature = "embedded-profile")]
+    #[cfg(all(feature = "embedded-profile", not(feature = "cloud-profile")))]
     const DEFAULT_MAX_PROGRAMS: usize = 8;
     /// Maximum programs for cloud profile.
     #[cfg(feature = "cloud-profile")]
     const DEFAULT_MAX_PROGRAMS: usize = 64;
 
     /// Maximum maps for embedded profile.
-    #[cfg(feature = "embedded-profile")]
+    #[cfg(all(feature = "embedded-profile", not(feature = "cloud-profile")))]
     const DEFAULT_MAX_MAPS: usize = 16;
     /// Maximum maps for cloud profile.
     #[cfg(feature = "cloud-profile")]

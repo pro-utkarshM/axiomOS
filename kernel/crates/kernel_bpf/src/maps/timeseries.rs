@@ -266,7 +266,7 @@ pub struct TimeSeriesMap<P: PhysicalProfile = ActiveProfile> {
 
 impl<P: PhysicalProfile> TimeSeriesMap<P> {
     /// Maximum entries for embedded profile.
-    #[cfg(feature = "embedded-profile")]
+    #[cfg(all(feature = "embedded-profile", not(feature = "cloud-profile")))]
     const MAX_ENTRIES: usize = 4 * 1024; // 4K entries
 
     /// Maximum entries for cloud profile.

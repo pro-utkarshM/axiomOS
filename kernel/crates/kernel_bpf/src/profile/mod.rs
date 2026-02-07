@@ -221,7 +221,7 @@ impl PhysicalProfile for EmbeddedProfile {
 pub type ActiveProfile = CloudProfile;
 
 /// The currently active profile based on build-time feature selection.
-#[cfg(feature = "embedded-profile")]
+#[cfg(all(feature = "embedded-profile", not(feature = "cloud-profile")))]
 pub type ActiveProfile = EmbeddedProfile;
 
 #[cfg(test)]

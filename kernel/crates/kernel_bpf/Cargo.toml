@@ -10,7 +10,7 @@ spin.workspace = true
 criterion = { version = "0.5", default-features = false }
 
 [features]
-default = ["embedded-profile"]
+default = []
 cloud-profile = []
 embedded-profile = []
 

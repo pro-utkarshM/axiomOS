@@ -77,7 +77,7 @@ impl<P: PhysicalProfile> BpfExecRequest<P> {
     }
 
     /// Create a new execution request.
-    #[cfg(feature = "embedded-profile")]
+    #[cfg(all(feature = "embedded-profile", not(feature = "cloud-profile")))]
     pub fn new(id: ProgId, program: Arc<BpfProgram<P>>, context: BpfContext) -> Self {
         Self {
             id,
@@ -115,7 +115,7 @@ pub struct BpfScheduler {
     /// Scheduling policy
     #[cfg(feature = "cloud-profile")]
     policy: ThroughputPolicy,
-    #[cfg(feature = "embedded-profile")]
+    #[cfg(all(feature = "embedded-profile", not(feature = "cloud-profile")))]
     policy: DeadlinePolicy,
 }
 
@@ -126,7 +126,7 @@ impl BpfScheduler {
             queue: BpfQueue::new(),
             #[cfg(feature = "cloud-profile")]
             policy: ThroughputPolicy::new(),
-            #[cfg(feature = "embedded-profile")]
+            #[cfg(all(feature = "embedded-profile", not(feature = "cloud-profile")))]
             policy: DeadlinePolicy::new(),
         }
     }

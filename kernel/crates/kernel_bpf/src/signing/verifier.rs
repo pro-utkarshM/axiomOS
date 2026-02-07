@@ -12,7 +12,7 @@ use super::signature::{SIGNER_ID_LEN, SignedProgram};
 pub const PUBLIC_KEY_LEN: usize = 32;
 
 /// Maximum number of trusted keys.
-#[cfg(feature = "embedded-profile")]
+#[cfg(all(feature = "embedded-profile", not(feature = "cloud-profile")))]
 const MAX_TRUSTED_KEYS: usize = 4;
 #[cfg(feature = "cloud-profile")]
 const MAX_TRUSTED_KEYS: usize = 32;
