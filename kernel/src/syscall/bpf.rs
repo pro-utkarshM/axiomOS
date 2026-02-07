@@ -271,7 +271,7 @@ pub fn sys_bpf(cmd: usize, attr_ptr: usize, size: usize) -> isize {
                             if chip_id <= 1 && channel <= 3 {
                                 // SAFETY: Rp1Pwm::pwm0/1 accesses valid MMIO.
                                 // The kernel has exclusive access.
-                                let pwm = unsafe {
+                                let _pwm = unsafe {
                                     if chip_id == 0 {
                                         crate::arch::aarch64::platform::rpi5::pwm::Rp1Pwm::pwm0()
                                     } else {

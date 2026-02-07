@@ -350,7 +350,6 @@ extern "C" fn trampoline(_arg: *mut c_void) {
     }
 
     log::info!("Trampoline: allocating user stack");
-    let mut memapi_log = LowerHalfMemoryApi::new(current_process.clone());
     let mut memapi = LowerHalfMemoryApi::new(current_process.clone());
     let ustack_allocation = memapi
         .allocate(

@@ -260,7 +260,7 @@ Phase 1: BPF Integration (MOSTLY DONE ✅)
 Phase 2: Hardware Attach Points (Weeks 1-5)
 ├── Wire BPF GpioAttach → existing RPi5 GPIO driver (~1 week)
 ├── Button press → BPF program → LED toggle demo
-├── PWM hardware driver + BPF wiring (~2-3 weeks)
+├── ✅ PWM hardware driver + BPF wiring (Completed)
 └── Basic IIO sensor support (~2 weeks)
 
 Phase 3: Security Hardening (Weeks 3-8, parallel)
