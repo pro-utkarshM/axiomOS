@@ -18,6 +18,7 @@ iio_demo_x86 = { package = "iio_demo", path = "userspace/iio_demo", artifact = "
 syscall_demo_x86 = { package = "syscall_demo", path = "userspace/syscall_demo", artifact = "bin", target = "x86_64-unknown-none", optional = true }
 file_io_demo_x86 = { package = "file_io_demo", path = "userspace/file_io_demo", artifact = "bin", target = "x86_64-unknown-none", optional = true }
 safety_demo_x86 = { package = "safety_demo", path = "userspace/safety_demo", artifact = "bin", target = "x86_64-unknown-none", optional = true }
+fork_test_x86 = { package = "fork_test", path = "userspace/fork_test", artifact = "bin", target = "x86_64-unknown-none", optional = true }
 kernel_x86 = { package = "kernel", path = "kernel", artifact = "bin", target = "x86_64-unknown-none", optional = true }
 
 # aarch64 dependencies
@@ -29,6 +30,7 @@ iio_demo_aarch64 = { package = "iio_demo", path = "userspace/iio_demo", artifact
 syscall_demo_aarch64 = { package = "syscall_demo", path = "userspace/syscall_demo", artifact = "bin", target = "aarch64-unknown-none", optional = true }
 file_io_demo_aarch64 = { package = "file_io_demo", path = "userspace/file_io_demo", artifact = "bin", target = "aarch64-unknown-none", optional = true }
 safety_demo_aarch64 = { package = "safety_demo", path = "userspace/safety_demo", artifact = "bin", target = "aarch64-unknown-none", optional = true }
+fork_test_aarch64 = { package = "fork_test", path = "userspace/fork_test", artifact = "bin", target = "aarch64-unknown-none", optional = true }
 kernel_aarch64 = { package = "kernel", path = "kernel", artifact = "bin", target = "aarch64-unknown-none", optional = true }
 
 [features]
@@ -42,6 +44,7 @@ x86_64_deps = [
   "dep:syscall_demo_x86",
   "dep:file_io_demo_x86",
   "dep:safety_demo_x86",
+  "dep:fork_test_x86",
   "dep:kernel_x86",
 ]
 aarch64_deps = [
@@ -53,6 +56,7 @@ aarch64_deps = [
   "dep:syscall_demo_aarch64",
   "dep:file_io_demo_aarch64",
   "dep:safety_demo_aarch64",
+  "dep:fork_test_aarch64",
   "dep:kernel_aarch64",
 ]
 
@@ -84,6 +88,7 @@ members = [
   "userspace/syscall_demo",
   "userspace/file_io_demo",
   "userspace/safety_demo",
+  "userspace/fork_test",
 ]
 default-members = [
   ".",

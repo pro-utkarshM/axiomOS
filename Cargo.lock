@@ -540,6 +540,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "fork_test"
+version = "0.1.0"
+dependencies = [
+ "minilib",
+]
+
+[[package]]
 name = "generator"
 version = "0.8.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1034,6 +1041,7 @@ dependencies = [
  "clap",
  "file_io_demo",
  "file_structure",
+ "fork_test",
  "gpio_demo",
  "iio_demo",
  "init",

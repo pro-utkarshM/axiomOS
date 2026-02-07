@@ -101,7 +101,7 @@ pub fn exit(code: i32) -> ! {
     syscall1(1, code as usize);
     loop {
         #[cfg(target_arch = "x86_64")]
-        unsafe { _mm_pause(); }
+        _mm_pause();
         #[cfg(target_arch = "aarch64")]
         unsafe {
             asm!("wfi");
@@ -279,4 +279,20 @@ pub fn malloc(size: usize) -> *mut u8 {
 
 pub fn free(ptr: *mut u8) {
     syscall1(28, ptr as usize);
+}
+
+// --- Process Management ---
+
+pub const WNOHANG: c_int = 1;
+
+pub fn fork() -> c_int {
+    syscall0(57) as c_int
+}
+
+pub fn execve(path: *const u8, argv: *const *const u8, envp: *const *const u8) -> c_int {
+    syscall3(58, path as usize, argv as usize, envp as usize) as c_int
+}
+
+pub fn waitpid(pid: c_int, status: *mut c_int, options: c_int) -> c_int {
+    syscall3(59, pid as usize, status as usize, options as usize) as c_int
 }
