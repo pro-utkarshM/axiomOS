@@ -89,7 +89,7 @@ The core BPF-kernel integration is **working**. Timer and syscall hooks execute 
 | BPF helpers | ✅ Done | `bpf_ktime_get_ns`, `bpf_trace_printk`, `bpf_map_*`, `bpf_gpio_*`, `bpf_pwm_*` |
 | **GPIO attach** | ✅ Working | Wired to RPi5 driver & verified with integration tests |
 | **PWM attach** | ✅ Working | Wired to RPi5 driver & enabled via syscalls |
-| **IIO sensor attach** | ⚠️ Simulated | Driver manager + attach integrated |
+| **IIO sensor attach** | ✅ Simulated | Driver manager + attach integrated |
 | **Kprobe** | 🔴 Abstraction only | No kernel infrastructure |
 | **Tracepoint** | 🔴 Abstraction only | No kernel infrastructure |
 
@@ -258,10 +258,10 @@ Phase 1: BPF Integration (MOSTLY DONE ✅)
 └── ✅ Fix hardcoded key/value sizes in syscall handler (Done)
 
 Phase 2: Hardware Attach Points (Weeks 1-5)
-├── Wire BPF GpioAttach → existing RPi5 GPIO driver (~1 week)
-├── Button press → BPF program → LED toggle demo
+├── ✅ Wire BPF GpioAttach → existing RPi5 GPIO driver (Completed)
+├── ✅ Button press → BPF program → LED toggle demo (Completed)
 ├── ✅ PWM hardware driver + BPF wiring (Completed)
-└── Basic IIO sensor support (~2 weeks)
+└── ✅ Basic IIO sensor support (Simulated)
 
 Phase 3: Security Hardening (Weeks 3-8, parallel)
 ├── Syscall pointer validation
