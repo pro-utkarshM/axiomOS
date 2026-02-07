@@ -1,7 +1,7 @@
 use core::ffi::c_void;
 use core::fmt::{Debug, Formatter};
-#[cfg(target_arch = "x86_64")]
 use core::slice::from_raw_parts_mut;
+use core::mem::{size_of, size_of_val};
 
 use kernel_virtual_memory::Segment;
 use thiserror::Error;
@@ -19,6 +19,7 @@ use crate::mem::phys::PhysicalMemory;
 use crate::mem::virt::{OwnedSegment, VirtualMemoryAllocator, VirtualMemoryHigherHalf};
 #[cfg(target_arch = "x86_64")]
 use crate::{U64Ext, UsizeExt};
+use crate::arch::{UserContext, restore_user_context};
 
 #[derive(Debug, Copy, Clone, Error)]
 pub enum StackAllocationError {
@@ -120,6 +121,83 @@ impl HigherHalfStack {
         }
 
         log::info!("HigherHalfStack::allocate: stack initialized, rsp={:p}", stack.rsp.as_ptr::<()>());
+        Ok(stack)
+    }
+
+    /// Allocates a new stack for a forked task.
+    ///
+    /// The stack will be initialized such that when the task is switched to,
+    /// it will execute `restore_user_context` with the provided `user_context`.
+    pub fn allocate_fork(
+        pages: usize,
+        user_context: &UserContext,
+    ) -> Result<Self, StackAllocationError> {
+        log::info!("HigherHalfStack::allocate_fork: pages={}", pages);
+        let mut stack = Self::allocate_plain(pages)?;
+        let mapped_segment = stack.mapped_segment;
+
+        #[cfg(target_arch = "x86_64")]
+        {
+            let entry_point = restore_user_context;
+            // SAFETY: The mapped segment is valid memory allocated for the stack.
+            // We have exclusive access to it during initialization.
+            let slice = unsafe {
+                from_raw_parts_mut(
+                    mapped_segment.start.as_mut_ptr::<u8>(),
+                    mapped_segment.len.into_usize(),
+                )
+            };
+            slice.fill(0xCD);
+
+            let mut writer = StackWriter::new(slice);
+
+            // 1. Push UserContext data
+            writer.push(*user_context);
+            // Calculate the address of the pushed context
+            let context_addr = mapped_segment.start + writer.offset as u64;
+
+            // 2. Push return address (dummy, since restore_user_context doesn't return)
+            writer.push(0usize);
+
+            // 3. Push Registers for switch_impl
+            let rsp = writer.offset - size_of::<Registers>();
+            writer.push(Registers {
+                rsp,
+                rbp: 0,
+                rdi: context_addr.as_u64() as usize, // arg1 for restore_user_context
+                rip: entry_point as *const () as usize,           // Return address for switch_impl
+                rflags: (RFlags::IOPL_LOW | RFlags::INTERRUPT_FLAG)
+                    .bits()
+                    .into_usize(),
+                ..Default::default()
+            });
+
+            stack.rsp = mapped_segment.start + rsp.into_u64();
+        }
+
+        #[cfg(target_arch = "aarch64")]
+        {
+            let stack_top = (mapped_segment.start + mapped_segment.len).as_u64() as usize;
+
+            // 1. Write UserContext to the top of the stack
+            let context_size = size_of::<UserContext>();
+            // Align to 16 bytes
+            let context_addr = (stack_top - context_size) & !0xF;
+
+            unsafe {
+                let ptr = context_addr as *mut UserContext;
+                ptr.write(*user_context);
+            }
+
+            // 2. Initialize stack with trampoline
+            let entry_point_addr = restore_user_context as usize;
+            let arg_addr = context_addr;
+            let exit_addr = 0; // restore_user_context does not return
+
+            let rsp = init_task_stack_with_arg(context_addr, entry_point_addr, arg_addr, exit_addr);
+            stack.rsp = VirtAddr::new(rsp as u64);
+        }
+
         Ok(stack)
     }
 

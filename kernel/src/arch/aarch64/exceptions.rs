@@ -334,6 +334,7 @@ pub extern "C" fn handle_invalid_exception(kind: u64, source: u64) {
 
 /// Exception context saved on exception entry
 #[repr(C)]
+#[derive(Debug, Clone, Copy)]
 pub struct ExceptionContext {
     // General purpose registers
     pub x0: u64,

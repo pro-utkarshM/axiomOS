@@ -19,7 +19,7 @@ pub fn handle_syscall(ctx: &mut ExceptionContext) {
     let arg5 = ctx.x4 as usize;
     let arg6 = ctx.x5 as usize;
 
-    let result = crate::syscall::dispatch_syscall(n, arg1, arg2, arg3, arg4, arg5, arg6);
+    let result = crate::syscall::dispatch_syscall(ctx, n, arg1, arg2, arg3, arg4, arg5, arg6);
 
     // Return result in x0
     ctx.x0 = result as u64;

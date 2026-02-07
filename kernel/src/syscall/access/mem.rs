@@ -64,15 +64,14 @@ impl MemoryAccess for KernelAccess<'_> {
         }
 
         self.process
-            .address_space()
-            .map_range::<Size4KiB>(
+            .with_address_space(|as_| as_.map_range::<Size4KiB>(
                 &*segment,
                 frames.into_iter(),
                 PageTableFlags::PRESENT
                     | PageTableFlags::WRITABLE
                     | PageTableFlags::USER_ACCESSIBLE
                     | PageTableFlags::NO_EXECUTE,
-            )
+            ))
             .map_err(|_| CreateMappingError::OutOfMemory)?;
 
         Ok(KernelMapping {

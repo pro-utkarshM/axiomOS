@@ -291,3 +291,48 @@ pub fn current_lr() -> usize {
     }
     lr
 }
+
+/// Restores user context and returns to userspace.
+/// Does not return.
+///
+/// # Safety
+/// Valid pointer to UserContext.
+#[unsafe(naked)]
+pub unsafe extern "C" fn restore_user_context(ctx: *const crate::arch::UserContext) -> ! {
+    core::arch::naked_asm!(
+        // x0 points to UserContext
+        // UserContext layout:
+        // inner: ExceptionContext (offset 0, size 264)
+        // sp: u64 (offset 264)
+
+        // 1. Restore sp_el0
+        "ldr x1, [x0, #264]",
+        "msr sp_el0, x1",
+
+        // 2. Restore ELR, SPSR
+        // elr is at offset 248, spsr at 256
+        "ldp x2, x3, [x0, #248]",
+        "msr elr_el1, x2",
+        "msr spsr_el1, x3",
+
+        // 3. Restore registers
+        "ldp x29, x30, [x0, #232]",
+        "ldp x27, x28, [x0, #216]",
+        "ldp x25, x26, [x0, #200]",
+        "ldp x23, x24, [x0, #184]",
+        "ldp x21, x22, [x0, #168]",
+        "ldp x19, x20, [x0, #152]",
+        "ldp x17, x18, [x0, #136]",
+        "ldp x15, x16, [x0, #120]",
+        "ldp x13, x14, [x0, #104]",
+        "ldp x11, x12, [x0, #88]",
+        "ldp x9, x10, [x0, #72]",
+        "ldp x7, x8, [x0, #56]",
+        "ldp x5, x6, [x0, #40]",
+        "ldp x3, x4, [x0, #24]",
+        "ldp x1, x2, [x0, #8]",
+        "ldr x0, [x0]",
+
+        "eret"
+    );
+}

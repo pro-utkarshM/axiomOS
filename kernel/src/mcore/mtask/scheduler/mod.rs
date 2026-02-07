@@ -85,7 +85,7 @@ impl Scheduler {
             // log::info!("reschedule: switching to task {}", next_task.id());
 
             #[cfg(target_arch = "x86_64")]
-            let cr3_value = next_task.process().address_space().cr3_value();
+            let cr3_value = next_task.process().with_address_space(|as_| as_.cr3_value());
             #[cfg(target_arch = "x86_64")]
             {
                 if let Some(kstack) = next_task.kstack() {
@@ -95,7 +95,7 @@ impl Scheduler {
                 }
             }
             #[cfg(target_arch = "aarch64")]
-            let cr3_value = next_task.process().address_space().ttbr0_value();
+            let cr3_value = next_task.process().with_address_space(|as_| as_.ttbr0_value());
 
             // log::info!("reschedule: switching to task {} with ttbr0={:#x}", next_task.id(), cr3_value);
 

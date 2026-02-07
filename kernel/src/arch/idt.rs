@@ -11,7 +11,7 @@ use x86_64::PrivilegeLevel;
 use x86_64::instructions::{hlt, interrupts};
 use x86_64::registers::control::Cr2;
 use x86_64::registers::debug::{Dr6, Dr7};
-use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
+use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, InterruptStackFrameValue, PageFaultErrorCode};
 
 use crate::UsizeExt;
 use crate::arch::gdt;
@@ -99,26 +99,38 @@ macro_rules! wrap {
         pub unsafe extern "sysv64" fn $w() {
             core::arch::naked_asm!(
                 "push rax",
+                "push rbx",
                 "push rcx",
                 "push rdx",
                 "push rsi",
                 "push rdi",
+                "push rbp",
                 "push r8",
                 "push r9",
                 "push r10",
                 "push r11",
+                "push r12",
+                "push r13",
+                "push r14",
+                "push r15",
                 "mov rsi, rsp", // Arg #2: register list
                 "mov rdi, rsp", // Arg #1: interupt frame
-                "add rdi, 9 * 8",
+                "add rdi, 15 * 8", // Skip 15 registers to point to InterruptStackFrame
                 "call {}",
+                "pop r15",
+                "pop r14",
+                "pop r13",
+                "pop r12",
                 "pop r11",
                 "pop r10",
                 "pop r9",
                 "pop r8",
+                "pop rbp",
                 "pop rdi",
                 "pop rsi",
                 "pop rdx",
                 "pop rcx",
+                "pop rbx",
                 "pop rax",
                 "iretq",
                 sym $fn
@@ -129,23 +141,38 @@ macro_rules! wrap {
 
 wrap!(syscall_handler_impl => syscall_handler);
 
-#[repr(align(8), C)]
+#[repr(C)]
 #[derive(Debug, Clone, Copy, Default)]
-pub struct SyscallRegisters {
+pub struct GPRegisters {
+    pub r15: usize,
+    pub r14: usize,
+    pub r13: usize,
+    pub r12: usize,
     pub r11: usize,
     pub r10: usize,
     pub r9: usize,
     pub r8: usize,
+    pub rbp: usize,
     pub rdi: usize,
     pub rsi: usize,
     pub rdx: usize,
     pub rcx: usize,
+    pub rbx: usize,
     pub rax: usize,
 }
 
+pub type SyscallRegisters = GPRegisters;
+
+#[derive(Debug, Clone, Copy)]
+#[repr(C)]
+pub struct UserContext {
+    pub regs: GPRegisters,
+    pub frame: InterruptStackFrameValue,
+}
+
 pub extern "sysv64" fn syscall_handler_impl(
-    _stack_frame: &mut InterruptStackFrame,
-    regs: &mut SyscallRegisters,
+    stack_frame: &mut InterruptStackFrame,
+    regs: &mut GPRegisters,
 ) {
     // The registers order follow the System V ABI convention
     let n = regs.rax;
@@ -156,9 +183,74 @@ pub extern "sysv64" fn syscall_handler_impl(
     let arg5 = regs.r8;
     let arg6 = regs.r9;
 
-    let result = dispatch_syscall(n, arg1, arg2, arg3, arg4, arg5, arg6);
+    // Construct UserContext for dispatch_syscall (needed for fork)
+    // We clone the frame value because InterruptStackFrame is a wrapper around a pointer
+    let mut ctx = UserContext {
+        regs: *regs,
+        frame: **stack_frame,
+    };
+
+    let result = dispatch_syscall(&mut ctx, n, arg1, arg2, arg3, arg4, arg5, arg6);
 
     regs.rax = result as usize; // save result
+}
+
+/// Restores the user context and returns to userspace.
+///
+/// # Safety
+/// This function executes an `iretq` instruction with values derived from `ctx`.
+/// The caller must ensure `ctx` contains valid values for a return to userspace.
+#[unsafe(naked)]
+pub unsafe extern "sysv64" fn restore_user_context(ctx: *const UserContext) -> ! {
+    core::arch::naked_asm!(
+        // rdi holds pointer to UserContext
+        // Layout:
+        // GPRegisters (15 * 8 = 120 bytes)
+        // InterruptStackFrameValue (5 * 8 = 40 bytes)
+
+        // 1. Push InterruptStackFrameValue fields onto stack for iretq
+        // We push in reverse order: SS, RSP, RFLAGS, CS, RIP
+
+        // SS (offset 120 + 32)
+        "mov rax, [rdi + 152]",
+        "push rax",
+        // RSP (offset 120 + 24)
+        "mov rax, [rdi + 144]",
+        "push rax",
+        // RFLAGS (offset 120 + 16)
+        "mov rax, [rdi + 136]",
+        "push rax",
+        // CS (offset 120 + 8)
+        "mov rax, [rdi + 128]",
+        "push rax",
+        // RIP (offset 120 + 0)
+        "mov rax, [rdi + 120]",
+        "push rax",
+
+        // 2. Restore General Purpose Registers
+        // Offsets match GPRegisters struct definition
+        "mov rax, [rdi + 112]",
+        "mov rbx, [rdi + 104]",
+        "mov rcx, [rdi + 96]",
+        "mov rdx, [rdi + 88]",
+        "mov rsi, [rdi + 80]",
+        // Skip rdi (72) for now, it holds our pointer
+        "mov rbp, [rdi + 64]",
+        "mov r8,  [rdi + 56]",
+        "mov r9,  [rdi + 48]",
+        "mov r10, [rdi + 40]",
+        "mov r11, [rdi + 32]",
+        "mov r12, [rdi + 24]",
+        "mov r13, [rdi + 16]",
+        "mov r14, [rdi + 8]",
+        "mov r15, [rdi + 0]",
+
+        // Restore rdi last
+        "mov rdi, [rdi + 72]",
+
+        // 3. Return to userspace
+        "iretq"
+    );
 }
 
 extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFrame) {

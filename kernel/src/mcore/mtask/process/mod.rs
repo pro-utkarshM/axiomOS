@@ -44,6 +44,7 @@ pub mod telemetry;
 
 use crate::mcore::mtask::scheduler::global::GlobalTaskQueue;
 use crate::mem::virt::VirtualMemoryAllocator;
+use crate::arch::UserContext;
 
 pub mod tree;
 
@@ -61,7 +62,7 @@ pub struct Process {
     executable_file_data: RwLock<Option<LowerHalfAllocation<Executable>>>,
     current_working_directory: RwLock<AbsoluteOwnedPath>,
 
-    address_space: Option<AddressSpace>,
+    address_space: RwLock<Option<AddressSpace>>,
     lower_half_memory: Arc<RwLock<VirtualMemoryManager>>,
 
     telemetry: Telemetry,
@@ -83,7 +84,7 @@ impl Process {
                 executable_path: None,
                 executable_file_data: RwLock::new(None),
                 current_working_directory: RwLock::new(ROOT.to_owned()),
-                address_space: None,
+                address_space: RwLock::new(None),
                 lower_half_memory: Arc::new(RwLock::new(VirtualMemoryManager::new(
                     VirtAddr::new(0x00),
                     #[cfg(target_arch = "x86_64")]
@@ -117,7 +118,7 @@ impl Process {
             executable_path: executable_path.map(|x| x.as_ref().to_owned()),
             executable_file_data: RwLock::new(None),
             current_working_directory: RwLock::new(parent.current_working_directory.read().clone()),
-            address_space: Some(address_space),
+            address_space: RwLock::new(Some(address_space)),
             lower_half_memory: Arc::new(RwLock::new(VirtualMemoryManager::new(
                 #[cfg(target_arch = "x86_64")]
                 VirtAddr::new(0xF000),
@@ -195,10 +196,13 @@ impl Process {
         &self.file_descriptors
     }
 
-    pub fn address_space(&self) -> &AddressSpace {
-        self.address_space
-            .as_ref()
-            .unwrap_or(AddressSpace::kernel())
+    pub fn with_address_space<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&AddressSpace) -> R,
+    {
+        let guard = self.address_space.read();
+        let as_ref = guard.as_ref().unwrap_or(AddressSpace::kernel());
+        f(as_ref)
     }
 
     pub fn vmm(self: &Arc<Self>) -> impl VirtualMemoryAllocator {
@@ -216,16 +220,200 @@ impl Process {
     pub fn telemetry(&self) -> &Telemetry {
         &self.telemetry
     }
+
+    /// Forks the process, creating a exact copy of memory and file descriptors.
+    ///
+    /// # Errors
+    /// Returns an error if memory allocation fails.
+    pub fn fork(self: &Arc<Self>, current_task: &Task, ctx: &UserContext) -> Result<Arc<Self>, &'static str> {
+        let name = self.name.clone();
+        let executable_path = self.executable_path.clone();
+
+        // 1. Create basics (this creates new AS, VMM, PID)
+        let child = Self::create_new(
+            self, // Parent is self. (Self is the parent of the child)
+            name,
+            executable_path.as_ref()
+        );
+
+        // 2. Clone File Descriptors
+        {
+            let parent_fds = self.file_descriptors.read();
+            let mut child_fds = child.file_descriptors.write();
+            *child_fds = parent_fds.clone();
+        }
+
+        // 3. Clone Memory Regions (Heap, mmap)
+        {
+            let cloned_regions = self.memory_regions.clone_to_process(&child)?;
+            // We need to replace the child's empty regions with the cloned ones.
+            child.memory_regions.replace_from(cloned_regions);
+        }
+
+        // 4. Clone Executable Data
+        {
+            let parent_exec = self.executable_file_data.read();
+            if let Some(alloc) = parent_exec.as_ref() {
+                let cloned = alloc.clone_to_process(child.clone()).ok_or("Failed to clone executable data")?;
+                *child.executable_file_data.write() = Some(cloned);
+            }
+        }
+
+        // 5. Fork the Task
+        let child_task = Task::fork(&child, current_task, ctx).map_err(|_| "Failed to allocate stack for child task")?;
+        GlobalTaskQueue::enqueue(Box::pin(child_task));
+
+        Ok(child)
+    }
+    /// Replaces the current process image with a new executable.
+    ///
+    /// # Errors
+    /// Returns an error if the executable cannot be loaded or memory allocation fails.
+    pub fn execve(
+        self: &Arc<Self>,
+        current_task: &Task,
+        path: &AbsolutePath,
+        _argv: &[String],
+        _envp: &[String],
+    ) -> Result<(usize, usize), &'static str> {
+        // 1. Open and read the executable file
+        // We do this first before destroying the current process state
+        let node = vfs()
+            .write()
+            .open(path)
+            .map_err(|_| "Failed to open executable")?;
+
+        let mut stat = Stat::default();
+        node.stat(&mut stat).map_err(|_| "Failed to stat executable")?;
+
+        // Read file into a temporary kernel buffer
+        // TODO: This might be too large for kernel heap.
+        // For now, we assume reasonable executable sizes.
+        let mut file_content = alloc::vec![0u8; stat.size as usize];
+        let mut offset = 0;
+        loop {
+            let read = node.read(&mut file_content[offset..], offset).map_err(|_| "Failed to read executable")?;
+            if read == 0 {
+                break;
+            }
+            offset += read;
+        }
+
+        // 2. Clear existing process state
+
+        // Clear task-specific allocations (User stack, TLS)
+        // These allocations (LowerHalfAllocation) will try to unmap from the *current* address space on Drop.
+        // This is what we want.
+        *current_task.ustack().write() = None;
+        *current_task.tls().write() = None;
+
+        // Clear process allocations
+        *self.executable_file_data.write() = None;
+
+        // Clear memory regions (Deallocates physical frames)
+        self.memory_regions.clear();
+
+        // 3. Reset Address Space and VMM
+        {
+            let mut as_guard = self.address_space.write();
+            let mut vmm_guard = self.lower_half_memory.write();
+
+            // Create fresh AddressSpace and VMM
+            *as_guard = Some(AddressSpace::new());
+
+            *vmm_guard = VirtualMemoryManager::new(
+                #[cfg(target_arch = "x86_64")]
+                VirtAddr::new(0xF000),
+                #[cfg(target_arch = "aarch64")]
+                VirtAddr::new(0x1_0000_0000),
+                #[cfg(target_arch = "x86_64")]
+                0x0000_7FFF_FFFF_0FFF,
+                #[cfg(target_arch = "aarch64")]
+                0x0000_007F_0000_0000,
+            );
+        }
+
+        // 4. Load the new executable
+        // We use the same self reference, but now it points to the new AS/VMM
+        let mut memapi = LowerHalfMemoryApi::new(self.clone());
+
+        // Need to verify it's a valid ELF first
+        let elf_file = ElfFile::try_parse(&file_content).map_err(|_| "Invalid ELF file")?;
+
+        let elf_image = ElfLoader::new(memapi.clone())
+            .load(elf_file)
+            .map_err(|_| "Failed to load ELF")?;
+
+        // 5. Setup TLS if present
+        if let Some(master_tls) = elf_image.tls_allocation() {
+            let mut tls_alloc = memapi
+                .allocate(
+                    Location::Anywhere,
+                    master_tls.layout(),
+                    UserAccessible::Yes,
+                    Guarded::No,
+                )
+                .ok_or("Failed to allocate TLS")?;
+
+            let slice = tls_alloc.as_mut();
+            slice.copy_from_slice(master_tls.as_ref());
+
+            #[cfg(target_arch = "x86_64")]
+            FsBase::write(tls_alloc.start());
+            #[cfg(target_arch = "aarch64")]
+            {
+                unsafe {
+                    let val = tls_alloc.start().as_u64();
+                    core::arch::asm!("msr tpidr_el0, {}", in(reg) val);
+                }
+            }
+
+            *current_task.tls().write() = Some(tls_alloc);
+        }
+
+        // 6. Allocate new User Stack
+        let ustack_allocation = memapi
+            .allocate(
+                Location::Anywhere,
+                Layout::from_size_align(
+                    Size4KiB::SIZE.into_usize() * 256, // 1MB stack
+                    Size4KiB::SIZE.into_usize(),
+                )
+                .unwrap(),
+                UserAccessible::Yes,
+                Guarded::Yes,
+            )
+            .ok_or("Failed to allocate user stack")?;
+
+        let ustack_rsp = ustack_allocation.start() + ustack_allocation.len().into_u64();
+        *current_task.ustack().write() = Some(ustack_allocation);
+
+        // TODO: Push argv, envp to stack
+
+        // Update process metadata
+        // self.executable_path is immutable? No, it is Option<AbsoluteOwnedPath>.
+        // Wait, Process definition:
+        // executable_path: Option<AbsoluteOwnedPath>,
+        // It's not wrapped in RwLock. It's immutable after creation?
+        // Ah, Process fields are not all pub or mutable.
+        // We might need interior mutability for executable_path if we want to update it.
+        // For now, we can ignore updating executable_path or use a hack (Interior Mutability is needed).
+        // Let's check struct definition.
+
+        let entry_point = elf_image.entry_point() as usize;
+
+        Ok((entry_point, ustack_rsp.as_u64().into_usize()))
+    }
 }
 
 impl Debug for Process {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct("Process")
-            .field("pid", &self.pid)
+        let mut ds = f.debug_struct("Process");
+        ds.field("pid", &self.pid)
             .field("ppid", &*self.ppid.read())
-            .field("name", &self.name)
-            .field("address_space", self.address_space())
-            .finish_non_exhaustive()
+            .field("name", &self.name);
+        self.with_address_space(|as_| ds.field("address_space", as_));
+        ds.finish_non_exhaustive()
     }
 }
 
@@ -442,7 +630,7 @@ extern "C" fn trampoline(_arg: *mut c_void) {
         // We are entering userspace (EL0).
         // Before entering, we must ensure the process's address space is active.
         unsafe {
-            let ttbr0 = current_process.address_space().ttbr0_value();
+            let ttbr0 = current_process.with_address_space(|as_| as_.ttbr0_value());
             crate::arch::aarch64::paging::set_ttbr0(ttbr0);
 
             crate::arch::aarch64::context::enter_userspace(

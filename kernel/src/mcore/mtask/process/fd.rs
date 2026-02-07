@@ -57,6 +57,16 @@ impl Ord for FileDescriptor {
     }
 }
 
+impl Clone for FileDescriptor {
+    fn clone(&self) -> Self {
+        Self {
+            num: self.num,
+            _flags: RwLock::new(*self._flags.read()),
+            file_description: self.file_description.clone(),
+        }
+    }
+}
+
 impl FileDescriptor {
     pub fn new(
         num: FdNum,

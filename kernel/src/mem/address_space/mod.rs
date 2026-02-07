@@ -43,7 +43,6 @@ pub mod aarch64 {
 
 #[cfg(target_arch = "x86_64")]
 use crate::limine::{HHDM_REQUEST, KERNEL_ADDRESS_REQUEST};
-#[cfg(target_arch = "x86_64")]
 use crate::mem::phys::PhysicalMemory;
 #[cfg(target_arch = "x86_64")]
 use crate::mem::virt::{VirtualMemoryAllocator, VirtualMemoryHigherHalf};
@@ -537,5 +536,96 @@ impl AddressSpace {
         f: F,
     ) -> Result<(), &'static str> {
         self.inner.write().remap_range(pages.into(), &f)
+    }
+
+    /// Creates a deep copy of the address space.
+    ///
+    /// This is used for `fork()`. It creates a new address space and copies all user-space
+    /// mappings and their underlying physical memory.
+    ///
+    /// # Errors
+    /// Returns an error if memory allocation fails.
+    pub fn fork(&self) -> Result<Self, &'static str> {
+        // 1. Create a new empty address space (this sets up kernel mappings)
+        let new_as = Self::new();
+
+        // 2. We need to collect all pages to copy.
+        // We can't map into new_as while iterating because we might need to switch context
+        // (on x86_64) or we just want to batch operations.
+        // Also, we need to handle errors by cleaning up.
+        let mut mappings = alloc::vec::Vec::new();
+        let mut error = None;
+
+        // Ensure we are active so we can read the user pages
+        // (On x86_64, visit_user_pages relies on recursive mapping which requires activation)
+        if !self.is_active() {
+            return Err("Cannot fork inactive address space");
+        }
+
+        self.inner.read().visit_user_pages(|page, frame, flags| {
+            if error.is_some() {
+                return;
+            }
+
+            // Allocate a new physical frame
+            let new_frame = match PhysicalMemory::allocate_frame() {
+                Some(f) => f,
+                None => {
+                    error = Some("Out of physical memory");
+                    return;
+                }
+            };
+
+            // Copy memory content
+            // SAFETY: We are accessing valid physical frames. We use phys_to_virt to map them.
+            // On Axiom, all physical memory is mapped in the higher half.
+            unsafe {
+                let src_ptr = crate::mem::phys_to_virt(frame.start_address().as_u64() as usize) as *const u8;
+                let dst_ptr = crate::mem::phys_to_virt(new_frame.start_address().as_u64() as usize) as *mut u8;
+                core::ptr::copy_nonoverlapping(src_ptr, dst_ptr, Size4KiB::SIZE as usize);
+            }
+
+            mappings.push((page, new_frame, flags));
+        });
+
+        if let Some(e) = error {
+            // Cleanup allocated frames that were meant for the new AS
+            for (_, frame, _) in mappings {
+                PhysicalMemory::deallocate_frame(frame);
+            }
+            return Err(e);
+        }
+
+        // 3. Map the new frames into the new address space
+        let res = new_as.with_active(|active_as| {
+            for (page, frame, flags) in mappings {
+                 // On x86_64, `map` returns Result<(), MapToError>. On AArch64, Result<(), &str>
+                 #[cfg(target_arch = "x86_64")]
+                 if active_as.map(page, frame, flags).is_err() {
+                     return Err("Failed to map page");
+                 }
+
+                 #[cfg(target_arch = "aarch64")]
+                 if active_as.map(page, frame, flags).is_err() {
+                     return Err("Failed to map page");
+                 }
+            }
+            Ok(())
+        });
+
+        match res {
+            Ok(_) => Ok(new_as),
+            Err(e) => {
+                // If mapping failed, we should cleanup.
+                // The mappings vec has all the frames we allocated.
+                // Note: frames that were successfully mapped will be owned by new_as?
+                // AddressSpace doesn't strictly track ownership of frames for Drop yet (TODO),
+                // so we probably need to manually free them if we are discarding new_as.
+                // But finding which ones were mapped is hard.
+                // For MVP, we might leak on map error.
+                // But map error is unlikely if we pre-allocated frames.
+                Err(e)
+            }
+        }
     }
 }

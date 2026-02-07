@@ -19,11 +19,29 @@ impl Default for MemoryRegions {
     }
 }
 
+use alloc::sync::Arc;
+use crate::mcore::mtask::process::Process;
+use crate::mem::virt::VirtualMemoryAllocator;
+use crate::arch::types::{PageSize, Size4KiB, PageTableFlags};
+
 impl MemoryRegions {
     pub fn new() -> Self {
         Self {
             regions: Mutex::new(Vec::new()),
         }
+    }
+
+    pub fn clone_to_process(&self, new_process: &Arc<Process>) -> Result<Self, &'static str> {
+        let mut new_regions = Vec::new();
+        let guard = self.regions.lock();
+
+        for region in guard.iter() {
+            new_regions.push(region.clone_to_process(new_process)?);
+        }
+
+        Ok(Self {
+            regions: Mutex::new(new_regions),
+        })
     }
 
     pub fn add_region(&self, region: MemoryRegion) {
@@ -56,6 +74,23 @@ impl MemoryRegions {
             .lock()
             .iter()
             .any(|r| r.addr() <= addr && r.addr() + r.size().into_u64() > addr)
+    }
+
+    pub fn replace_from(&self, other: MemoryRegions) {
+        let mut guard = self.regions.lock();
+        let mut other_guard = other.regions.lock();
+        // Since other is typically a newly created local variable (from clone_to_process),
+        // we can take its contents.
+        // But Mutex doesn't allow moving out easily if we only have &self.
+        // However, `other` in `fork` is `cloned_regions`, which we own.
+        // But `replace_from` takes `other: MemoryRegions` (owned).
+        // But `regions` is private in `MemoryRegions`.
+        // We can just swap vectors if we want.
+        core::mem::swap(&mut *guard, &mut *other_guard);
+    }
+
+    pub fn clear(&self) {
+        self.regions.lock().clear();
     }
 }
 
@@ -91,6 +126,14 @@ impl MemoryRegion {
         }
     }
 
+    pub fn clone_to_process(&self, new_process: &Arc<Process>) -> Result<Self, &'static str> {
+        match self {
+            MemoryRegion::Mapped(r) => Ok(MemoryRegion::Mapped(r.clone_to_process(new_process)?)),
+            MemoryRegion::Lazy(r) => Ok(MemoryRegion::Lazy(r.clone_to_process(new_process)?)),
+            MemoryRegion::FileBacked(r) => Ok(MemoryRegion::FileBacked(r.clone_to_process(new_process)?)),
+        }
+    }
+
     pub fn size(&self) -> usize {
         match self {
             MemoryRegion::Lazy(lazy_memory_region) => lazy_memory_region.size,
@@ -111,6 +154,79 @@ impl MemoryRegion {
         // SAFETY: The memory region represents valid memory with the tracked size.
         // We assume the caller ensures the memory is accessible and we have exclusive access.
         unsafe { slice::from_raw_parts_mut(self.addr().as_mut_ptr(), self.size()) }
+    }
+}
+
+use crate::mem::phys_to_virt;
+
+impl MappedMemoryRegion {
+    pub fn clone_to_process(&self, new_process: &Arc<Process>) -> Result<Self, &'static str> {
+        // 1. Reserve segment in new process
+        let new_segment_inner = kernel_virtual_memory::Segment::new(
+            self.segment.start,
+            self.segment.len
+        );
+
+        let new_segment = new_process.vmm().mark_as_reserved(new_segment_inner)
+            .map_err(|_| "Failed to reserve segment in new process")?;
+
+        // 2. Allocate new physical frames (must be contiguous for MappedMemoryRegion)
+        // actually self.segment should be page aligned and size covered.
+        // self.physical_frames covers the whole segment?
+        // Let's use the count from physical_frames.
+        let frame_count = self.physical_frames.end.start_address().as_u64() / Size4KiB::SIZE - self.physical_frames.start.start_address().as_u64() / Size4KiB::SIZE + 1;
+
+        let new_frames = PhysicalMemory::allocate_frames::<Size4KiB>(frame_count as usize)
+            .ok_or("Out of physical memory")?;
+
+        // 3. Copy data
+        for (i, frame) in new_frames.clone().into_iter().enumerate() {
+            // Calculate source virtual address
+            let src_vaddr = self.segment.start + (i as u64 * Size4KiB::SIZE);
+            let src_ptr = src_vaddr.as_ptr::<u8>();
+
+            // Calculate dest physical -> virtual address (direct map)
+            let dst_paddr = frame.start_address().as_u64();
+            let dst_vaddr = phys_to_virt(dst_paddr as usize);
+            let dst_ptr = dst_vaddr as *mut u8;
+
+            unsafe {
+                core::ptr::copy_nonoverlapping(src_ptr, dst_ptr, Size4KiB::SIZE as usize);
+            }
+        }
+
+        // 4. Map in new process
+        // We assume typical user permissions (RW).
+        // TODO: Ideally we should preserve original permissions.
+        let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::USER_ACCESSIBLE | PageTableFlags::NO_EXECUTE;
+
+        new_process.with_address_space(|as_| as_.map_range(
+            &*new_segment,
+            new_frames.clone().into_iter(),
+            flags
+        )).map_err(|_| "Failed to map memory in new process")?;
+
+        Ok(MappedMemoryRegion {
+            segment: new_segment,
+            size: self.size,
+            physical_frames: new_frames,
+        })
+    }
+}
+
+impl LazyMemoryRegion {
+    pub fn clone_to_process(&self, _new_process: &Arc<Process>) -> Result<Self, &'static str> {
+        // TODO: Implement proper deep copy for Lazy regions.
+        // For now, since we only use Eager allocation (Mapped), this is less critical.
+        // But if we encounter one, we shouldn't fail silently or panic?
+        // Let's return error for now as it's not supported.
+        Err("Forking LazyMemoryRegion not implemented")
+    }
+}
+
+impl FileBackedMemoryRegion {
+    pub fn clone_to_process(&self, _new_process: &Arc<Process>) -> Result<Self, &'static str> {
+        Err("Forking FileBackedMemoryRegion not implemented")
     }
 }
 

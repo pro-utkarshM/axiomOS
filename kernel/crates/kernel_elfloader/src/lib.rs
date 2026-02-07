@@ -190,4 +190,8 @@ where
     pub fn tls_allocation(&self) -> Option<&M::ReadonlyAllocation> {
         self.tls_allocation.as_ref()
     }
+
+    pub fn entry_point(&self) -> usize {
+        self.elf_file.entry()
+    }
 }

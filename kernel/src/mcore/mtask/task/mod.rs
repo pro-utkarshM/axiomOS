@@ -14,6 +14,7 @@ use log::trace;
 use spin::RwLock;
 
 use crate::U64Ext;
+use crate::arch::UserContext;
 use crate::mcore::context::ExecutionContext;
 use crate::mcore::mtask::process::Process;
 use crate::mem::memapi::{LowerHalfAllocation, Writable};
@@ -248,6 +249,91 @@ impl Task {
 
     pub fn kstack(&self) -> &Option<HigherHalfStack> {
         &self.kstack
+    }
+
+    /// Forks the current task into a new process.
+    ///
+    /// This creates a new task that is a copy of the current one, but running in the context
+    /// of the new process.
+    pub fn fork(
+        process: &Arc<Process>,
+        parent_task: &Task,
+        user_context: &UserContext,
+    ) -> Result<Self, StackAllocationError> {
+        // 1. Allocate kernel stack for the new task
+        // We use allocate_fork which sets up the stack to return to userspace via restore_user_context
+        let stack = HigherHalfStack::allocate_fork(16, user_context)?;
+
+        let tid = TaskId::new();
+        let name = format!("task-{tid}");
+        let should_terminate = AtomicBool::new(false);
+        let state = State::Ready;
+        let last_stack_ptr = Box::pin(stack.initial_rsp().as_u64().into_usize());
+        let links = Links::default();
+
+        // 2. Clone user stack if present
+        let ustack = {
+            let parent_ustack = parent_task.ustack.read();
+            if let Some(alloc) = parent_ustack.as_ref() {
+                let cloned = alloc
+                    .clone_to_process(process.clone())
+                    .ok_or(StackAllocationError::OutOfPhysicalMemory)?;
+                Some(cloned)
+            } else {
+                None
+            }
+        };
+
+        // 3. Clone TLS if present
+        let tls = {
+            let parent_tls = parent_task.tls.read();
+            if let Some(alloc) = parent_tls.as_ref() {
+                let cloned = alloc
+                    .clone_to_process(process.clone())
+                    .ok_or(StackAllocationError::OutOfPhysicalMemory)?;
+                Some(cloned)
+            } else {
+                None
+            }
+        };
+
+        // 4. Clone FPU area if present
+        let fx_area = {
+            let parent_fx_area_guard = parent_task.fx_area.write();
+            if let Some(alloc) = parent_fx_area_guard.as_ref() {
+                // Force save FPU state if on x86_64 to ensure we copy the latest state
+                #[cfg(target_arch = "x86_64")]
+                {
+                    // SAFETY: We are writing to the FPU save area which we own and have locked.
+                    // The allocation is guaranteed to be 16-byte aligned.
+                    unsafe {
+                        let ptr = alloc.start().as_mut_ptr::<u8>();
+                        core::arch::x86_64::_fxsave(ptr);
+                    }
+                }
+
+                let cloned = alloc
+                    .clone_to_process(process.clone())
+                    .ok_or(StackAllocationError::OutOfPhysicalMemory)?;
+                Some(cloned)
+            } else {
+                None
+            }
+        };
+
+        Ok(Self {
+            tid,
+            name,
+            process: process.clone(),
+            should_terminate,
+            last_stack_ptr,
+            state,
+            kstack: Some(stack),
+            ustack: RwLock::new(ustack),
+            tls: RwLock::new(tls),
+            fx_area: RwLock::new(fx_area),
+            links,
+        })
     }
 
     pub fn ustack(&self) -> &RwLock<Option<LowerHalfAllocation<Writable>>> {

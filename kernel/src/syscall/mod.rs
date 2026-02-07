@@ -43,13 +43,18 @@ fn hlt() {
 
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 mod access;
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+mod process;
 pub mod bpf;
 #[cfg(all(target_arch = "aarch64", feature = "rpi5"))]
 pub mod pwm;
 mod validation;
 
+use crate::arch::UserContext;
+
 #[must_use]
 pub fn dispatch_syscall(
+    ctx: &mut UserContext,
     n: usize,
     arg1: usize,
     arg2: usize,
@@ -145,6 +150,9 @@ pub fn dispatch_syscall(
         kernel_abi::SYS_CLOCK_GETTIME => dispatch_sys_clock_gettime(arg1, arg2),
         kernel_abi::SYS_NANOSLEEP => dispatch_sys_nanosleep(arg1, arg2),
         kernel_abi::SYS_SPAWN => dispatch_sys_spawn(arg1, arg2),
+        kernel_abi::SYS_FORK => dispatch_sys_fork(ctx),
+        kernel_abi::SYS_EXECVE => dispatch_sys_execve(ctx, arg1, arg2, arg3),
+        kernel_abi::SYS_WAITPID => dispatch_sys_waitpid(arg1, arg2, arg3),
         _ => {
             error!("unimplemented syscall: {} ({n})", syscall_name(n));
             loop {
@@ -613,5 +621,35 @@ fn dispatch_sys_spawn(path_ptr: usize, path_len: usize) -> Result<usize, Errno> 
 
 #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
 fn dispatch_sys_spawn(_path: usize, _len: usize) -> Result<usize, Errno> {
+    Err(EINVAL)
+}
+
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+fn dispatch_sys_fork(ctx: &UserContext) -> Result<usize, Errno> {
+    process::sys_fork(ctx)
+}
+
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+fn dispatch_sys_execve(ctx: &mut UserContext, path: usize, argv: usize, envp: usize) -> Result<usize, Errno> {
+    process::sys_execve(ctx, path, argv, envp)
+}
+
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+fn dispatch_sys_waitpid(pid: usize, status: usize, options: usize) -> Result<usize, Errno> {
+    process::sys_waitpid(pid as isize, status, options)
+}
+
+#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+fn dispatch_sys_fork(_ctx: &UserContext) -> Result<usize, Errno> {
+    Err(EINVAL)
+}
+
+#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+fn dispatch_sys_execve(_ctx: &mut UserContext, _path: usize, _argv: usize, _envp: usize) -> Result<usize, Errno> {
+    Err(EINVAL)
+}
+
+#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+fn dispatch_sys_waitpid(_pid: usize, _status: usize, _options: usize) -> Result<usize, Errno> {
     Err(EINVAL)
 }
