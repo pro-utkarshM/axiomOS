@@ -24,6 +24,8 @@ use crate::arch::types::{
 
 #[cfg(target_arch = "x86_64")]
 use crate::arch::types::Size4KiB;
+#[cfg(target_arch = "aarch64")]
+use crate::arch::types::Size4KiB;
 
 #[cfg(target_arch = "aarch64")]
 pub mod aarch64 {

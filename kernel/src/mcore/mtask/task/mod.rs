@@ -170,6 +170,15 @@ impl Task {
             task.set_should_terminate(true);
         }
 
+        // Disable interrupts and reschedule away from this terminated task.
+        #[cfg(all(target_arch = "aarch64", feature = "aarch64_arch"))]
+        {
+            use crate::arch::traits::Architecture;
+            crate::arch::aarch64::Aarch64::disable_interrupts();
+            unsafe {
+                ExecutionContext::load().scheduler_mut().reschedule();
+            }
+        }
         loop {
             #[cfg(target_arch = "x86_64")]
             x86_64::instructions::hlt();

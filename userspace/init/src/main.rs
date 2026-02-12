@@ -16,10 +16,10 @@ pub extern "C" fn _start() -> ! {
     write(1, b"\n");
     // let magic = minilib::syscall0(999);
     // print_num(magic as u64);
-    let r0 = minilib::syscall_debug(999);
-    write(1, b"r0: ");
-    print_num(r0 as u64);
-    write(1, b"\n");
+    // let r0 = minilib::syscall_debug(999);
+    // write(1, b"r0: ");
+    // print_num(r0 as u64);
+    // write(1, b"\n");
 
     // Spawn fork_test
     write(1, b"Spawning /bin/fork_test...\n");
@@ -37,6 +37,10 @@ pub extern "C" fn _start() -> ! {
         // Let's just let it run.
     }
 
+    loop {
+        minilib::pause();
+    }
+/*
     use kernel_abi::BpfAttr;
     use minilib::bpf;
 
@@ -264,6 +268,7 @@ pub extern "C" fn _start() -> ! {
 
         minilib::pause();
     }
+*/
 }
 
 fn print_num(mut n: u64) {

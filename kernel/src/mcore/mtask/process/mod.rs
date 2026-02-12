@@ -3,6 +3,7 @@ use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
 use alloc::string::{String, ToString};
 use alloc::sync::Arc;
+use alloc::vec::Vec;
 use core::alloc::Layout;
 use core::ffi::c_void;
 use core::fmt::{Debug, Formatter};
@@ -33,7 +34,7 @@ use crate::mcore::mtask::process::telemetry::Telemetry;
 use crate::mcore::mtask::process::tree::process_tree;
 use crate::mcore::mtask::task::{HigherHalfStack, StackAllocationError, Task};
 use crate::mem::address_space::AddressSpace;
-use crate::mem::memapi::{Executable, LowerHalfAllocation, LowerHalfMemoryApi};
+use crate::mem::memapi::{Executable, LowerHalfAllocation, LowerHalfMemoryApi, Readonly, Writable};
 use crate::{U64Ext, UsizeExt};
 
 pub mod fd;
@@ -47,6 +48,28 @@ use crate::mem::virt::VirtualMemoryAllocator;
 use crate::arch::UserContext;
 
 pub mod tree;
+
+struct ElfSegments {
+    executable: Vec<LowerHalfAllocation<Executable>>,
+    readonly: Vec<LowerHalfAllocation<Readonly>>,
+    writable: Vec<LowerHalfAllocation<Writable>>,
+}
+
+impl ElfSegments {
+    fn new() -> Self {
+        Self {
+            executable: Vec::new(),
+            readonly: Vec::new(),
+            writable: Vec::new(),
+        }
+    }
+
+    fn clear(&mut self) {
+        self.executable.clear();
+        self.readonly.clear();
+        self.writable.clear();
+    }
+}
 
 static ROOT_PROCESS: OnceCell<Arc<Process>> = OnceCell::uninit();
 
@@ -70,6 +93,8 @@ pub struct Process {
     memory_regions: MemoryRegions,
 
     file_descriptors: RwLock<BTreeMap<FdNum, FileDescriptor>>,
+
+    elf_segments: RwLock<ElfSegments>,
 }
 
 impl Process {
@@ -95,6 +120,7 @@ impl Process {
                 telemetry: Telemetry::default(),
                 memory_regions: MemoryRegions::new(),
                 file_descriptors: RwLock::new(BTreeMap::new()),
+                elf_segments: RwLock::new(ElfSegments::new()),
             });
             process_tree().write().processes.insert(pid, root.clone());
             root
@@ -132,6 +158,7 @@ impl Process {
             telemetry: Telemetry::default(),
             memory_regions: MemoryRegions::new(),
             file_descriptors: RwLock::new(BTreeMap::new()),
+            elf_segments: RwLock::new(ElfSegments::new()),
         };
 
         let res = Arc::new(process);
@@ -259,7 +286,34 @@ impl Process {
             }
         }
 
-        // 5. Fork the Task
+        // 4b. Clone ELF Segment Allocations (code, rodata, data loaded by ELF loader)
+        {
+            let parent_segs = self.elf_segments.read();
+            let mut child_segs = child.elf_segments.write();
+            for alloc in &parent_segs.executable {
+                child_segs.executable.push(
+                    alloc.clone_to_process(child.clone())
+                        .ok_or("Failed to clone executable ELF segment")?
+                );
+            }
+            for alloc in &parent_segs.readonly {
+                child_segs.readonly.push(
+                    alloc.clone_to_process(child.clone())
+                        .ok_or("Failed to clone readonly ELF segment")?
+                );
+            }
+            for alloc in &parent_segs.writable {
+                child_segs.writable.push(
+                    alloc.clone_to_process(child.clone())
+                        .ok_or("Failed to clone writable ELF segment")?
+                );
+            }
+        }
+
+        // 5. Register child in process tree
+        self.children_mut().insert(child.clone());
+
+        // 6. Fork the Task
         let child_task = Task::fork(&child, current_task, ctx).map_err(|_| "Failed to allocate stack for child task")?;
         GlobalTaskQueue::enqueue(Box::pin(child_task));
 
@@ -310,6 +364,9 @@ impl Process {
         // Clear process allocations
         *self.executable_file_data.write() = None;
 
+        // Clear ELF segment allocations (unmaps from current AS before reset)
+        self.elf_segments.write().clear();
+
         // Clear memory regions (Deallocates physical frames)
         self.memory_regions.clear();
 
@@ -344,8 +401,11 @@ impl Process {
             .load(elf_file)
             .map_err(|_| "Failed to load ELF")?;
 
+        let entry_point = elf_image.entry_point() as usize;
+        let (exec_allocs, mut ro_allocs, wr_allocs, tls_master) = elf_image.into_inner();
+
         // 5. Setup TLS if present
-        if let Some(master_tls) = elf_image.tls_allocation() {
+        if let Some(ref master_tls) = tls_master {
             let mut tls_alloc = memapi
                 .allocate(
                     Location::Anywhere,
@@ -388,19 +448,16 @@ impl Process {
         let ustack_rsp = ustack_allocation.start() + ustack_allocation.len().into_u64();
         *current_task.ustack().write() = Some(ustack_allocation);
 
-        // TODO: Push argv, envp to stack
-
-        // Update process metadata
-        // self.executable_path is immutable? No, it is Option<AbsoluteOwnedPath>.
-        // Wait, Process definition:
-        // executable_path: Option<AbsoluteOwnedPath>,
-        // It's not wrapped in RwLock. It's immutable after creation?
-        // Ah, Process fields are not all pub or mutable.
-        // We might need interior mutability for executable_path if we want to update it.
-        // For now, we can ignore updating executable_path or use a hack (Interior Mutability is needed).
-        // Let's check struct definition.
-
-        let entry_point = elf_image.entry_point() as usize;
+        // Store ELF segment allocations so they aren't dropped
+        {
+            let mut segs = self.elf_segments.write();
+            segs.executable = exec_allocs;
+            if let Some(tls) = tls_master {
+                ro_allocs.push(tls);
+            }
+            segs.readonly = ro_allocs;
+            segs.writable = wr_allocs;
+        }
 
         Ok((entry_point, ustack_rsp.as_u64().into_usize()))
     }
@@ -505,7 +562,9 @@ extern "C" fn trampoline(_arg: *mut c_void) {
         .expect("should be able to load elf file");
     log::info!("Trampoline: ELF loaded");
 
-    if let Some(master_tls) = elf_image.tls_allocation() {
+    let (exec_allocs, mut ro_allocs, wr_allocs, tls_master) = elf_image.into_inner();
+
+    if let Some(ref master_tls) = tls_master {
         log::info!("Trampoline: setting up TLS");
         let mut tls_alloc = memapi
             .allocate(
@@ -535,6 +594,17 @@ extern "C" fn trampoline(_arg: *mut c_void) {
             assert!(guard.is_none(), "TLS should not exist yet");
             *guard = Some(tls_alloc);
         }
+    }
+
+    // Store ELF segment allocations in the process so they survive and can be cloned during fork
+    {
+        let mut segs = current_process.elf_segments.write();
+        segs.executable = exec_allocs;
+        if let Some(tls) = tls_master {
+            ro_allocs.push(tls);
+        }
+        segs.readonly = ro_allocs;
+        segs.writable = wr_allocs;
     }
 
     log::info!("Trampoline: allocating user stack");

@@ -72,11 +72,12 @@ pub fn sys_execve(ctx: &mut UserContext, path_ptr: usize, argv_ptr: usize, envp_
 
             #[cfg(target_arch = "aarch64")]
             {
-                ctx.elr = entry_point as u64;
+                ctx.inner.elr = entry_point as u64;
                 ctx.sp = sp as u64;
-                ctx.x0 = 0; // argc
-                ctx.x1 = 0; // argv
-                ctx.x2 = 0; // envp
+                ctx.inner.sp_el0 = sp as u64;
+                ctx.inner.x0 = 0; // argc
+                ctx.inner.x1 = 0; // argv
+                ctx.inner.x2 = 0; // envp
                 // Clear other registers...
             }
 
@@ -151,11 +152,17 @@ pub fn sys_waitpid(pid: isize, status_ptr: usize, options: usize) -> Result<usiz
             return Ok(0);
         }
 
-        // Basic yield/sleep loop
+        // Yield to scheduler so other tasks (including our child) can run.
         // TODO: Use a proper wait queue when available
         #[cfg(target_arch = "x86_64")]
         x86_64::instructions::interrupts::enable_and_hlt();
         #[cfg(target_arch = "aarch64")]
-        unsafe { core::arch::asm!("wfi") };
+        // SAFETY: Interrupts are disabled during syscall handling. Reschedule
+        // switches to another task; when we're rescheduled, we re-check the child.
+        unsafe {
+            crate::mcore::context::ExecutionContext::load()
+                .scheduler_mut()
+                .reschedule();
+        }
     }
 }

@@ -194,4 +194,18 @@ where
     pub fn entry_point(&self) -> usize {
         self.elf_file.entry()
     }
+
+    pub fn into_inner(self) -> (
+        Vec<M::ExecutableAllocation>,
+        Vec<M::ReadonlyAllocation>,
+        Vec<M::WritableAllocation>,
+        Option<M::ReadonlyAllocation>,
+    ) {
+        (
+            self.executable_allocations,
+            self.readonly_allocations,
+            self.writable_allocations,
+            self.tls_allocation,
+        )
+    }
 }

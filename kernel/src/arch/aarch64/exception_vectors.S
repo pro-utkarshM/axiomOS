@@ -46,11 +46,17 @@ irq_stack_top:
     mrs     x9, elr_el1
     mrs     x10, spsr_el1
     stp     x9, x10, [sp, #248]
+
+    mrs     x9, sp_el0
+    str     x9, [sp, #264]
 .endm
 
 // Macro to restore context
 // Restores x0-x30, ELR_EL1, SPSR_EL1 and frees stack space
 .macro restore_context
+    ldr     x9, [sp, #264]
+    msr     sp_el0, x9
+
     ldp     x9, x10, [sp, #248]
     msr     elr_el1, x9
     msr     spsr_el1, x10
@@ -139,15 +145,17 @@ curr_el_spx_sync_handler:
     save_context
     mov     x0, sp
     bl      handle_sync_exception
+    mov     x0, sp
     bl      check_preemption
     restore_context
-    
+
     eret
 
 curr_el_spx_irq_handler:
     save_context
     mov     x0, sp
     bl      handle_irq
+    mov     x0, sp
     bl      check_preemption
     restore_context
     eret
@@ -159,6 +167,7 @@ lower_el_aarch64_sync_handler:
     save_context
     mov     x0, sp
     bl      handle_sync_exception
+    mov     x0, sp
     bl      check_preemption
     restore_context
     eret
@@ -167,6 +176,7 @@ lower_el_aarch64_irq_handler:
     save_context
     mov     x0, sp
     bl      handle_irq
+    mov     x0, sp
     bl      check_preemption
     restore_context
     eret

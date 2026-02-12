@@ -18,7 +18,7 @@ else
 fi
 
 # Build the kernel for QEMU virt
-cargo build --target aarch64-unknown-none --features virt -p kernel
+cargo build --target aarch64-unknown-none --features virt,cloud-profile -p kernel
 
 # Run in QEMU
 # Added virtio-blk-device for disk.img

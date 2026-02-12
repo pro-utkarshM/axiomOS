@@ -348,38 +348,38 @@ impl AddressSpaceMapper {
             // On AArch64, user space is TTBR0.
             // We walk the table at self.level0_vaddr
             // This is a simplified walker assuming 4KB pages and 4 levels (L0-L3)
-            use crate::arch::aarch64::paging::{Descriptor, DescriptorType};
+            use crate::arch::aarch64::paging::PageTableEntry;
 
             // L0 table (512 entries)
-            let l0_table = unsafe { core::slice::from_raw_parts(self.level0_vaddr.as_ptr::<Descriptor>(), 512) };
+            let l0_table = unsafe { core::slice::from_raw_parts(self.level0_vaddr.as_ptr::<PageTableEntry>(), 512) };
 
             for (i, entry) in l0_table.iter().enumerate() {
-                if entry.is_valid() && entry.descriptor_type() == DescriptorType::Table {
-                    let l1_phys = entry.output_address();
+                if entry.is_valid() && entry.is_table() {
+                    let l1_phys = entry.addr();
                     let l1_virt = crate::mem::phys_to_virt(l1_phys);
-                    let l1_table = unsafe { core::slice::from_raw_parts(VirtAddr::new(l1_virt as u64).as_ptr::<Descriptor>(), 512) };
+                    let l1_table = unsafe { core::slice::from_raw_parts(VirtAddr::new(l1_virt as u64).as_ptr::<PageTableEntry>(), 512) };
 
                     for (j, entry) in l1_table.iter().enumerate() {
-                        if entry.is_valid() && entry.descriptor_type() == DescriptorType::Table {
-                            let l2_phys = entry.output_address();
+                        if entry.is_valid() && entry.is_table() {
+                            let l2_phys = entry.addr();
                             let l2_virt = crate::mem::phys_to_virt(l2_phys);
-                            let l2_table = unsafe { core::slice::from_raw_parts(VirtAddr::new(l2_virt as u64).as_ptr::<Descriptor>(), 512) };
+                            let l2_table = unsafe { core::slice::from_raw_parts(VirtAddr::new(l2_virt as u64).as_ptr::<PageTableEntry>(), 512) };
 
                             for (k, entry) in l2_table.iter().enumerate() {
-                                if entry.is_valid() && entry.descriptor_type() == DescriptorType::Table {
-                                    let l3_phys = entry.output_address();
+                                if entry.is_valid() && entry.is_table() {
+                                    let l3_phys = entry.addr();
                                     let l3_virt = crate::mem::phys_to_virt(l3_phys);
-                                    let l3_table = unsafe { core::slice::from_raw_parts(VirtAddr::new(l3_virt as u64).as_ptr::<Descriptor>(), 512) };
+                                    let l3_table = unsafe { core::slice::from_raw_parts(VirtAddr::new(l3_virt as u64).as_ptr::<PageTableEntry>(), 512) };
 
                                     for (l, entry) in l3_table.iter().enumerate() {
-                                        if entry.is_valid() && entry.descriptor_type() == DescriptorType::Page {
+                                        if entry.is_valid() {
                                             // Calculate virtual address
                                             // 48-bit address: 9 bits per level + 12 bits offset
                                             // L0: 47..39, L1: 38..30, L2: 29..21, L3: 20..12
                                             let virt = ((i as u64) << 39) | ((j as u64) << 30) | ((k as u64) << 21) | ((l as u64) << 12);
                                             let page = Page::containing_address(VirtAddr::new(virt));
-                                            let frame = PhysFrame::containing_address(PhysAddr::new(entry.output_address() as u64));
-                                            let flags = PageTableFlags::from_pte_bits(entry.0);
+                                            let frame = PhysFrame::containing_address(PhysAddr::new(entry.addr() as u64));
+                                            let flags = PageTableFlags::from_pte_bits(entry.raw());
                                             callback(page, frame, flags);
                                         }
                                     }

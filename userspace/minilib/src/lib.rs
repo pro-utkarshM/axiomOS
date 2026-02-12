@@ -19,20 +19,22 @@ unsafe fn do_syscall(
     x5: usize,
 ) -> usize {
     let ret: usize;
-    asm!(
-        "svc #0",
-        in("x8") n,
-        inout("x0") x0 => ret,
-        in("x1") x1,
-        in("x2") x2,
-        in("x3") x3,
-        in("x4") x4,
-        in("x5") x5,
-        out("x6") _, out("x7") _, out("x9") _, out("x10") _,
-        out("x11") _, out("x12") _, out("x13") _, out("x14") _,
-        out("x15") _, out("x16") _, out("x17") _, out("x18") _,
-        out("x30") _,
-    );
+    unsafe {
+        asm!(
+            "svc #0",
+            in("x8") n,
+            inout("x0") x0 => ret,
+            in("x1") x1,
+            in("x2") x2,
+            in("x3") x3,
+            in("x4") x4,
+            in("x5") x5,
+            out("x6") _, out("x7") _, out("x9") _, out("x10") _,
+            out("x11") _, out("x12") _, out("x13") _, out("x14") _,
+            out("x15") _, out("x16") _, out("x17") _, out("x18") _,
+            out("x30") _,
+        );
+    }
     ret
 }
 

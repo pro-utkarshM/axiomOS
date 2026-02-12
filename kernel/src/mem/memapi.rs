@@ -303,6 +303,19 @@ impl<T: AllocationType> LowerHalfAllocation<T> {
             unsafe {
                 core::ptr::copy_nonoverlapping(src_ptr, dst_ptr, Size4KiB::SIZE as usize);
             }
+
+            #[cfg(target_arch = "aarch64")]
+            if !T::flags().contains(PageTableFlags::NO_EXECUTE) {
+                // Sync caches for the destination page to ensure I-cache sees the written instructions.
+                // We use the Kernel VA (dst_vaddr) which maps to the same physical address.
+                // Note: We need to declare the external function.
+                unsafe {
+                    extern "C" {
+                        fn aarch64_jit_sync_cache(start: usize, len: usize);
+                    }
+                    aarch64_jit_sync_cache(dst_vaddr, Size4KiB::SIZE as usize);
+                }
+            }
         }
 
         // 4. Map in new process address space

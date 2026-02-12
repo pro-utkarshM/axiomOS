@@ -302,11 +302,11 @@ pub unsafe extern "C" fn restore_user_context(ctx: *const crate::arch::UserConte
     core::arch::naked_asm!(
         // x0 points to UserContext
         // UserContext layout:
-        // inner: ExceptionContext (offset 0, size 264)
-        // sp: u64 (offset 264)
+        // inner: ExceptionContext (offset 0, size 272)
+        // sp: u64 (offset 272)
 
         // 1. Restore sp_el0
-        "ldr x1, [x0, #264]",
+        "ldr x1, [x0, #272]",
         "msr sp_el0, x1",
 
         // 2. Restore ELR, SPSR

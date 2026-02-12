@@ -82,7 +82,7 @@ impl Scheduler {
                 return;
             };
 
-            // log::info!("reschedule: switching to task {}", next_task.id());
+            log::info!("reschedule: switching to task {}", next_task.id());
 
             #[cfg(target_arch = "x86_64")]
             let cr3_value = next_task.process().with_address_space(|as_| as_.cr3_value());

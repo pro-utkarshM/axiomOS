@@ -47,12 +47,13 @@ unsafe extern "C" {
 
 /// Check for preemption and reschedule if necessary
 ///
-/// This is called from the exception return path.
+/// This is called from the exception return path. Assembly passes `sp`
+/// (the exception frame pointer) in x0 to satisfy the ABI, but we do
+/// not currently need it.
 #[unsafe(no_mangle)]
-pub extern "C" fn check_preemption() {
+pub extern "C" fn check_preemption(_frame: *mut ExceptionContext) {
     if let Some(ctx) = crate::arch::aarch64::cpu::try_current() {
         if ctx.check_and_clear_reschedule() {
-            log::trace!("check_preemption: rescheduling");
             // SAFETY: We are in the exception return path, interrupts are disabled.
             // It is safe to call reschedule here as we haven't started restoring registers yet.
             unsafe {
@@ -85,18 +86,12 @@ pub extern "C" fn handle_sync_exception(ctx: &mut ExceptionContext) {
     let ec = (esr >> 26) & 0x3F; // Exception class
     let iss = esr & 0x1FFFFFF; // Instruction specific syndrome
 
-    let spsr: u64;
-    unsafe {
-        asm!("mrs {}, spsr_el1", out(reg) spsr);
-    }
-
-    log::info!("Sync exception: EC={:#x}, ISS={:#x}, ELR={:#x}, FAR={:#x}, SPSR={:#x}", ec, iss, elr, far, spsr);
+    log::debug!("Sync exception: EC={:#x}, ISS={:#x}, ELR={:#x}, FAR={:#x}", ec, iss, elr, far);
 
     match ec {
         0x15 => {
             // SVC instruction execution in AArch64 state
             crate::arch::aarch64::syscall::handle_syscall(ctx);
-            log::info!("handle_sync_exception: syscall returned, ctx.x0={}", ctx.x0);
         }
         0x20 | 0x21 => {
             // Instruction abort from lower/same EL
@@ -370,6 +365,7 @@ pub struct ExceptionContext {
     pub x30: u64, // Link register
 
     // Exception state
-    pub elr: u64,  // Exception link register
-    pub spsr: u64, // Saved program status register
+    pub elr: u64,   // Exception link register
+    pub spsr: u64,  // Saved program status register
+    pub sp_el0: u64, // User stack pointer (saved from SP_EL0)
 }

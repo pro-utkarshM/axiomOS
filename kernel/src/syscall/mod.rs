@@ -19,7 +19,7 @@ use kernel_vfs::path::AbsolutePath;
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 use crate::mcore::mtask::process::Process;
-use log::{error, trace};
+use log::{error, info, trace};
 #[cfg(target_arch = "x86_64")]
 use x86_64::instructions::hlt;
 
@@ -63,7 +63,7 @@ pub fn dispatch_syscall(
     arg5: usize,
     arg6: usize,
 ) -> isize {
-    trace!(
+    info!(
         "syscall: {} ({n}) {arg1} {arg2} {arg3} {arg4} {arg5} {arg6}",
         syscall_name(n)
     );
@@ -100,10 +100,15 @@ pub fn dispatch_syscall(
         #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
         kernel_abi::SYS_EXIT => {
             let status = i32::try_from(arg1).unwrap_or(0);
-            let task = crate::mcore::context::ExecutionContext::load().current_task();
+            let ctx = crate::mcore::context::ExecutionContext::load();
+            let task = ctx.current_task();
             let process = task.process();
             *process.exit_code().write() = Some(status);
             task.set_should_terminate(true);
+            // SAFETY: Interrupts are disabled during syscall handling (PSTATE.DAIF masked on
+            // exception entry). reschedule() context-switches away; since should_terminate is
+            // set, this task will be cleaned up and never re-enqueued.
+            unsafe { ctx.scheduler_mut().reschedule(); }
             loop {
                 hlt();
             }
@@ -131,10 +136,12 @@ pub fn dispatch_syscall(
         kernel_abi::SYS_ABORT => {
             // Abort the process (equivalent to exit(134) - SIGABRT)
             let status = 134;
-            let task = crate::mcore::context::ExecutionContext::load().current_task();
+            let ctx = crate::mcore::context::ExecutionContext::load();
+            let task = ctx.current_task();
             let process = task.process();
             *process.exit_code().write() = Some(status);
             task.set_should_terminate(true);
+            unsafe { ctx.scheduler_mut().reschedule(); }
             loop {
                 hlt();
             }
