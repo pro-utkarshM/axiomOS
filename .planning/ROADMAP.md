@@ -30,7 +30,7 @@ None
 Plans:
 - [x] 01-01: BPF trace via timer — bpf_loader loads program, trace_printk fires on every tick
 - [x] 01-02: Ringbuf userspace delivery — BPF_RINGBUF_POLL syscall + deadlock fix + demo
-- [ ] 01-03: End-to-end demo: bpf_loader loads program, attaches to timer, output visible on serial
+- [x] 01-03: End-to-end demo — array map counter + ringbuf events + 3 helpers, proven on QEMU
 
 ### Phase 2: RPi5 Hardware Demos
 **Goal**: Three progressive demos on real RPi5 hardware: GPIO→BPF→LED, PWM motor tracing, safety interlock (interrupt→BPF→hardware, zero userspace dependency).
@@ -71,7 +71,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 
 | Phase | Plans Complete | Status | Completed |
 |-------|---------------|--------|-----------|
-| 1. BPF End-to-End | 2/3 | In progress | - |
+| 1. BPF End-to-End | 3/3 | Complete | 2026-02-13 |
 | 2. RPi5 Hardware Demos | 0/3 | Not started | - |
 | 3. Benchmarks & Validation | 0/2 | Not started | - |
 | 4. Docs & Ecosystem | 0/2 | Not started | - |
