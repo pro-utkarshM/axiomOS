@@ -10,50 +10,50 @@ See: .planning/PROJECT.md (updated 2026-02-13)
 ## Current Position
 
 Phase: 1 of 4 (BPF End-to-End)
-Plan: 1 of 3 in current phase
+Plan: 2 of 3 in current phase
 Status: In progress
-Last activity: 2026-02-13 — Completed 01-01-PLAN.md
+Last activity: 2026-02-13 — Completed 01-02-PLAN.md
 
-Progress: █░░░░░░░░░ 10%
+Progress: ██░░░░░░░░ 20%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 1
-- Average duration: 21 min
-- Total execution time: 0.35 hours
+- Total plans completed: 2
+- Average duration: 15 min
+- Total execution time: 0.5 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 1. BPF End-to-End | 1/3 | 21 min | 21 min |
+| 1. BPF End-to-End | 2/3 | 30 min | 15 min |
 
 **Recent Trend:**
-- Last 5 plans: 21min
-- Trend: —
+- Last 5 plans: 21min, 9min
+- Trend: Improving
 
 ## Accumulated Context
 
 ### Decisions
 
-Decisions are logged in PROJECT.md Key Decisions table.
-Recent decisions affecting current work:
-
-- Plan 01-01: bpf_trace_printk helper ID is 2 (not 6)
+- Plan 01-01: bpf_trace_printk helper ID is 2, bpf_ktime_get_ns is 1, bpf_ringbuf_output is 6
 - Plan 01-01: Stack offset fix — stack[stack.len() + offset] aligns with r10 pointer semantics
+- Plan 01-02: BPF_RINGBUF_POLL = 37 (avoids collision with existing cmd 10)
+- Plan 01-02: Lock-free execution: clone programs, drop lock, then execute (deadlock avoidance)
 
 ### Deferred Issues
 
-None yet.
+- Other hook call sites (syscall, GPIO, PWM, IIO) still use deadlock-prone execute_hooks() pattern — fix in Phase 2
 
 ### Blockers/Concerns
 
-- ~~AArch64 userspace boot status uncertain~~ — RESOLVED: boots fine (discovered during planning)
-- Ringbuf kernel→userspace delivery not yet plumbed — Plan 01-02 addresses this
+- ~~AArch64 userspace boot~~ — RESOLVED
+- ~~Ringbuf kernel→userspace delivery~~ — RESOLVED (01-02)
+- Pre-existing kernel_bpf scheduler test failures (52 errors) — unrelated to our changes
 
 ## Session Continuity
 
 Last session: 2026-02-13
-Stopped at: Completed 01-01-PLAN.md (BPF trace via timer)
+Stopped at: Completed 01-02-PLAN.md (ringbuf userspace delivery)
 Resume file: None
