@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-13)
 
 **Core value:** A button press on RPi5 triggers a verified BPF program in the kernel that controls hardware — and you can change that program without rebuilding or reflashing the kernel.
-**Current focus:** Phase 2 complete — ready for Phase 3 (pending RPi5 hardware testing)
+**Current focus:** Phase 3 complete — ready for Phase 4
 
 ## Current Position
 
-Phase: 2 of 4 (RPi5 Hardware Demos) — COMPLETE (code only, hardware testing pending)
-Plan: 3 of 3 in current phase
+Phase: 3 of 4 (Benchmarks & Validation) — COMPLETE
+Plan: 2 of 2 in current phase
 Status: Phase complete
-Last activity: 2026-02-13 — Completed 02-03-PLAN.md (Phase 2 done)
+Last activity: 2026-02-13 — Completed 03-02-PLAN.md (Phase 3 done)
 
-Progress: ██████░░░░ 60%
+Progress: ████████░░ 80%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 6
-- Average duration: 11 min
-- Total execution time: 1.1 hours
+- Total plans completed: 8
+- Average duration: 9 min
+- Total execution time: 1.3 hours
 
 **By Phase:**
 
@@ -29,10 +29,11 @@ Progress: ██████░░░░ 60%
 |-------|-------|-------|----------|
 | 1. BPF End-to-End | 3/3 | 41 min | 14 min |
 | 2. RPi5 Hardware | 3/3 | 22 min | 7 min |
+| 3. Benchmarks | 2/2 | 11 min | 6 min |
 
 **Recent Trend:**
-- Last 5 plans: 9min, 11min, 8min, 7min, 7min
-- Trend: Improving
+- Last 5 plans: 8min, 7min, 7min, 4min, 7min
+- Trend: Improving (faster plans)
 
 ## Accumulated Context
 
@@ -44,21 +45,22 @@ Progress: ██████░░░░ 60%
 - Lock-free execution in ALL hook handlers (timer, GPIO, PWM, IIO, syscall)
 - Generic pointer load/store in interpreter for map value access
 - build-rpi5.sh uses `--features embedded-rpi5`
-- GPIO 22 as limit switch pin, PWM0 Ch1 as motor output
+- GPIO 22 as limit switch, PWM0 Ch1 as motor, GPIO 17/18 for button/LED
+- Boot time: kernel_main → init spawn, Memory: heap usage only
 
 ### Deferred Issues
 
-- ~~GPIO/PWM/IIO/syscall deadlock~~ — RESOLVED in 02-01
 - Process exit panic (address space mapper assertion) — not BPF-related
 - Pre-existing kernel_bpf scheduler test failures (52 errors)
-- RPi5 hardware testing still pending for all 3 Phase 2 demos
+- RPi5 hardware testing pending for Phase 2 demos (gpio, pwm, safety)
+- QEMU benchmark measurements pending (docs/benchmarks.md has [TBD] placeholders)
 
 ### Blockers/Concerns
 
-- RPi5 hardware testing needed before merging phase2-rpi5-hardware-demos → dev
+None blocking Phase 4.
 
 ## Session Continuity
 
 Last session: 2026-02-13
-Stopped at: Phase 2 complete — all 3 plans executed (hardware testing pending)
+Stopped at: Phase 3 complete — benchmarks and validation infrastructure ready
 Resume file: None
