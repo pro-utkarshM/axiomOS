@@ -41,7 +41,7 @@ Plans:
 Plans:
 - [x] 02-01: Fix deadlock in all hook handlers + GPIO demo built for RPi5
 - [x] 02-02: PWM tracing with nanosecond timestamps via ringbuf — observer + controller pattern
-- [ ] 02-03: Safety interlock demo — limit switch interrupt → BPF → motor emergency stop (no userspace in loop)
+- [x] 02-03: Safety interlock — GPIO interrupt → BPF → motor E-Stop, survives userspace exit
 
 ### Phase 3: Benchmarks & Validation
 **Goal**: Quantitative validation — boot time, memory footprint, BPF load time, interrupt latency. Comparison against minimal Linux. IIO sensor filtering demo.
@@ -72,6 +72,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 | Phase | Plans Complete | Status | Completed |
 |-------|---------------|--------|-----------|
 | 1. BPF End-to-End | 3/3 | Complete | 2026-02-13 |
-| 2. RPi5 Hardware Demos | 2/3 | In progress | - |
+| 2. RPi5 Hardware Demos | 3/3 | Complete | 2026-02-13 |
 | 3. Benchmarks & Validation | 0/2 | Not started | - |
 | 4. Docs & Ecosystem | 0/2 | Not started | - |
