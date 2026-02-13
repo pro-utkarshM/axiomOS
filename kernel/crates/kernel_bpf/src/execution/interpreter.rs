@@ -409,6 +409,27 @@ impl<P: PhysicalProfile> Interpreter<P> {
             return Ok(());
         }
 
+        // 4. Generic pointer dereference (e.g., map value pointers from bpf_map_lookup_elem)
+        //
+        // BPF helpers like bpf_map_lookup_elem return raw pointers to map values.
+        // After verification, these pointers are trusted. We allow reads through any
+        // non-null pointer that didn't match the above categories.
+        if addr != 0 {
+            // SAFETY: The BPF verifier (or program construction) ensures the pointer
+            // is valid. Map value pointers are stable for the duration of BPF execution
+            // because the BPF manager lock is re-acquired by helpers as needed.
+            let value = unsafe {
+                match size {
+                    MemSize::Byte => core::ptr::read_unaligned(addr as *const u8) as u64,
+                    MemSize::Half => core::ptr::read_unaligned(addr as *const u16) as u64,
+                    MemSize::Word => core::ptr::read_unaligned(addr as *const u32) as u64,
+                    MemSize::DWord => core::ptr::read_unaligned(addr as *const u64),
+                }
+            };
+            regs.set(dst, value);
+            return Ok(());
+        }
+
         Err(BpfError::OutOfBounds)
     }
 
@@ -467,7 +488,27 @@ impl<P: PhysicalProfile> Interpreter<P> {
             return Ok(());
         }
 
-        // Generic memory access would require context pointer validation
+        // Generic pointer store (e.g., map value pointers from bpf_map_lookup_elem)
+        //
+        // BPF helpers return raw pointers to map values that programs can write through.
+        // After verification, these pointers are trusted.
+        let base = regs.get(dst);
+        let addr = base.wrapping_add(insn.offset as i64 as u64);
+
+        if addr != 0 {
+            // SAFETY: The BPF verifier (or program construction) ensures the pointer
+            // is valid. Map value pointers are stable for the duration of BPF execution.
+            unsafe {
+                match size {
+                    MemSize::Byte => core::ptr::write_unaligned(addr as *mut u8, value as u8),
+                    MemSize::Half => core::ptr::write_unaligned(addr as *mut u16, value as u16),
+                    MemSize::Word => core::ptr::write_unaligned(addr as *mut u32, value as u32),
+                    MemSize::DWord => core::ptr::write_unaligned(addr as *mut u64, value),
+                }
+            }
+            return Ok(());
+        }
+
         Err(BpfError::OutOfBounds)
     }
 }
