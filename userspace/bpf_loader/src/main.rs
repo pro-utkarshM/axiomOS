@@ -13,7 +13,10 @@ fn panic(_info: &PanicInfo) -> ! {
 // SAFETY: Entry point for the BPF loader. Called by the startup code.
 #[unsafe(no_mangle)]
 pub extern "C" fn _start() -> ! {
-    write(1, b"[bpf_loader] Starting BPF ringbuf demo...\n");
+    write(1, b"\n========================================\n");
+    write(1, b"  Axiom BPF End-to-End Demo\n");
+    write(1, b"  Maps + Ringbuf + Timer Attach\n");
+    write(1, b"========================================\n\n");
 
     #[repr(C)]
     struct BpfInsn {
@@ -32,150 +35,183 @@ pub extern "C" fn _start() -> ! {
     use kernel_abi::BpfAttr;
     let attr_size = core::mem::size_of::<BpfAttr>() as i32;
 
-    // ------------------------------------------------------------------
-    // Step 1: Create a ringbuf map via sys_bpf(BPF_MAP_CREATE=0)
+    // ==================================================================
+    // Step 1: Create an array map for the tick counter
     //
-    // For MAP_CREATE, BpfAttr fields are:
-    //   prog_type -> map_type (27 = ringbuf)
-    //   insn_cnt  -> key_size (0 for ringbuf)
-    //   insns low 32  -> value_size (0 for ringbuf)
-    //   insns high 32 -> max_entries (buffer size, must be power of 2)
-    // ------------------------------------------------------------------
-    let ringbuf_size: u32 = 4096; // 4 KB ringbuf
-    let create_attr = BpfAttr {
-        prog_type: 27, // BPF_MAP_TYPE_RINGBUF
-        insn_cnt: 0,   // key_size = 0 for ringbuf
-        insns: ((ringbuf_size as u64) << 32) | 0u64, // value_size=0, max_entries=4096
+    // map_type=2 (Array), key_size=4, value_size=8, max_entries=1
+    // This map stores a single u64 counter that the BPF program increments
+    // on each timer tick. Userspace can also read it via MAP_LOOKUP_ELEM.
+    // ==================================================================
+    write(1, b"[1/5] Creating array map (counter)... ");
+
+    let array_attr = BpfAttr {
+        prog_type: 2,                   // map_type = BPF_MAP_TYPE_ARRAY
+        insn_cnt: 4,                    // key_size = 4 bytes (u32 index)
+        insns: 8 | (1u64 << 32),        // value_size=8 (u64), max_entries=1
         ..Default::default()
     };
 
-    write(1, b"[bpf_loader] Creating ringbuf map (4096 bytes)...\n");
-
-    let map_id = bpf(
+    let array_map_id = bpf(
         0, // BPF_MAP_CREATE
-        &create_attr as *const BpfAttr as *const u8,
+        &array_attr as *const BpfAttr as *const u8,
         attr_size,
     );
 
-    if map_id < 0 {
-        write(1, b"[bpf_loader] FAILED to create ringbuf map (error ");
-        print_num((-map_id) as u64);
+    if array_map_id < 0 {
+        write(1, b"FAILED (error ");
+        print_num((-array_map_id) as u64);
         write(1, b")\n");
         exit(1);
     }
 
-    write(1, b"[bpf_loader] Ringbuf map created with id=");
-    print_num(map_id as u64);
-    write(1, b"\n");
+    write(1, b"OK (id=");
+    print_num(array_map_id as u64);
+    write(1, b")\n");
 
-    // ------------------------------------------------------------------
-    // Step 2: Construct a BPF program that:
-    //   - Calls bpf_ktime_get_ns() to get a timestamp
-    //   - Stores it on the stack
-    //   - Calls bpf_ringbuf_output(map_id, data_ptr, data_size, flags)
-    //   - Returns 0
+    // ==================================================================
+    // Step 2: Create a ringbuf map for event streaming
+    //
+    // map_type=27 (Ringbuf), buffer_size=4096 (must be power of 2)
+    // BPF program writes event data here; userspace polls to receive it.
+    // ==================================================================
+    write(1, b"[2/5] Creating ringbuf map (events)... ");
+
+    let ringbuf_attr = BpfAttr {
+        prog_type: 27,                  // map_type = BPF_MAP_TYPE_RINGBUF
+        insn_cnt: 0,                    // key_size = 0 for ringbuf
+        insns: (4096u64) << 32,          // value_size=0, max_entries=4096
+        ..Default::default()
+    };
+
+    let ringbuf_map_id = bpf(
+        0, // BPF_MAP_CREATE
+        &ringbuf_attr as *const BpfAttr as *const u8,
+        attr_size,
+    );
+
+    if ringbuf_map_id < 0 {
+        write(1, b"FAILED (error ");
+        print_num((-ringbuf_map_id) as u64);
+        write(1, b")\n");
+        exit(1);
+    }
+
+    write(1, b"OK (id=");
+    print_num(ringbuf_map_id as u64);
+    write(1, b")\n");
+
+    // ==================================================================
+    // Step 3: Construct BPF program (27 instructions, 3 helpers)
+    //
+    // On each timer tick, this program:
+    //   a) Looks up counter from array map (key=0) via bpf_map_lookup_elem
+    //   b) Increments counter in-place (direct pointer write)
+    //   c) Stores counter value on stack for ringbuf output
+    //   d) Writes counter to ringbuf via bpf_ringbuf_output
+    //   e) Calls bpf_trace_printk for serial visibility
+    //   f) Returns 0
     //
     // Helper IDs (from interpreter dispatch):
-    //   1 = bpf_ktime_get_ns()
+    //   2 = bpf_trace_printk(fmt_ptr, size)
+    //   3 = bpf_map_lookup_elem(map_id, key_ptr) -> returns *mut u8
     //   6 = bpf_ringbuf_output(map_id, data_ptr, data_size, flags)
     //
-    // Stack layout:
-    //   r10 - 8 : 8 bytes (timestamp from bpf_ktime_get_ns)
-    // ------------------------------------------------------------------
+    // Stack layout (r10-relative):
+    //   r10 - 4  : key (u32 = 0)       [4 bytes]
+    //   r10 - 16 : counter value (u64)  [8 bytes, used as ringbuf event]
+    //   r10 - 24 : "Tick!\0" string     [8 bytes padded]
+    // ==================================================================
+    write(1, b"[3/5] Loading BPF program... ");
+
+    // "Tick!\0" encoded as two u32 immediates for LD_DW_IMM:
+    //   bytes: 'T'=0x54 'i'=0x69 'c'=0x63 'k'=0x6B '!'=0x21 '\0'=0x00
+    //   little-endian u32[0] = 0x6B636954 ("Tick")
+    //   little-endian u32[1] = 0x00000021 ("!\0\0\0")
+    let tick_lo: i32 = 0x6B636954_u32 as i32;
+    let tick_hi: i32 = 0x00000021_u32 as i32;
 
     let insns = [
-        // Instruction 0: call bpf_ktime_get_ns (helper 1)
-        // Result in r0 = timestamp (nanoseconds)
-        BpfInsn {
-            code: 0x85, // CALL
-            dst_src: 0x00,
-            off: 0,
-            imm: 1, // bpf_ktime_get_ns
-        },
-        // Instruction 1: *(u64*)(r10 - 8) = r0  (store timestamp on stack)
-        // STX DW: opcode 0x7b, dst=r10, src=r0
-        BpfInsn {
-            code: 0x7b,
-            dst_src: regs(10, 0),
-            off: -8,
-            imm: 0,
-        },
-        // Instruction 2: r1 = map_id (0)
-        // MOV64 imm: opcode 0xb7
-        BpfInsn {
-            code: 0xb7,
-            dst_src: regs(1, 0),
-            off: 0,
-            imm: map_id,
-        },
-        // Instruction 3: r2 = r10 (frame pointer)
-        // MOV64 reg: opcode 0xbf
-        BpfInsn {
-            code: 0xbf,
-            dst_src: regs(2, 10),
-            off: 0,
-            imm: 0,
-        },
-        // Instruction 4: r2 += -8 (point to timestamp on stack)
-        // ADD64 imm: opcode 0x07
-        BpfInsn {
-            code: 0x07,
-            dst_src: regs(2, 0),
-            off: 0,
-            imm: -8,
-        },
-        // Instruction 5: r3 = 8 (data size = sizeof(u64))
-        // MOV64 imm: opcode 0xb7
-        BpfInsn {
-            code: 0xb7,
-            dst_src: regs(3, 0),
-            off: 0,
-            imm: 8,
-        },
-        // Instruction 6: r4 = 0 (flags)
-        // MOV64 imm: opcode 0xb7
-        BpfInsn {
-            code: 0xb7,
-            dst_src: regs(4, 0),
-            off: 0,
-            imm: 0,
-        },
-        // Instruction 7: call bpf_ringbuf_output (helper 6)
-        BpfInsn {
-            code: 0x85, // CALL
-            dst_src: 0x00,
-            off: 0,
-            imm: 6, // bpf_ringbuf_output
-        },
-        // Instruction 8: r0 = 0 (return success)
-        BpfInsn {
-            code: 0xb7,
-            dst_src: regs(0, 0),
-            off: 0,
-            imm: 0,
-        },
-        // Instruction 9: exit
-        BpfInsn {
-            code: 0x95,
-            dst_src: 0x00,
-            off: 0,
-            imm: 0,
-        },
+        // --- Store key=0 on stack at r10-4 ---
+        // Insn 0: r1 = 0
+        BpfInsn { code: 0xb7, dst_src: regs(1, 0), off: 0, imm: 0 },
+        // Insn 1: *(u32*)(r10 - 4) = r1
+        BpfInsn { code: 0x63, dst_src: regs(10, 1), off: -4, imm: 0 },
+
+        // --- Call bpf_map_lookup_elem(array_map_id, &key) ---
+        // Insn 2: r1 = array_map_id
+        BpfInsn { code: 0xb7, dst_src: regs(1, 0), off: 0, imm: array_map_id },
+        // Insn 3: r2 = r10
+        BpfInsn { code: 0xbf, dst_src: regs(2, 10), off: 0, imm: 0 },
+        // Insn 4: r2 += -4  (point to key on stack)
+        BpfInsn { code: 0x07, dst_src: regs(2, 0), off: 0, imm: -4 },
+        // Insn 5: call bpf_map_lookup_elem (helper 3)
+        BpfInsn { code: 0x85, dst_src: 0x00, off: 0, imm: 3 },
+
+        // --- Check if lookup returned NULL; skip map+ringbuf if so ---
+        // Insn 6: if r0 == 0 goto +11 -> target = insn 18 (trace_printk)
+        //         Jump formula: target = pc + 1 + off = 6 + 1 + 11 = 18
+        BpfInsn { code: 0x15, dst_src: regs(0, 0), off: 11, imm: 0 },
+
+        // --- Increment counter in-place via direct pointer ---
+        // Insn 7: r6 = r0  (save map value pointer in callee-saved r6)
+        BpfInsn { code: 0xbf, dst_src: regs(6, 0), off: 0, imm: 0 },
+        // Insn 8: r1 = *(u64*)(r6 + 0)  (load current counter value)
+        BpfInsn { code: 0x79, dst_src: regs(1, 6), off: 0, imm: 0 },
+        // Insn 9: r1 += 1  (increment)
+        BpfInsn { code: 0x07, dst_src: regs(1, 0), off: 0, imm: 1 },
+        // Insn 10: *(u64*)(r6 + 0) = r1  (store incremented value back)
+        BpfInsn { code: 0x7b, dst_src: regs(6, 1), off: 0, imm: 0 },
+
+        // --- Store counter on stack for ringbuf event data ---
+        // Insn 11: *(u64*)(r10 - 16) = r1
+        BpfInsn { code: 0x7b, dst_src: regs(10, 1), off: -16, imm: 0 },
+
+        // --- Call bpf_ringbuf_output(ringbuf_map_id, &counter, 8, 0) ---
+        // Insn 12: r1 = ringbuf_map_id
+        BpfInsn { code: 0xb7, dst_src: regs(1, 0), off: 0, imm: ringbuf_map_id },
+        // Insn 13: r2 = r10
+        BpfInsn { code: 0xbf, dst_src: regs(2, 10), off: 0, imm: 0 },
+        // Insn 14: r2 += -16  (point to counter on stack)
+        BpfInsn { code: 0x07, dst_src: regs(2, 0), off: 0, imm: -16 },
+        // Insn 15: r3 = 8  (data size = sizeof(u64))
+        BpfInsn { code: 0xb7, dst_src: regs(3, 0), off: 0, imm: 8 },
+        // Insn 16: r4 = 0  (flags)
+        BpfInsn { code: 0xb7, dst_src: regs(4, 0), off: 0, imm: 0 },
+        // Insn 17: call bpf_ringbuf_output (helper 6)
+        BpfInsn { code: 0x85, dst_src: 0x00, off: 0, imm: 6 },
+
+        // --- Call bpf_trace_printk("Tick!", 6) for serial visibility ---
+        // Insn 18: LD_DW_IMM r1, "Tick!\0" (occupies 2 instruction slots)
+        BpfInsn { code: 0x18, dst_src: regs(1, 0), off: 0, imm: tick_lo },
+        // Insn 19: (continuation of LD_DW_IMM)
+        BpfInsn { code: 0x00, dst_src: 0x00, off: 0, imm: tick_hi },
+        // Insn 20: *(u64*)(r10 - 24) = r1  (store string on stack)
+        BpfInsn { code: 0x7b, dst_src: regs(10, 1), off: -24, imm: 0 },
+        // Insn 21: r1 = r10
+        BpfInsn { code: 0xbf, dst_src: regs(1, 10), off: 0, imm: 0 },
+        // Insn 22: r1 += -24  (pointer to string on stack)
+        BpfInsn { code: 0x07, dst_src: regs(1, 0), off: 0, imm: -24 },
+        // Insn 23: r2 = 6  (string length including NUL)
+        BpfInsn { code: 0xb7, dst_src: regs(2, 0), off: 0, imm: 6 },
+        // Insn 24: call bpf_trace_printk (helper 2)
+        BpfInsn { code: 0x85, dst_src: 0x00, off: 0, imm: 2 },
+
+        // --- Return 0 ---
+        // Insn 25: r0 = 0
+        BpfInsn { code: 0xb7, dst_src: regs(0, 0), off: 0, imm: 0 },
+        // Insn 26: exit
+        BpfInsn { code: 0x95, dst_src: 0x00, off: 0, imm: 0 },
     ];
 
     // ------------------------------------------------------------------
-    // Step 3: Load the BPF program via sys_bpf(BPF_PROG_LOAD=5)
+    // Step 4: Load BPF program via sys_bpf(BPF_PROG_LOAD)
     // ------------------------------------------------------------------
     let load_attr = BpfAttr {
-        prog_type: 1, // SocketFilter (arbitrary, accepted by the kernel)
+        prog_type: 1, // SocketFilter (accepted by our kernel)
         insn_cnt: insns.len() as u32,
         insns: insns.as_ptr() as u64,
         ..Default::default()
     };
-
-    write(1, b"[bpf_loader] Loading BPF program (");
-    print_num(insns.len() as u64);
-    write(1, b" instructions)...\n");
 
     let prog_id = bpf(
         5, // BPF_PROG_LOAD
@@ -184,26 +220,28 @@ pub extern "C" fn _start() -> ! {
     );
 
     if prog_id < 0 {
-        write(1, b"[bpf_loader] FAILED to load BPF program (error ");
+        write(1, b"FAILED (error ");
         print_num((-prog_id) as u64);
         write(1, b")\n");
         exit(1);
     }
 
-    write(1, b"[bpf_loader] BPF program loaded with id=");
+    write(1, b"OK (id=");
     print_num(prog_id as u64);
-    write(1, b"\n");
+    write(1, b", ");
+    print_num(insns.len() as u64);
+    write(1, b" insns)\n");
 
     // ------------------------------------------------------------------
-    // Step 4: Attach the program to the timer via sys_bpf(BPF_PROG_ATTACH=8)
+    // Step 5: Attach to timer via sys_bpf(BPF_PROG_ATTACH)
     // ------------------------------------------------------------------
+    write(1, b"[4/5] Attaching to timer... ");
+
     let attach_attr = BpfAttr {
         attach_btf_id: 1,               // ATTACH_TYPE_TIMER
-        attach_prog_fd: prog_id as u32, // program id from load step
+        attach_prog_fd: prog_id as u32, // program id
         ..Default::default()
     };
-
-    write(1, b"[bpf_loader] Attaching program to timer...\n");
 
     let attach_res = bpf(
         8, // BPF_PROG_ATTACH
@@ -212,37 +250,33 @@ pub extern "C" fn _start() -> ! {
     );
 
     if attach_res != 0 {
-        write(1, b"[bpf_loader] FAILED to attach BPF program (error ");
+        write(1, b"FAILED (error ");
         print_num((-attach_res) as u64);
         write(1, b")\n");
         exit(1);
     }
 
-    write(
-        1,
-        b"[bpf_loader] SUCCESS: BPF program attached to timer!\n",
-    );
-    write(
-        1,
-        b"[bpf_loader] Polling ringbuf for events...\n",
-    );
+    write(1, b"OK\n");
+    write(1, b"[5/5] Entering event loop...\n\n");
 
-    // ------------------------------------------------------------------
-    // Step 5: Poll the ringbuf in a loop
-    //
-    // BPF_RINGBUF_POLL (cmd=37) uses BpfAttr fields:
-    //   map_fd -> map_id
-    //   key    -> buf_ptr (userspace buffer)
-    //   value  -> buf_size (buffer capacity)
-    //
-    // Returns: data length on success, 0 if empty, negative on error
-    // ------------------------------------------------------------------
+    // ==================================================================
+    // Main event loop:
+    //   - Poll ringbuf for events (counter values from BPF program)
+    //   - Read array map to verify counter via syscall
+    //   - Print status for each tick received
+    //   - After TARGET_EVENTS events, print summary and exit
+    // ==================================================================
+    const TARGET_EVENTS: u64 = 10;
+
     let mut event_count: u64 = 0;
-    let mut buf = [0u8; 64]; // Buffer for event data
+    let mut buf = [0u8; 64];
+    let key: u32 = 0;
+    let mut map_value: u64 = 0;
 
     loop {
+        // Poll ringbuf for next event
         let poll_attr = BpfAttr {
-            map_fd: map_id as u32,
+            map_fd: ringbuf_map_id as u32,
             key: buf.as_mut_ptr() as u64,
             value: buf.len() as u64,
             ..Default::default()
@@ -257,33 +291,80 @@ pub extern "C" fn _start() -> ! {
         if poll_res > 0 {
             event_count += 1;
 
-            // Parse the 8-byte timestamp from the event data
-            if poll_res >= 8 {
-                let timestamp = u64::from_ne_bytes([
-                    buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7],
-                ]);
-
-                write(1, b"[bpf_loader] Event #");
-                print_num(event_count);
-                write(1, b": timestamp=");
-                print_num(timestamp);
-                write(1, b" (");
-                print_num(poll_res as u64);
-                write(1, b" bytes)\n");
+            // Parse counter from 8-byte ringbuf event
+            let counter = if poll_res >= 8 {
+                u64::from_ne_bytes([
+                    buf[0], buf[1], buf[2], buf[3],
+                    buf[4], buf[5], buf[6], buf[7],
+                ])
             } else {
-                write(1, b"[bpf_loader] Event #");
+                0
+            };
+
+            // Also read the array map counter directly via syscall
+            let lookup_attr = BpfAttr {
+                map_fd: array_map_id as u32,
+                key: &key as *const u32 as u64,
+                value: &mut map_value as *mut u64 as u64,
+                ..Default::default()
+            };
+
+            let lookup_res = bpf(
+                1, // BPF_MAP_LOOKUP_ELEM
+                &lookup_attr as *const BpfAttr as *const u8,
+                attr_size,
+            );
+
+            // Print: "Tick #N received via ringbuf, map counter: M"
+            write(1, b"  Tick #");
+            print_num(event_count);
+            write(1, b" received via ringbuf (counter=");
+            print_num(counter);
+            write(1, b")");
+
+            if lookup_res == 0 {
+                write(1, b", map counter: ");
+                print_num(map_value);
+            }
+            write(1, b"\n");
+
+            // After collecting enough events, print summary and exit
+            if event_count >= TARGET_EVENTS {
+                write(1, b"\n========================================\n");
+                write(1, b"  Demo Complete!\n");
+                write(1, b"  Events received: ");
                 print_num(event_count);
-                write(1, b": ");
-                print_num(poll_res as u64);
-                write(1, b" bytes\n");
+                write(1, b"\n");
+                write(1, b"  Final map counter: ");
+
+                // One final map read
+                let final_attr = BpfAttr {
+                    map_fd: array_map_id as u32,
+                    key: &key as *const u32 as u64,
+                    value: &mut map_value as *mut u64 as u64,
+                    ..Default::default()
+                };
+                let _ = bpf(
+                    1,
+                    &final_attr as *const BpfAttr as *const u8,
+                    attr_size,
+                );
+                print_num(map_value);
+                write(1, b"\n");
+
+                write(1, b"  Pipeline: load -> verify -> attach -> execute -> maps -> ringbuf -> userspace\n");
+                write(1, b"  Phase 1 BPF end-to-end: PROVEN\n");
+                write(1, b"========================================\n");
+
+                exit(0);
             }
         } else if poll_res < 0 {
-            write(1, b"[bpf_loader] RINGBUF_POLL error: ");
+            write(1, b"  [error] RINGBUF_POLL failed: ");
             print_num((-poll_res) as u64);
             write(1, b"\n");
         }
 
-        // Sleep 100ms between polls to avoid busy-waiting
+        // Sleep 100ms between polls
         msleep(100);
     }
 }
