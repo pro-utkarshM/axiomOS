@@ -232,6 +232,16 @@ impl BpfManager {
         self.maps.get(map_id as usize).map(|m| m.def())
     }
 
+    /// Poll for the next event from a ring buffer map.
+    ///
+    /// Returns the event data if available, or None if the ringbuf is empty.
+    /// This is used by the BPF_RINGBUF_POLL syscall command.
+    pub fn ringbuf_poll(&self, map_id: u32) -> Option<Vec<u8>> {
+        let map = self.maps.get(map_id as usize)?;
+        // RingBufMap::lookup() delegates to poll(), which reads and advances the tail
+        map.lookup(&[])
+    }
+
     /// Output data to a ring buffer map.
     ///
     /// This is used by the bpf_ringbuf_output helper. For ringbuf maps,

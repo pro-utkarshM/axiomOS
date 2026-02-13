@@ -3,7 +3,7 @@ use core::mem::size_of;
 
 use kernel_abi::{
     BPF_MAP_CREATE, BPF_MAP_DELETE_ELEM, BPF_MAP_LOOKUP_ELEM, BPF_MAP_UPDATE_ELEM, BPF_PROG_ATTACH,
-    BPF_PROG_DETACH, BPF_PROG_LOAD, BPF_PROG_LOAD_ELF, BpfAttr,
+    BPF_PROG_DETACH, BPF_PROG_LOAD, BPF_PROG_LOAD_ELF, BPF_RINGBUF_POLL, BpfAttr,
 };
 use kernel_bpf::bytecode::insn::BpfInsn;
 
@@ -436,6 +436,44 @@ pub fn sys_bpf(cmd: usize, attr_ptr: usize, size: usize) -> isize {
                 }
             } else {
                 log::error!("sys_bpf: BPF_MANAGER not initialized");
+                -1
+            }
+        }
+        BPF_RINGBUF_POLL => {
+            log::debug!("sys_bpf: RINGBUF_POLL");
+            let attr = match copy_from_userspace::<BpfAttr>(attr_ptr) {
+                Ok(a) => a,
+                Err(_) => return -1,
+            };
+
+            // For RINGBUF_POLL:
+            //   map_fd  -> map_id (which ringbuf to poll)
+            //   key     -> buf_ptr (userspace buffer to write event data into)
+            //   value   -> buf_size (capacity of the userspace buffer)
+            let map_id = attr.map_fd;
+            let buf_ptr = attr.key as usize;
+            let buf_size = attr.value as usize;
+
+            if buf_ptr == 0 || buf_size == 0 {
+                return -1; // EINVAL
+            }
+
+            if let Some(manager) = BPF_MANAGER.get() {
+                let mgr = manager.lock();
+                match mgr.ringbuf_poll(map_id) {
+                    Some(data) => {
+                        if data.len() > buf_size {
+                            log::warn!("sys_bpf: RINGBUF_POLL buffer too small ({} < {})", buf_size, data.len());
+                            return -28; // ENOSPC
+                        }
+                        if copy_to_userspace(buf_ptr, &data).is_err() {
+                            return -1; // EFAULT
+                        }
+                        data.len() as isize
+                    }
+                    None => 0, // No event available
+                }
+            } else {
                 -1
             }
         }
