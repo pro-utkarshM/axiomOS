@@ -330,15 +330,18 @@ impl<P: PhysicalProfile> Interpreter<P> {
 
         // 1. Stack access (src = R10)
         if src == Register::R10 {
-            let _fp = base;
             let offset = insn.offset as i64;
-            let stack_offset = -(offset + (size.size_bytes() as i64));
+            // R10 (FP) = stack.as_ptr() + stack.len(), so r10 + offset maps to
+            // stack[stack.len() + offset]. Offset is negative for valid accesses.
+            let stack_idx_signed = stack.len() as i64 + offset;
 
-            if stack_offset < 0 || stack_offset as usize + size.size_bytes() > stack.len() {
+            if stack_idx_signed < 0
+                || stack_idx_signed as usize + size.size_bytes() > stack.len()
+            {
                 return Err(BpfError::OutOfBounds);
             }
 
-            let stack_idx = stack_offset as usize;
+            let stack_idx = stack_idx_signed as usize;
             let value = match size {
                 MemSize::Byte => stack[stack_idx] as u64,
                 MemSize::Half => {
@@ -432,15 +435,18 @@ impl<P: PhysicalProfile> Interpreter<P> {
 
         // For stack access (dst = R10)
         if dst == Register::R10 {
-            let _fp = regs.get(Register::R10);
             let offset = insn.offset as i64;
-            let stack_offset = -(offset + (size.size_bytes() as i64));
+            // R10 (FP) = stack.as_ptr() + stack.len(), so r10 + offset maps to
+            // stack[stack.len() + offset]. Offset is negative for valid accesses.
+            let stack_idx_signed = stack.len() as i64 + offset;
 
-            if stack_offset < 0 || stack_offset as usize + size.size_bytes() > stack.len() {
+            if stack_idx_signed < 0
+                || stack_idx_signed as usize + size.size_bytes() > stack.len()
+            {
                 return Err(BpfError::OutOfBounds);
             }
 
-            let stack_idx = stack_offset as usize;
+            let stack_idx = stack_idx_signed as usize;
             match size {
                 MemSize::Byte => {
                     stack[stack_idx] = value as u8;

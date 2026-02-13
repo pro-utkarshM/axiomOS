@@ -21,20 +21,15 @@ pub extern "C" fn _start() -> ! {
     // print_num(r0 as u64);
     // write(1, b"\n");
 
-    // Spawn fork_test
-    write(1, b"Spawning /bin/fork_test...\n");
-    let pid = minilib::spawn("/bin/fork_test");
+    // Spawn bpf_loader to load and attach BPF program to timer
+    write(1, b"Spawning /bin/bpf_loader...\n");
+    let pid = minilib::spawn("/bin/bpf_loader");
     if pid < 0 {
-        write(1, b"Failed to spawn fork_test!\n");
+        write(1, b"Failed to spawn bpf_loader!\n");
     } else {
-        write(1, b"Spawned fork_test with PID: ");
+        write(1, b"Spawned bpf_loader with PID: ");
         print_num(pid as u64);
         write(1, b"\n");
-
-        // Wait for it? init usually waits for children or just loops.
-        // We can try to wait for it to see output interleaved correctly if we want,
-        // or just let it run.
-        // Let's just let it run.
     }
 
     loop {
