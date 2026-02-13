@@ -8,13 +8,13 @@ use minilib::write;
 pub extern "C" fn _start() -> ! {
     write(1, b"=== Axiom eBPF Init ===\n");
 
-    // Spawn safety_demo to demonstrate safety interlock on RPi5
-    write(1, b"Spawning /bin/safety_demo...\n");
-    let pid = minilib::spawn("/bin/safety_demo");
+    // Spawn iio_demo to demonstrate IIO sensor filtering
+    write(1, b"Spawning /bin/iio_demo...\n");
+    let pid = minilib::spawn("/bin/iio_demo");
     if pid < 0 {
-        write(1, b"Failed to spawn safety_demo!\n");
+        write(1, b"Failed to spawn iio_demo!\n");
     } else {
-        write(1, b"Spawned safety_demo with PID: ");
+        write(1, b"Spawned iio_demo with PID: ");
         print_num(pid as u64);
         write(1, b"\n");
     }
