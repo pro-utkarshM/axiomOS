@@ -102,6 +102,18 @@ impl BpfManager {
             .get(program_id as usize)
             .ok_or(BpfError::NotLoaded)?;
 
+        Self::execute_program(program, ctx)
+    }
+
+    /// Execute a BPF program directly (without needing &self).
+    ///
+    /// This is useful when the caller has already cloned the program
+    /// and released the BpfManager lock, allowing BPF helpers to
+    /// re-acquire the lock for map operations.
+    pub fn execute_program(
+        program: &BpfProgram<ActiveProfile>,
+        ctx: &BpfContext,
+    ) -> Result<u64, BpfError> {
         #[cfg(target_arch = "aarch64")]
         {
             use kernel_bpf::execution::Arm64JitExecutor;
@@ -114,6 +126,27 @@ impl BpfManager {
             let interpreter = Interpreter::<ActiveProfile>::new();
             interpreter.execute(program, ctx)
         }
+    }
+
+    /// Collect cloned programs for a given attach type.
+    ///
+    /// Returns a Vec of (prog_id, cloned_program) pairs. This allows callers
+    /// to release the BpfManager lock before executing programs, preventing
+    /// deadlocks when BPF helpers (like bpf_ringbuf_output) need to re-acquire
+    /// the lock to access maps.
+    pub fn get_hook_programs(
+        &self,
+        attach_type: u32,
+    ) -> Vec<(u32, BpfProgram<ActiveProfile>)> {
+        let mut result = Vec::new();
+        if let Some(progs) = self.attachments.get(&attach_type) {
+            for &prog_id in progs {
+                if let Some(program) = self.programs.get(prog_id as usize) {
+                    result.push((prog_id, program.clone()));
+                }
+            }
+        }
+        result
     }
 
     pub fn execute_hooks(&self, attach_type: u32, ctx: &BpfContext) {

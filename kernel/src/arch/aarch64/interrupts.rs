@@ -124,11 +124,19 @@ fn handle_timer_interrupt() {
     set_next_timer();
 
     // Run BPF hooks (AttachType::Timer = 1)
+    //
+    // We clone programs and release the lock BEFORE execution so that BPF
+    // helpers (e.g. bpf_ringbuf_output) can re-acquire the lock for map
+    // operations without deadlocking.
     if let Some(manager) = crate::BPF_MANAGER.get() {
-        // log::info!("Executing BPF timer hooks");
+        let programs = manager.lock().get_hook_programs(1);
         let ctx = kernel_bpf::execution::BpfContext::empty();
-        manager.lock().execute_hooks(1, &ctx);
-        // log::info!("BPF timer hooks executed");
+        for (prog_id, program) in &programs {
+            match crate::bpf::BpfManager::execute_program(program, &ctx) {
+                Ok(_res) => {}
+                Err(e) => log::error!("BPF Timer Hook [id={}] failed: {:?}", prog_id, e),
+            }
+        }
     }
 }
 

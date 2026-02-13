@@ -163,6 +163,18 @@ pub struct BpfProgram<P: PhysicalProfile = ActiveProfile> {
     _profile: PhantomData<P>,
 }
 
+impl<P: PhysicalProfile> Clone for BpfProgram<P> {
+    fn clone(&self) -> Self {
+        Self {
+            prog_type: self.prog_type,
+            insns: self.insns.clone(),
+            stack_size: self.stack_size,
+            name: self.name,
+            _profile: PhantomData,
+        }
+    }
+}
+
 impl<P: PhysicalProfile> BpfProgram<P> {
     /// Maximum stack size for this profile.
     pub const MAX_STACK_SIZE: usize = P::MAX_STACK_SIZE;

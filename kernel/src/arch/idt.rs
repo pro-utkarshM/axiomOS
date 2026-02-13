@@ -262,11 +262,19 @@ extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFr
     }
 
     // 2. Run BPF hooks (AttachType::Timer = 1)
+    //
+    // We clone programs and release the lock BEFORE execution so that BPF
+    // helpers (e.g. bpf_ringbuf_output) can re-acquire the lock for map
+    // operations without deadlocking.
     if let Some(manager) = crate::BPF_MANAGER.get() {
-        // We use an empty context for timer for now, or could pass time?
+        let programs = manager.lock().get_hook_programs(1);
         let ctx = kernel_bpf::execution::BpfContext::empty();
-        // unsafe { crate::serial_print!("."); }
-        manager.lock().execute_hooks(1, &ctx);
+        for (prog_id, program) in &programs {
+            match crate::bpf::BpfManager::execute_program(program, &ctx) {
+                Ok(res) => { let _ = res; }
+                Err(e) => log::error!("BPF Timer Hook [id={}] failed: {:?}", prog_id, e),
+            }
+        }
     }
 
     // 3. Schedule next task
