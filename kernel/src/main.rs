@@ -75,6 +75,12 @@ unsafe extern "C" fn main() -> ! {
 
     {
         info!("starting init process...");
+
+        // Measure boot time from HPET start to init spawn
+        let boot_time_ns = kernel::hpet::hpet().read().main_counter_value();
+        let boot_time_ms = boot_time_ns / 1_000_000;
+        info!("Boot to init: {} ms", boot_time_ms);
+
         let init_path = AbsolutePath::try_new("/bin/init").unwrap();
         let _ = vfs().read().open(init_path).expect("should have /bin/init");
         let proc = Process::create_from_executable(Process::root(), init_path).unwrap();

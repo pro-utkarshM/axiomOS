@@ -17,6 +17,7 @@ pub const STRUCTURE: Dir<'static> = Dir::new(
                 File::new("safety_demo", Kind::Executable),
                 File::new("fork_test", Kind::Executable),
                 File::new("bpf_loader", Kind::Executable),
+                File::new("benchmark", Kind::Executable),
             ],
         ),
         Dir::new("dev", &[Dir::new("fd", &[], &[])], &[]),
