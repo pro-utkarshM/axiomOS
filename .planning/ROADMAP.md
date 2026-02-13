@@ -51,8 +51,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 03-01: IIO sensor BPF attach point and filtering demo
-- [ ] 03-02: Performance benchmarks suite and Linux comparison
+- [x] 03-01: IIO sensor filtering demo — BPF filters simulated accel data, ringbuf output
+- [x] 03-02: Benchmark harness + Linux comparison methodology in docs/benchmarks.md
 
 ### Phase 4: Docs & Ecosystem
 **Goal**: Package everything for external consumption — example BPF programs, getting-started guide, academic positioning for AgenticOS2026/ASPLOS.
@@ -73,5 +73,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 |-------|---------------|--------|-----------|
 | 1. BPF End-to-End | 3/3 | Complete | 2026-02-13 |
 | 2. RPi5 Hardware Demos | 3/3 | Complete | 2026-02-13 |
-| 3. Benchmarks & Validation | 0/2 | Not started | - |
+| 3. Benchmarks & Validation | 2/2 | Complete | 2026-02-13 |
 | 4. Docs & Ecosystem | 0/2 | Not started | - |

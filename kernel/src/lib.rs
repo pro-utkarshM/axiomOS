@@ -66,6 +66,12 @@ fn init_boot_time() {
 pub fn init() {
     init_boot_time();
 
+    #[cfg(target_arch = "x86_64")]
+    let init_start = {
+        use crate::hpet::hpet;
+        hpet().read().main_counter_value()
+    };
+
     log::init();
     info!("Logging initialized");
 
@@ -100,7 +106,7 @@ pub fn init() {
     info!("Initializing VFS...");
     file::init();
     info!("VFS initialized");
-    
+
     info!("Initializing IIO...");
     driver::iio::init();
     info!("IIO initialized");
@@ -129,6 +135,46 @@ pub fn init() {
     info!("Simulated devices initialized");
 
     info!("kernel initialized");
+
+    // Print benchmark metrics
+    print_benchmark_metrics();
+
+    #[cfg(target_arch = "x86_64")]
+    {
+        use crate::hpet::hpet;
+        let init_end = hpet().read().main_counter_value();
+        let init_time_ns = init_end - init_start;
+        let init_time_ms = init_time_ns / 1_000_000;
+        info!("Kernel init completed in {} ms", init_time_ms);
+    }
+}
+
+fn print_benchmark_metrics() {
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    {
+        use crate::mem::heap::Heap;
+
+        info!("");
+        info!("========================================");
+        info!("  AXIOM KERNEL METRICS");
+        info!("========================================");
+
+        // Memory footprint
+        let heap_size = Heap::size();
+        let heap_used = Heap::used();
+        let heap_free = Heap::free();
+
+        info!("Heap total:          {} KB ({} MB)", heap_size / 1024, heap_size / 1024 / 1024);
+        info!("Heap used:           {} KB", heap_used / 1024);
+        info!("Heap free:           {} KB", heap_free / 1024);
+
+        // Estimate total kernel memory (heap + kernel code/data)
+        // For now, we'll report heap usage as the dynamic component
+        info!("Kernel heap usage:   {} KB", heap_used / 1024);
+
+        info!("========================================");
+        info!("");
+    }
 }
 
 #[cfg(target_pointer_width = "64")]
