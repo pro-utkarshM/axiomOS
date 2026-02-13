@@ -5,56 +5,60 @@
 See: .planning/PROJECT.md (updated 2026-02-13)
 
 **Core value:** A button press on RPi5 triggers a verified BPF program in the kernel that controls hardware — and you can change that program without rebuilding or reflashing the kernel.
-**Current focus:** Phase 1 complete — ready for Phase 2
+**Current focus:** Phase 2 complete — ready for Phase 3 (pending RPi5 hardware testing)
 
 ## Current Position
 
-Phase: 1 of 4 (BPF End-to-End) — COMPLETE
+Phase: 2 of 4 (RPi5 Hardware Demos) — COMPLETE (code only, hardware testing pending)
 Plan: 3 of 3 in current phase
 Status: Phase complete
-Last activity: 2026-02-13 — Completed 01-03-PLAN.md (Phase 1 done)
+Last activity: 2026-02-13 — Completed 02-03-PLAN.md (Phase 2 done)
 
-Progress: ███░░░░░░░ 30%
+Progress: ██████░░░░ 60%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 3
-- Average duration: 14 min
-- Total execution time: 0.7 hours
+- Total plans completed: 6
+- Average duration: 11 min
+- Total execution time: 1.1 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 1. BPF End-to-End | 3/3 | 41 min | 14 min |
+| 2. RPi5 Hardware | 3/3 | 22 min | 7 min |
 
 **Recent Trend:**
-- Last 5 plans: 21min, 9min, 11min
-- Trend: Stable/improving
+- Last 5 plans: 9min, 11min, 8min, 7min, 7min
+- Trend: Improving
 
 ## Accumulated Context
 
 ### Decisions
 
-- Helper IDs: trace_printk=2, ktime_get_ns=1, ringbuf_output=6, map_lookup=3, map_update=4
+- Helper IDs: trace_printk=2, ktime_get_ns=1, ringbuf_output=6, map_lookup=3, map_update=4, pwm_write=1005, motor_stop=1000
 - Stack offset: stack[stack.len() + offset] for r10 pointer semantics
 - BPF_RINGBUF_POLL = 37
-- Lock-free execution: clone programs, drop lock, execute (avoids helper deadlock)
+- Lock-free execution in ALL hook handlers (timer, GPIO, PWM, IIO, syscall)
 - Generic pointer load/store in interpreter for map value access
+- build-rpi5.sh uses `--features embedded-rpi5`
+- GPIO 22 as limit switch pin, PWM0 Ch1 as motor output
 
 ### Deferred Issues
 
-- GPIO/PWM/IIO/syscall hook handlers still use deadlock-prone execute_hooks() — fix in Phase 2
-- Process exit panic (address space mapper assertion) — not BPF-related, investigate later
+- ~~GPIO/PWM/IIO/syscall deadlock~~ — RESOLVED in 02-01
+- Process exit panic (address space mapper assertion) — not BPF-related
 - Pre-existing kernel_bpf scheduler test failures (52 errors)
+- RPi5 hardware testing still pending for all 3 Phase 2 demos
 
 ### Blockers/Concerns
 
-None blocking Phase 2.
+- RPi5 hardware testing needed before merging phase2-rpi5-hardware-demos → dev
 
 ## Session Continuity
 
 Last session: 2026-02-13
-Stopped at: Phase 1 complete — all 3 plans executed
+Stopped at: Phase 2 complete — all 3 plans executed (hardware testing pending)
 Resume file: None

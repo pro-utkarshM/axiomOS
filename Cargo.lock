@@ -1038,6 +1038,7 @@ source = "git+https://github.com/tsatke/mkfs#24c1cfba44f360c8d4936f08cee49a34a5e
 name = "muffinos"
 version = "0.1.0"
 dependencies = [
+ "bpf_loader",
  "clap",
  "file_io_demo",
  "file_structure",

@@ -64,11 +64,18 @@ impl IioManager {
 
         let ctx = BpfContext::from_slice(slice);
 
-        // Execute BPF hooks
+        // Execute BPF hooks (lock-free pattern)
+        //
+        // Clone programs and release lock BEFORE execution so that BPF
+        // helpers can re-acquire the lock without deadlocking.
         if let Some(manager) = crate::BPF_MANAGER.get() {
-            manager
-                .lock()
-                .execute_hooks(crate::bpf::ATTACH_TYPE_IIO, &ctx);
+            let programs = manager.lock().get_hook_programs(crate::bpf::ATTACH_TYPE_IIO);
+            for (prog_id, program) in &programs {
+                match crate::bpf::BpfManager::execute_program(program, &ctx) {
+                    Ok(res) => log::info!("IIO BPF Hook [id={}] returned: {}", prog_id, res),
+                    Err(e) => log::error!("IIO BPF Hook [id={}] failed: {:?}", prog_id, e),
+                }
+            }
         }
     }
 }

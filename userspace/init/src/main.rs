@@ -6,28 +6,15 @@ use minilib::write;
 // SAFETY: Entry point for the init process, called by the kernel/loader.
 #[unsafe(no_mangle)]
 pub extern "C" fn _start() -> ! {
-    write(1, b"=== BPF Maps Demo (Updated) ===\n");
-    write(1, b"Testing print_num(123): ");
-    print_num(123);
-    write(1, b"\n");
+    write(1, b"=== Axiom eBPF Init ===\n");
 
-    write(1, b"Testing magic syscall 999: ");
-    print_num(8888); // Marker 8888
-    write(1, b"\n");
-    // let magic = minilib::syscall0(999);
-    // print_num(magic as u64);
-    // let r0 = minilib::syscall_debug(999);
-    // write(1, b"r0: ");
-    // print_num(r0 as u64);
-    // write(1, b"\n");
-
-    // Spawn bpf_loader to load and attach BPF program to timer
-    write(1, b"Spawning /bin/bpf_loader...\n");
-    let pid = minilib::spawn("/bin/bpf_loader");
+    // Spawn safety_demo to demonstrate safety interlock on RPi5
+    write(1, b"Spawning /bin/safety_demo...\n");
+    let pid = minilib::spawn("/bin/safety_demo");
     if pid < 0 {
-        write(1, b"Failed to spawn bpf_loader!\n");
+        write(1, b"Failed to spawn safety_demo!\n");
     } else {
-        write(1, b"Spawned bpf_loader with PID: ");
+        write(1, b"Spawned safety_demo with PID: ");
         print_num(pid as u64);
         write(1, b"\n");
     }

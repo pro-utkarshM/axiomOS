@@ -251,7 +251,16 @@ impl Rp1Pwm {
             };
 
             let ctx = BpfContext::from_slice(data);
-            manager.lock().execute_hooks(ATTACH_TYPE_PWM, &ctx);
+
+            // Lock-free pattern: clone programs and release lock BEFORE execution
+            // so that BPF helpers can re-acquire the lock without deadlocking.
+            let programs = manager.lock().get_hook_programs(ATTACH_TYPE_PWM);
+            for (prog_id, program) in &programs {
+                match crate::bpf::BpfManager::execute_program(program, &ctx) {
+                    Ok(res) => log::info!("PWM BPF Hook [id={}] returned: {}", prog_id, res),
+                    Err(e) => log::error!("PWM BPF Hook [id={}] failed: {:?}", prog_id, e),
+                }
+            }
         }
     }
 
