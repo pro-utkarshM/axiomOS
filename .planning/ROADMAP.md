@@ -28,7 +28,7 @@ None
 - Ringbuf kernel→userspace delivery not yet plumbed
 
 Plans:
-- [ ] 01-01: Fix AArch64 userspace boot and verify bpf_loader runs on AArch64/QEMU
+- [x] 01-01: BPF trace via timer — bpf_loader loads program, trace_printk fires on every tick
 - [ ] 01-02: Wire BPF ringbuf output from kernel to userspace (syscall + memory plumbing)
 - [ ] 01-03: End-to-end demo: bpf_loader loads program, attaches to timer, output visible on serial
 
@@ -71,7 +71,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 
 | Phase | Plans Complete | Status | Completed |
 |-------|---------------|--------|-----------|
-| 1. BPF End-to-End | 0/3 | Not started | - |
+| 1. BPF End-to-End | 1/3 | In progress | - |
 | 2. RPi5 Hardware Demos | 0/3 | Not started | - |
 | 3. Benchmarks & Validation | 0/2 | Not started | - |
 | 4. Docs & Ecosystem | 0/2 | Not started | - |
