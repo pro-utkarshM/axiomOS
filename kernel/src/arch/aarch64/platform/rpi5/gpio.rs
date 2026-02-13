@@ -381,12 +381,21 @@ pub fn handle_interrupt() {
 
             let ctx = kernel_bpf::execution::BpfContext::from_slice(slice);
 
-            // 3. Invoke BPF hooks
+            // 3. Invoke BPF hooks (lock-free pattern)
+            //
+            // Clone programs and release lock BEFORE execution so that BPF
+            // helpers (e.g. bpf_gpio_write, bpf_ringbuf_output) can
+            // re-acquire the lock for map/GPIO operations without deadlocking.
             if let Some(manager) = crate::BPF_MANAGER.get() {
-                // Execute all attached BPF programs
-                manager
-                    .lock()
-                    .execute_hooks(crate::bpf::ATTACH_TYPE_GPIO, &ctx);
+                let programs = manager.lock().get_hook_programs(crate::bpf::ATTACH_TYPE_GPIO);
+                for (prog_id, program) in &programs {
+                    match crate::bpf::BpfManager::execute_program(program, &ctx) {
+                        Ok(_res) => {
+                            log::info!("GPIO BPF Hook [id={}] pin={} edge={}", prog_id, pin, edge);
+                        }
+                        Err(e) => log::error!("GPIO BPF Hook [id={}] failed: {:?}", prog_id, e),
+                    }
+                }
             }
         }
     }

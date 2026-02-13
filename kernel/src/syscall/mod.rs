@@ -93,7 +93,20 @@ pub fn dispatch_syscall(
         };
 
         let ctx = kernel_bpf::execution::BpfContext::from_slice(slice);
-        manager.lock().execute_hooks(crate::bpf::ATTACH_TYPE_SYSCALL, &ctx);
+
+        // Lock-free pattern: clone programs and release lock BEFORE execution
+        // so that BPF helpers can re-acquire the lock without deadlocking.
+        let programs = manager.lock().get_hook_programs(crate::bpf::ATTACH_TYPE_SYSCALL);
+        for (prog_id, program) in &programs {
+            match crate::bpf::BpfManager::execute_program(program, &ctx) {
+                Ok(res) => {
+                    if res != 0 {
+                        log::info!("Syscall Trace [id={}] syscall_nr: {}", prog_id, res);
+                    }
+                }
+                Err(e) => log::error!("Syscall BPF Hook [id={}] failed: {:?}", prog_id, e),
+            }
+        }
     }
 
     let result: Result<usize, Errno> = match n {
