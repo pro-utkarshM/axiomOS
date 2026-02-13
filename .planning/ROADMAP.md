@@ -51,7 +51,7 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 03-01: IIO sensor BPF attach point and filtering demo
+- [x] 03-01: IIO sensor filtering demo — BPF filters simulated accel data, ringbuf output
 - [ ] 03-02: Performance benchmarks suite and Linux comparison
 
 ### Phase 4: Docs & Ecosystem
@@ -73,5 +73,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 |-------|---------------|--------|-----------|
 | 1. BPF End-to-End | 3/3 | Complete | 2026-02-13 |
 | 2. RPi5 Hardware Demos | 3/3 | Complete | 2026-02-13 |
-| 3. Benchmarks & Validation | 0/2 | Not started | - |
+| 3. Benchmarks & Validation | 1/2 | In progress | - |
 | 4. Docs & Ecosystem | 0/2 | Not started | - |
