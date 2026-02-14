@@ -573,7 +573,9 @@ Dual-licensed under MIT and Apache 2.0.
 
 ## Author
 
-[Utkarsh Maurya](https://github.com/pro-utkarshM)
+Utkarsh Maurya  
+GitHub: https://github.com/pro-utkarshM  
+Email: utkarsh@kernex.sbs
 
 ---
 
