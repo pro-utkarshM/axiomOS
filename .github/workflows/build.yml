@@ -132,7 +132,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt update
-          sudo apt install -y xorriso e2fsprogs
+          sudo apt install -y xorriso e2fsprogs gcc-aarch64-linux-gnu
       - name: Build (x86_64)
         run: |
           cargo build --release
