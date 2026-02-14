@@ -52,7 +52,7 @@ mod tests {
     use alloc::sync::Arc;
     use alloc::vec;
 
-    use kernel_abi::ENOENT;
+    use kernel_abi::{Errno, ENOENT};
     use kernel_vfs::path::{AbsoluteOwnedPath, AbsolutePath, ROOT};
     use spin::mutex::Mutex;
     use spin::rwlock::RwLock;
@@ -86,6 +86,11 @@ mod tests {
         fn current_working_directory(&self) -> &RwLock<AbsoluteOwnedPath> {
             &self.cwd
         }
+
+        fn chdir(&self, path: &AbsolutePath) -> Result<(), Errno> {
+            *self.cwd.write() = path.to_owned();
+            Ok(())
+        }
     }
 
     impl<F> FileAccess for TestOpenCx<F>
@@ -99,6 +104,10 @@ mod tests {
         type WriteError = F::WriteError;
         type CloseError = F::CloseError;
         type LseekError = F::LseekError;
+        type PipeError = F::PipeError;
+        type DupError = F::DupError;
+        type MkdirError = F::MkdirError;
+        type RmdirError = F::RmdirError;
 
         fn file_info(&self, path: &AbsolutePath) -> Option<Self::FileInfo> {
             self.file_access.file_info(path)
@@ -106,6 +115,14 @@ mod tests {
 
         fn open(&self, info: &Self::FileInfo) -> Result<Self::Fd, Self::OpenError> {
             self.file_access.open(info)
+        }
+
+        fn mkdir(&self, path: &AbsolutePath) -> Result<(), Self::MkdirError> {
+            self.file_access.mkdir(path)
+        }
+
+        fn rmdir(&self, path: &AbsolutePath) -> Result<(), Self::RmdirError> {
+            self.file_access.rmdir(path)
         }
 
         fn read(&self, fd: Self::Fd, buf: &mut [u8]) -> Result<usize, Self::ReadError> {
@@ -122,6 +139,18 @@ mod tests {
 
         fn lseek(&self, fd: Self::Fd, offset: i64, whence: i32) -> Result<usize, Self::LseekError> {
             self.file_access.lseek(fd, offset, whence)
+        }
+
+        fn pipe(&self) -> Result<(Self::Fd, Self::Fd), Self::PipeError> {
+            self.file_access.pipe()
+        }
+
+        fn dup(&self, oldfd: Self::Fd) -> Result<Self::Fd, Self::DupError> {
+            self.file_access.dup(oldfd)
+        }
+
+        fn dup2(&self, oldfd: Self::Fd, newfd: Self::Fd) -> Result<Self::Fd, Self::DupError> {
+            self.file_access.dup2(oldfd, newfd)
         }
     }
 

@@ -226,10 +226,11 @@ pub fn sys_rmdir<Cx: CwdAccess + FileAccess>(
 
 #[cfg(test)]
 mod tests {
+    use alloc::borrow::ToOwned;
     use alloc::vec;
 
-    use kernel_abi::{EINVAL, ERANGE};
-    use kernel_vfs::path::AbsoluteOwnedPath;
+    use kernel_abi::{Errno, EINVAL, ERANGE};
+    use kernel_vfs::path::{AbsoluteOwnedPath, AbsolutePath};
     use spin::rwlock::RwLock;
 
     use crate::access::CwdAccess;
@@ -241,6 +242,11 @@ mod tests {
         impl CwdAccess for Cwd<'_> {
             fn current_working_directory(&self) -> &RwLock<AbsoluteOwnedPath> {
                 self.0
+            }
+
+            fn chdir(&self, path: &AbsolutePath) -> Result<(), Errno> {
+                *self.0.write() = path.to_owned();
+                Ok(())
             }
         }
 

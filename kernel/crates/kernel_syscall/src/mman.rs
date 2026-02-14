@@ -150,6 +150,11 @@ mod tests {
         fn add_memory_region(&self, _region: Self::Region) {
             // Just a placeholder for testing
         }
+
+        fn remove_memory_region(&self, _addr: UserspacePtr<u8>) -> Result<(), CreateMappingError> {
+            // Just a placeholder for testing
+            Ok(())
+        }
     }
 
     #[test]
