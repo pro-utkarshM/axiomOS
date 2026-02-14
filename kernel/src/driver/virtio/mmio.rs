@@ -1,9 +1,13 @@
 use log::{info, warn};
-use virtio_drivers::{Hal, transport::{Transport, mmio::MmioTransport, DeviceType}};
+use virtio_drivers::transport::mmio::MmioTransport;
+use virtio_drivers::transport::{DeviceType, Transport};
+use virtio_drivers::Hal;
 
-use crate::arch::aarch64::platform::virt::mmio::{VIRTIO_MMIO_BASE, VIRTIO_MMIO_SIZE, VIRTIO_MAX_DEVICES};
-use crate::driver::virtio::hal::HalImpl;
+use crate::arch::aarch64::platform::virt::mmio::{
+    VIRTIO_MAX_DEVICES, VIRTIO_MMIO_BASE, VIRTIO_MMIO_SIZE,
+};
 use crate::driver::virtio::block;
+use crate::driver::virtio::hal::HalImpl;
 
 /// Initialize VirtIO MMIO devices
 ///
@@ -16,9 +20,7 @@ pub fn init() {
 
         // Map the device header
         // SAFETY: The address is within the valid MMIO region for QEMU virt.
-        let virt_addr = unsafe {
-            HalImpl::mmio_phys_to_virt(phys_addr as u64, VIRTIO_MMIO_SIZE)
-        };
+        let virt_addr = unsafe { HalImpl::mmio_phys_to_virt(phys_addr as u64, VIRTIO_MMIO_SIZE) };
 
         // Try to initialize MMIO transport
         // MmioTransport::new validates the magic value ("virt") and version.
@@ -28,7 +30,10 @@ pub fn init() {
                 let device_type = transport.device_type();
                 let version = transport.version();
 
-                info!("Found VirtIO device at {:#x}: type {:?}, version {:?}", phys_addr, device_type, version);
+                info!(
+                    "Found VirtIO device at {:#x}: type {:?}, version {:?}",
+                    phys_addr, device_type, version
+                );
 
                 match device_type {
                     DeviceType::Block => {

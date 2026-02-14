@@ -4,23 +4,18 @@ use core::sync::atomic::Ordering::Relaxed;
 use conquer_once::spin::OnceCell;
 use log::info;
 
-#[cfg(target_arch = "x86_64")]
-use crate::arch::types::Size2MiB;
-use crate::arch::types::{
-    Page, PageRangeInclusive, PageTableFlags, Size4KiB, VirtAddr,
-};
-
-#[cfg(target_arch = "x86_64")]
-use crate::mem::address_space::virt_addr_from_page_table_indices;
-#[cfg(target_arch = "x86_64")]
-use crate::mem::phys::PhysicalMemory;
-
 #[cfg(target_arch = "aarch64")]
 use crate::arch::aarch64::phys;
+#[cfg(target_arch = "x86_64")]
+use crate::arch::types::Size2MiB;
+use crate::arch::types::{Page, PageRangeInclusive, PageTableFlags, Size4KiB, VirtAddr};
+#[cfg(target_arch = "x86_64")]
+use crate::mem::address_space::virt_addr_from_page_table_indices;
+use crate::mem::address_space::AddressSpace;
+#[cfg(target_arch = "x86_64")]
+use crate::mem::phys::PhysicalMemory;
 #[cfg(target_arch = "aarch64")]
 use crate::U64Ext;
-
-use crate::mem::address_space::AddressSpace;
 
 static HEAP_INITIALIZED: AtomicBool = AtomicBool::new(false);
 
@@ -150,9 +145,7 @@ pub(in crate::mem) fn init(address_space: &AddressSpace, usable_physical_memory_
         #[cfg(target_arch = "aarch64")]
         let ptr = HEAP_START.as_u64().into_usize() as *mut u8;
 
-        ALLOCATOR
-            .lock()
-            .init(ptr, initial_heap_size);
+        ALLOCATOR.lock().init(ptr, initial_heap_size);
     }
 
     HEAP_INITIALIZED.store(true, Relaxed);

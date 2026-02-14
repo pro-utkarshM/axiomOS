@@ -6,7 +6,7 @@ use core::fmt::{Debug, Display, Formatter};
 use core::iter;
 
 use addr2line::gimli::{EndianSlice, Error};
-use addr2line::{Context, gimli};
+use addr2line::{gimli, Context};
 use conquer_once::spin::OnceCell;
 use elf::ParseError;
 use thiserror::Error;
@@ -39,8 +39,8 @@ pub fn init() {
         use log::debug;
         use x86_64::VirtAddr;
 
-        use crate::U64Ext;
         use crate::limine::KERNEL_FILE_REQUEST;
+        use crate::U64Ext;
 
         debug!("initializing backtrace context");
         let kernel_file = KERNEL_FILE_REQUEST.get_response().unwrap();

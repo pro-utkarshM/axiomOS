@@ -438,7 +438,11 @@ pub fn get_helper_signature(id: HelperId) -> HelperSignature {
 
         HelperId::TimeseriesPush => HelperSignature::new(
             id,
-            &[ArgType::Scalar, ArgType::PtrToMapKey, ArgType::PtrToMapValue],
+            &[
+                ArgType::Scalar,
+                ArgType::PtrToMapKey,
+                ArgType::PtrToMapValue,
+            ],
             ReturnType::Integer,
         ),
 

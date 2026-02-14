@@ -2,7 +2,7 @@
 #![no_main]
 
 use kernel_abi::BpfAttr;
-use minilib::{bpf, exit, write, msleep};
+use minilib::{bpf, exit, msleep, write};
 
 // BPF Helper IDs
 const HELPER_RINGBUF_OUTPUT: i32 = 6;
@@ -134,7 +134,7 @@ pub extern "C" fn _start() -> ! {
         },
         // call bpf_ringbuf_output(ringbuf_id, event_ptr, size, flags)
         BpfInsn {
-            code: 0x85,    // CALL
+            code: 0x85, // CALL
             dst_src: 0x00,
             off: 0,
             imm: HELPER_RINGBUF_OUTPUT,
@@ -223,7 +223,6 @@ pub extern "C" fn _start() -> ! {
     // 4. Poll ringbuf for valid events
     print("Polling for filtered sensor events...\n\n");
 
-    let mut total_events = 0u64;
     let mut accepted_events = 0u64;
     let max_events = 50u64;
 
@@ -265,7 +264,7 @@ pub extern "C" fn _start() -> ! {
     // Note: We can't get the exact total_events count from kernel without additional infrastructure
     // For the demo, we estimate based on the acceptance rate (80% in range: 100-900 out of 0-999)
     // Expected acceptance rate = (900-100+1) / 1000 = 80.1%
-    total_events = (accepted_events * 1000) / 801; // Approximate total
+    let total_events = (accepted_events * 1000) / 801; // Approximate total
 
     print("\n=== Filter Statistics ===\n");
     print("Accepted events: ");

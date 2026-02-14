@@ -2,7 +2,7 @@
 #![no_main]
 
 use kernel_abi::BpfAttr;
-use minilib::{bpf, exit, write, sleep};
+use minilib::{bpf, exit, sleep, write};
 
 // Helper IDs
 const HELPER_KTIME_GET_NS: i32 = 1;
@@ -25,31 +25,66 @@ struct BpfInsn {
 #[allow(dead_code)]
 impl BpfInsn {
     const fn mov64_imm(dst: u8, imm: i32) -> Self {
-        Self { code: 0xb7, dst_src: dst, off: 0, imm }
+        Self {
+            code: 0xb7,
+            dst_src: dst,
+            off: 0,
+            imm,
+        }
     }
 
     const fn mov64_reg(dst: u8, src: u8) -> Self {
-        Self { code: 0xbf, dst_src: (src << 4) | dst, off: 0, imm: 0 }
+        Self {
+            code: 0xbf,
+            dst_src: (src << 4) | dst,
+            off: 0,
+            imm: 0,
+        }
     }
 
     const fn ldx_w(dst: u8, src: u8, off: i16) -> Self {
-        Self { code: 0x61, dst_src: (src << 4) | dst, off, imm: 0 }
+        Self {
+            code: 0x61,
+            dst_src: (src << 4) | dst,
+            off,
+            imm: 0,
+        }
     }
 
     const fn stx_w(dst: u8, src: u8, off: i16) -> Self {
-        Self { code: 0x63, dst_src: (src << 4) | dst, off, imm: 0 }
+        Self {
+            code: 0x63,
+            dst_src: (src << 4) | dst,
+            off,
+            imm: 0,
+        }
     }
 
     const fn stx_dw(dst: u8, src: u8, off: i16) -> Self {
-        Self { code: 0x7b, dst_src: (src << 4) | dst, off, imm: 0 }
+        Self {
+            code: 0x7b,
+            dst_src: (src << 4) | dst,
+            off,
+            imm: 0,
+        }
     }
 
     const fn call(imm: i32) -> Self {
-        Self { code: 0x85, dst_src: 0, off: 0, imm }
+        Self {
+            code: 0x85,
+            dst_src: 0,
+            off: 0,
+            imm,
+        }
     }
 
     const fn exit() -> Self {
-        Self { code: 0x95, dst_src: 0, off: 0, imm: 0 }
+        Self {
+            code: 0x95,
+            dst_src: 0,
+            off: 0,
+            imm: 0,
+        }
     }
 }
 
@@ -68,7 +103,11 @@ pub extern "C" fn _start() -> ! {
         ..Default::default()
     };
 
-    let map_fd = bpf(0, &map_attr as *const _ as *const u8, core::mem::size_of::<BpfAttr>() as i32);
+    let map_fd = bpf(
+        0,
+        &map_attr as *const _ as *const u8,
+        core::mem::size_of::<BpfAttr>() as i32,
+    );
     if map_fd < 0 {
         print("Error: Failed to create map\n");
         exit(1);
@@ -97,32 +136,34 @@ pub extern "C" fn _start() -> ! {
 
         // Call ktime_get_ns() -> R0
         BpfInsn::call(HELPER_KTIME_GET_NS),
-
         // R1 = R0 (ts)
         BpfInsn::mov64_reg(1, 0),
-
         // Store ts at [R10 - 8]
         BpfInsn::stx_dw(10, 1, -8),
-
         // Create a value: val = ts
         // Store val at [R10 - 16]
         BpfInsn::stx_dw(10, 1, -16),
-
         // Prepare arguments for bpf_timeseries_push(map_id, key_ptr, value_ptr)
         // R1 = map_fd
         BpfInsn::mov64_imm(1, map_fd),
-
         // R2 = R10 - 8 (pointer to key/ts)
         BpfInsn::mov64_reg(2, 10),
-        BpfInsn { code: 0x07, dst_src: 0, off: 0, imm: -8 }, // ADD R2, -8
-
+        BpfInsn {
+            code: 0x07,
+            dst_src: 0,
+            off: 0,
+            imm: -8,
+        }, // ADD R2, -8
         // R3 = R10 - 16 (pointer to value)
         BpfInsn::mov64_reg(3, 10),
-        BpfInsn { code: 0x07, dst_src: 0, off: 0, imm: -16 }, // ADD R3, -16
-
+        BpfInsn {
+            code: 0x07,
+            dst_src: 0,
+            off: 0,
+            imm: -16,
+        }, // ADD R3, -16
         // Call helper
         BpfInsn::call(HELPER_TIMESERIES_PUSH),
-
         BpfInsn::mov64_imm(0, 0),
         BpfInsn::exit(),
     ];
@@ -134,7 +175,11 @@ pub extern "C" fn _start() -> ! {
         ..Default::default()
     };
 
-    let prog_id = bpf(5, &load_attr as *const _ as *const u8, core::mem::size_of::<BpfAttr>() as i32);
+    let prog_id = bpf(
+        5,
+        &load_attr as *const _ as *const u8,
+        core::mem::size_of::<BpfAttr>() as i32,
+    );
     if prog_id < 0 {
         print("Error: Failed to load program\n");
         exit(1);
@@ -152,7 +197,11 @@ pub extern "C" fn _start() -> ! {
         attach_prog_fd: prog_id as u32,
         ..Default::default()
     };
-    let res = bpf(8, &attach_attr as *const _ as *const u8, core::mem::size_of::<BpfAttr>() as i32);
+    let res = bpf(
+        8,
+        &attach_attr as *const _ as *const u8,
+        core::mem::size_of::<BpfAttr>() as i32,
+    );
     if res < 0 {
         print("Error: Failed to attach\n");
         exit(1);
@@ -188,7 +237,11 @@ pub extern "C" fn _start() -> ! {
             ..Default::default()
         };
 
-        let ret = bpf(1, &lookup_attr as *const _ as *const u8, core::mem::size_of::<BpfAttr>() as i32);
+        let ret = bpf(
+            1,
+            &lookup_attr as *const _ as *const u8,
+            core::mem::size_of::<BpfAttr>() as i32,
+        );
 
         if ret == 0 {
             // value contains [timestamp(8)][val(8)]

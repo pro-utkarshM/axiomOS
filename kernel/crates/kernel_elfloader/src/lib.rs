@@ -171,6 +171,13 @@ where
     tls_allocation: Option<M::ReadonlyAllocation>,
 }
 
+pub type ElfImageParts<M> = (
+    Vec<<M as MemoryApi>::ExecutableAllocation>,
+    Vec<<M as MemoryApi>::ReadonlyAllocation>,
+    Vec<<M as MemoryApi>::WritableAllocation>,
+    Option<<M as MemoryApi>::ReadonlyAllocation>,
+);
+
 impl<M> ElfImage<'_, M>
 where
     M: MemoryApi,
@@ -195,12 +202,7 @@ where
         self.elf_file.entry()
     }
 
-    pub fn into_inner(self) -> (
-        Vec<M::ExecutableAllocation>,
-        Vec<M::ReadonlyAllocation>,
-        Vec<M::WritableAllocation>,
-        Option<M::ReadonlyAllocation>,
-    ) {
+    pub fn into_inner(self) -> ElfImageParts<M> {
         (
             self.executable_allocations,
             self.readonly_allocations,

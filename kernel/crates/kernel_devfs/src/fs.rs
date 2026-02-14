@@ -183,10 +183,10 @@ impl FileSystem for DevFs {
         // If path is ROOT, file_name() is None.
         let filename = path.file_name().ok_or(MkdirError::AlreadyExists)?;
 
-        let parent_node = self.resolve_node_mut(parent).map_err(|_| MkdirError::NotFound)?;
-        let parent_dir = parent_node
-            .directory_mut()
-            .ok_or(MkdirError::NotFound)?; // Should be NotDirectory but generic error for now
+        let parent_node = self
+            .resolve_node_mut(parent)
+            .map_err(|_| MkdirError::NotFound)?;
+        let parent_dir = parent_node.directory_mut().ok_or(MkdirError::NotFound)?; // Should be NotDirectory but generic error for now
 
         if parent_dir.lookup_child(filename).is_some() {
             return Err(MkdirError::AlreadyExists);
@@ -204,7 +204,9 @@ impl FileSystem for DevFs {
         let parent = path.parent().unwrap_or(ROOT);
         let filename = path.file_name().ok_or(RmdirError::NotFound)?; // Can't remove root
 
-        let parent_node = self.resolve_node_mut(parent).map_err(|_| RmdirError::NotFound)?;
+        let parent_node = self
+            .resolve_node_mut(parent)
+            .map_err(|_| RmdirError::NotFound)?;
         let parent_dir = parent_node
             .directory_mut()
             .ok_or(RmdirError::NotADirectory)?;

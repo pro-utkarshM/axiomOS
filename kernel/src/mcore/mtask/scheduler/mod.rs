@@ -16,11 +16,11 @@ use x86_64::registers::model_specific::FsBase;
 use crate::arch::aarch64::Aarch64 as Arch;
 #[cfg(all(target_arch = "aarch64", feature = "aarch64_arch"))]
 use crate::arch::traits::Architecture;
+#[cfg(target_arch = "x86_64")]
+use crate::mcore::context::ExecutionContext;
 use crate::mcore::mtask::scheduler::global::GlobalTaskQueue;
 use crate::mcore::mtask::scheduler::switch::switch_impl;
 use crate::mcore::mtask::task::Task;
-#[cfg(target_arch = "x86_64")]
-use crate::mcore::context::ExecutionContext;
 
 pub mod cleanup;
 pub mod global;
@@ -85,7 +85,9 @@ impl Scheduler {
             log::info!("reschedule: switching to task {}", next_task.id());
 
             #[cfg(target_arch = "x86_64")]
-            let cr3_value = next_task.process().with_address_space(|as_| as_.cr3_value());
+            let cr3_value = next_task
+                .process()
+                .with_address_space(|as_| as_.cr3_value());
             #[cfg(target_arch = "x86_64")]
             {
                 if let Some(kstack) = next_task.kstack() {
@@ -95,7 +97,9 @@ impl Scheduler {
                 }
             }
             #[cfg(target_arch = "aarch64")]
-            let cr3_value = next_task.process().with_address_space(|as_| as_.ttbr0_value());
+            let cr3_value = next_task
+                .process()
+                .with_address_space(|as_| as_.ttbr0_value());
 
             // log::info!("reschedule: switching to task {} with ttbr0={:#x}", next_task.id(), cr3_value);
 

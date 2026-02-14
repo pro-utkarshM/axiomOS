@@ -69,14 +69,11 @@ pub unsafe extern "C" fn switch_impl(_old_sp_ptr: *mut usize, _new_sp: usize, _n
         "stp x23, x24, [sp, #-16]!",
         "stp x21, x22, [sp, #-16]!",
         "stp x19, x20, [sp, #-16]!",
-
         // Save current SP to *old_sp_ptr
         "mov x9, sp",
         "str x9, [x0]",
-
         // Load new SP
         "mov sp, x1",
-
         // Switch page tables if new_ttbr0 != 0
         "cbz x2, 1f",
         "msr ttbr0_el1, x2",
@@ -85,19 +82,18 @@ pub unsafe extern "C" fn switch_impl(_old_sp_ptr: *mut usize, _new_sp: usize, _n
         "dsb ish",
         "isb",
         "1:",
-
         // We ALSO need to switch sp_el0 because it's a system register that
         // is NOT part of the callee-saved set on the stack, but IS task-local.
         // However, sp_el0 is typically saved/restored in the exception entry/exit.
-        // If we switch tasks via switch_impl (kernel context switch), we are 
+        // If we switch tasks via switch_impl (kernel context switch), we are
         // already in the kernel. The sp_el0 currently in the register belongs
-        // to the old task. If we don't save it here, and the new task didn't 
+        // to the old task. If we don't save it here, and the new task didn't
         // come from an exception (e.g. it's a new task), it might be wrong.
-        // Actually, for AArch64, we rely on the fact that any task that was 
+        // Actually, for AArch64, we rely on the fact that any task that was
         // running in userspace HAS its sp_el0 saved in its ExceptionContext on its
         // kernel stack. When we switch kernel stacks here, we are switching
         // to the new task's kernel stack. When THAT task eventually returns
-        // to userspace via eret (in restore_context), it will load its own 
+        // to userspace via eret (in restore_context), it will load its own
         // sp_el0 from its own stack.
         // So switch_impl doesn't strictly NEED to touch sp_el0 if ALL userspace
         // entries/exits go through the exception path.
@@ -109,7 +105,6 @@ pub unsafe extern "C" fn switch_impl(_old_sp_ptr: *mut usize, _new_sp: usize, _n
         "ldp x25, x26, [sp], #16",
         "ldp x27, x28, [sp], #16",
         "ldp x29, x30, [sp], #16",
-
         // Return to new task (x30/LR has the return address)
         "ret",
     );
@@ -308,13 +303,11 @@ pub unsafe extern "C" fn restore_user_context(ctx: *const crate::arch::UserConte
         // 1. Restore sp_el0
         "ldr x1, [x0, #272]",
         "msr sp_el0, x1",
-
         // 2. Restore ELR, SPSR
         // elr is at offset 248, spsr at 256
         "ldp x2, x3, [x0, #248]",
         "msr elr_el1, x2",
         "msr spsr_el1, x3",
-
         // 3. Restore registers
         "ldp x29, x30, [x0, #232]",
         "ldp x27, x28, [x0, #216]",
@@ -332,7 +325,6 @@ pub unsafe extern "C" fn restore_user_context(ctx: *const crate::arch::UserConte
         "ldp x3, x4, [x0, #24]",
         "ldp x1, x2, [x0, #8]",
         "ldr x0, [x0]",
-
         "eret"
     );
 }

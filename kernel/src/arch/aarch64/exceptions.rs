@@ -86,7 +86,13 @@ pub extern "C" fn handle_sync_exception(ctx: &mut ExceptionContext) {
     let ec = (esr >> 26) & 0x3F; // Exception class
     let iss = esr & 0x1FFFFFF; // Instruction specific syndrome
 
-    log::debug!("Sync exception: EC={:#x}, ISS={:#x}, ELR={:#x}, FAR={:#x}", ec, iss, elr, far);
+    log::debug!(
+        "Sync exception: EC={:#x}, ISS={:#x}, ELR={:#x}, FAR={:#x}",
+        ec,
+        iss,
+        elr,
+        far
+    );
 
     match ec {
         0x15 => {
@@ -299,7 +305,12 @@ pub extern "C" fn handle_serror() {
         asm!("mrs {}, far_el1", out(reg) far);
     }
 
-    log::error!("SError received! ESR={:#x}, ELR={:#x}, FAR={:#x}", esr, elr, far);
+    log::error!(
+        "SError received! ESR={:#x}, ELR={:#x}, FAR={:#x}",
+        esr,
+        elr,
+        far
+    );
     panic!("SError received");
 }
 
@@ -318,7 +329,11 @@ pub extern "C" fn handle_invalid_exception(kind: u64, source: u64) {
 
     log::error!(
         "Invalid exception: kind={}, source={}, ESR={:#x}, ELR={:#x}, FAR={:#x}",
-        kind, source, esr, elr, far
+        kind,
+        source,
+        esr,
+        elr,
+        far
     );
 
     panic!(
@@ -365,7 +380,7 @@ pub struct ExceptionContext {
     pub x30: u64, // Link register
 
     // Exception state
-    pub elr: u64,   // Exception link register
-    pub spsr: u64,  // Saved program status register
+    pub elr: u64,    // Exception link register
+    pub spsr: u64,   // Saved program status register
     pub sp_el0: u64, // User stack pointer (saved from SP_EL0)
 }

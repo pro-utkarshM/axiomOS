@@ -1,6 +1,9 @@
 use core::slice::from_raw_parts_mut;
 
-use kernel_abi::{EBADF, EFAULT, EINVAL, EMFILE, ENAMETOOLONG, ENOENT, ERANGE, ESPIPE, Errno, PATH_MAX, iovec, UIO_MAXIOV};
+use kernel_abi::{
+    EBADF, EFAULT, EINVAL, EMFILE, ENAMETOOLONG, ENOENT, ERANGE, ESPIPE, Errno, PATH_MAX,
+    UIO_MAXIOV, iovec,
+};
 use kernel_vfs::path::{AbsolutePath, Path};
 
 use crate::access::{CwdAccess, FileAccess};
@@ -166,8 +169,7 @@ fn resolve_path<Cx: CwdAccess>(
     path: UserspacePtr<u8>,
     path_len: usize,
 ) -> Result<alloc::borrow::Cow<'static, AbsolutePath>, Errno> {
-    use alloc::borrow::Cow;
-    use alloc::borrow::ToOwned;
+    use alloc::borrow::{Cow, ToOwned};
 
     if path_len > PATH_MAX {
         return Err(ENAMETOOLONG);
@@ -197,7 +199,7 @@ pub fn sys_chdir<Cx: CwdAccess>(
     path_len: usize,
 ) -> Result<usize, Errno> {
     let path = resolve_path(cx, path, path_len)?;
-    cx.chdir(&path).map_err(|e| e)?;
+    cx.chdir(&path)?;
     Ok(0)
 }
 

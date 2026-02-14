@@ -1,9 +1,9 @@
-use limine::BaseRevision;
 use limine::request::{
     DateAtBootRequest, ExecutableAddressRequest, ExecutableFileRequest, HhdmRequest,
     MemoryMapRequest, ModuleRequest, MpRequest, RequestsEndMarker, RequestsStartMarker,
     RsdpRequest, StackSizeRequest,
 };
+use limine::BaseRevision;
 
 #[used]
 // SAFETY: The Limine protocol requires specific sections for requests to be found by the bootloader.

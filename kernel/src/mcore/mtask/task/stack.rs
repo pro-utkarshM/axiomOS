@@ -1,25 +1,26 @@
 use core::ffi::c_void;
 use core::fmt::{Debug, Formatter};
-use core::slice::from_raw_parts_mut;
 use core::mem::{size_of, size_of_val};
+use core::slice::from_raw_parts_mut;
 
 use kernel_virtual_memory::Segment;
 use thiserror::Error;
-use crate::arch::{PageSize, PageTableFlags, Size4KiB, VirtAddr};
-#[cfg(target_arch = "aarch64")]
-use crate::arch::PageRangeInclusive;
 #[cfg(target_arch = "x86_64")]
 use x86_64::registers::rflags::RFlags;
 
 #[cfg(target_arch = "aarch64")]
 use crate::arch::aarch64::context::init_task_stack_with_arg;
+#[cfg(target_arch = "aarch64")]
+use crate::arch::PageRangeInclusive;
+use crate::arch::{
+    restore_user_context, PageSize, PageTableFlags, Size4KiB, UserContext, VirtAddr,
+};
 use crate::mem::address_space::AddressSpace;
 #[cfg(target_arch = "x86_64")]
 use crate::mem::phys::PhysicalMemory;
 use crate::mem::virt::{OwnedSegment, VirtualMemoryAllocator, VirtualMemoryHigherHalf};
 #[cfg(target_arch = "x86_64")]
 use crate::{U64Ext, UsizeExt};
-use crate::arch::{UserContext, restore_user_context};
 
 #[derive(Debug, Copy, Clone, Error)]
 pub enum StackAllocationError {
@@ -72,7 +73,12 @@ impl HigherHalfStack {
         arg: *mut c_void,
         exit_fn: extern "C" fn(),
     ) -> Result<Self, StackAllocationError> {
-        log::info!("HigherHalfStack::allocate: pages={}, entry_point={:p}, arg={:p}", pages, entry_point, arg);
+        log::info!(
+            "HigherHalfStack::allocate: pages={}, entry_point={:p}, arg={:p}",
+            pages,
+            entry_point,
+            arg
+        );
         let mut stack = Self::allocate_plain(pages)?;
         let mapped_segment = stack.mapped_segment;
 
@@ -120,7 +126,10 @@ impl HigherHalfStack {
             stack.rsp = VirtAddr::new(rsp as u64);
         }
 
-        log::info!("HigherHalfStack::allocate: stack initialized, rsp={:p}", stack.rsp.as_ptr::<()>());
+        log::info!(
+            "HigherHalfStack::allocate: stack initialized, rsp={:p}",
+            stack.rsp.as_ptr::<()>()
+        );
         Ok(stack)
     }
 
@@ -165,7 +174,7 @@ impl HigherHalfStack {
                 rsp,
                 rbp: 0,
                 rdi: context_addr.as_u64() as usize, // arg1 for restore_user_context
-                rip: entry_point as *const () as usize,           // Return address for switch_impl
+                rip: entry_point as *const () as usize, // Return address for switch_impl
                 rflags: (RFlags::IOPL_LOW | RFlags::INTERRUPT_FLAG)
                     .bits()
                     .into_usize(),
@@ -217,35 +226,46 @@ impl HigherHalfStack {
             .reserve(pages)
             .ok_or(StackAllocationError::OutOfVirtualMemory)?;
 
-        log::info!("HigherHalfStack::allocate_plain: segment reserved: {:?}", *segment);
+        log::info!(
+            "HigherHalfStack::allocate_plain: segment reserved: {:?}",
+            *segment
+        );
 
         let mapped_segment =
             Segment::new(segment.start + Size4KiB::SIZE, segment.len - Size4KiB::SIZE);
 
-        AddressSpace::kernel()
-            .with_active(|address_space| {
-                #[cfg(target_arch = "x86_64")]
-                {
-                    address_space.map_range::<Size4KiB>(
+        AddressSpace::kernel().with_active(|address_space| {
+            #[cfg(target_arch = "x86_64")]
+            {
+                address_space
+                    .map_range::<Size4KiB>(
                         &mapped_segment,
                         PhysicalMemory::allocate_frames_non_contiguous(),
                         // FIXME: must be user accessible for user tasks, but can only be user accessible if in lower half, otherwise it can be modified by unrelated tasks/processes
                         PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
-                    ).map_err(|_| StackAllocationError::OutOfPhysicalMemory)
-                }
-                #[cfg(target_arch = "aarch64")]
-                {
-                    log::info!("HigherHalfStack::allocate_plain: mapping range...");
-                    let frames = crate::arch::aarch64::phys::allocate_frames((mapped_segment.len / Size4KiB::SIZE) as usize).expect("out of phys memory");
-                    let res = address_space.map_range::<Size4KiB>(
+                    )
+                    .map_err(|_| StackAllocationError::OutOfPhysicalMemory)
+            }
+            #[cfg(target_arch = "aarch64")]
+            {
+                log::info!("HigherHalfStack::allocate_plain: mapping range...");
+                let frames = crate::arch::aarch64::phys::allocate_frames(
+                    (mapped_segment.len / Size4KiB::SIZE) as usize,
+                )
+                .expect("out of phys memory");
+                let res = address_space
+                    .map_range::<Size4KiB>(
                         &mapped_segment,
                         frames.into_iter(),
-                        PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::NO_EXECUTE,
-                    ).map_err(|_| StackAllocationError::OutOfPhysicalMemory);
-                    log::info!("HigherHalfStack::allocate_plain: range mapped");
-                    res
-                }
-            })?;
+                        PageTableFlags::PRESENT
+                            | PageTableFlags::WRITABLE
+                            | PageTableFlags::NO_EXECUTE,
+                    )
+                    .map_err(|_| StackAllocationError::OutOfPhysicalMemory);
+                log::info!("HigherHalfStack::allocate_plain: range mapped");
+                res
+            }
+        })?;
         let rsp = mapped_segment.start + mapped_segment.len;
         Ok(Self {
             segment,

@@ -7,8 +7,8 @@ use conquer_once::spin::OnceCell;
 use spin::RwLock;
 use volatile::access::{NoAccess, ReadOnly, ReadWrite};
 use volatile::{VolatileFieldAccess, VolatilePtr};
-use x86_64::PhysAddr;
 use x86_64::structures::paging::{Page, PageTableFlags, PhysFrame, Size4KiB};
+use x86_64::PhysAddr;
 
 use crate::acpi::acpi_tables;
 use crate::mem::address_space::AddressSpace;

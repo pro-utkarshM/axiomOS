@@ -4,28 +4,22 @@ use conquer_once::spin::OnceCell;
 use log::info;
 use mapper::AddressSpaceMapper;
 use spin::RwLock;
-
 #[cfg(target_arch = "x86_64")]
 use x86_64::instructions::interrupts;
 #[cfg(target_arch = "x86_64")]
 use x86_64::registers::control::Cr3;
 #[cfg(target_arch = "x86_64")]
-use x86_64::structures::paging::mapper::{
-    FlagUpdateError, MapToError,
-};
+use x86_64::structures::paging::mapper::{FlagUpdateError, MapToError};
 #[cfg(target_arch = "x86_64")]
-use x86_64::structures::paging::{
-    Mapper, PageTable, RecursivePageTable,
-};
-
-use crate::arch::types::{
-    Page, PageRangeInclusive, PageSize, PageTableFlags, PhysAddr, PhysFrame, VirtAddr,
-};
+use x86_64::structures::paging::{Mapper, PageTable, RecursivePageTable};
 
 #[cfg(target_arch = "x86_64")]
 use crate::arch::types::Size4KiB;
 #[cfg(target_arch = "aarch64")]
 use crate::arch::types::Size4KiB;
+use crate::arch::types::{
+    Page, PageRangeInclusive, PageSize, PageTableFlags, PhysAddr, PhysFrame, VirtAddr,
+};
 
 #[cfg(target_arch = "aarch64")]
 pub mod aarch64 {
@@ -130,7 +124,11 @@ fn make_mapping_recursive() -> (VirtAddr, PhysFrame) {
     );
 
     let vaddr = recursive_index_to_virtual_address(recursive_index);
-    info!("recursive mapping: PML4[{}] -> {:#x}", recursive_index, vaddr.as_u64());
+    info!(
+        "recursive mapping: PML4[{}] -> {:#x}",
+        recursive_index,
+        vaddr.as_u64()
+    );
     RECURSIVE_INDEX.init_once(|| recursive_index);
 
     // Fill in any unused higher-half PML4 entries with new page tables
@@ -275,7 +273,8 @@ impl AddressSpace {
                 // SAFETY: We have reserved segments in higher-half virtual memory.
                 // We are casting the pointers to PageTable which matches the underlying data structure.
                 // These pointers are valid because we just mapped the frames in the active (kernel) address space.
-                let new_page_table = unsafe { &mut *new_pt_segment.start.as_mut_ptr::<PageTable>() };
+                let new_page_table =
+                    unsafe { &mut *new_pt_segment.start.as_mut_ptr::<PageTable>() };
                 // SAFETY: Same as above.
                 let old_page_table = unsafe { &*old_pt_segment.start.as_mut_ptr::<PageTable>() };
 
@@ -293,12 +292,8 @@ impl AddressSpace {
                     PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::NO_EXECUTE,
                 );
 
-                kernel_as
-                    .unmap(old_pt_page)
-                    .expect("page should be mapped");
-                kernel_as
-                    .unmap(new_pt_page)
-                    .expect("page should be mapped");
+                kernel_as.unmap(old_pt_page).expect("page should be mapped");
+                kernel_as.unmap(new_pt_page).expect("page should be mapped");
             });
 
             // SAFETY: We have initialized the new page table frame and mapped it.
@@ -314,9 +309,9 @@ impl AddressSpace {
                 crate::arch::types::PhysAddr::new(l0_phys as u64),
             );
             // Convert physical address to virtual address using the direct map (HHDM equivalent)
-            let vaddr = crate::arch::types::VirtAddr::new(
-                crate::arch::aarch64::mem::phys_to_virt(l0_phys) as u64,
-            );
+            let vaddr = crate::arch::types::VirtAddr::new(crate::arch::aarch64::mem::phys_to_virt(
+                l0_phys,
+            ) as u64);
             unsafe { Self::create_from(frame, vaddr) }
         }
     }
@@ -582,8 +577,10 @@ impl AddressSpace {
             // SAFETY: We are accessing valid physical frames. We use phys_to_virt to map them.
             // On Axiom, all physical memory is mapped in the higher half.
             unsafe {
-                let src_ptr = crate::mem::phys_to_virt(frame.start_address().as_u64() as usize) as *const u8;
-                let dst_ptr = crate::mem::phys_to_virt(new_frame.start_address().as_u64() as usize) as *mut u8;
+                let src_ptr =
+                    crate::mem::phys_to_virt(frame.start_address().as_u64() as usize) as *const u8;
+                let dst_ptr = crate::mem::phys_to_virt(new_frame.start_address().as_u64() as usize)
+                    as *mut u8;
                 core::ptr::copy_nonoverlapping(src_ptr, dst_ptr, Size4KiB::SIZE as usize);
             }
 
@@ -601,16 +598,16 @@ impl AddressSpace {
         // 3. Map the new frames into the new address space
         let res = new_as.with_active(|active_as| {
             for (page, frame, flags) in mappings {
-                 // On x86_64, `map` returns Result<(), MapToError>. On AArch64, Result<(), &str>
-                 #[cfg(target_arch = "x86_64")]
-                 if active_as.map(page, frame, flags).is_err() {
-                     return Err("Failed to map page");
-                 }
+                // On x86_64, `map` returns Result<(), MapToError>. On AArch64, Result<(), &str>
+                #[cfg(target_arch = "x86_64")]
+                if active_as.map(page, frame, flags).is_err() {
+                    return Err("Failed to map page");
+                }
 
-                 #[cfg(target_arch = "aarch64")]
-                 if active_as.map(page, frame, flags).is_err() {
-                     return Err("Failed to map page");
-                 }
+                #[cfg(target_arch = "aarch64")]
+                if active_as.map(page, frame, flags).is_err() {
+                    return Err("Failed to map page");
+                }
             }
             Ok(())
         });

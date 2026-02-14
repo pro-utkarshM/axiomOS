@@ -1,9 +1,9 @@
-use crate::VirtAddr;
-
 #[cfg(target_arch = "x86_64")]
 use x86_64::structures::paging::page::PageRangeInclusive;
 #[cfg(target_arch = "x86_64")]
 use x86_64::structures::paging::{Page, PageSize};
+
+use crate::VirtAddr;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub struct Segment {

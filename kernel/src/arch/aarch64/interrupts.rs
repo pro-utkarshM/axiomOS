@@ -64,10 +64,7 @@ pub fn init() {
         RP1_GPIO_IRQ
     );
     #[cfg(not(feature = "rpi5"))]
-    log::info!(
-        "ARM interrupts initialized (timer={})",
-        TIMER_IRQ
-    );
+    log::info!("ARM interrupts initialized (timer={})", TIMER_IRQ);
 }
 
 use super::exceptions::ExceptionContext;

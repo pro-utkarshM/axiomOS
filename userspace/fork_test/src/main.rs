@@ -26,21 +26,21 @@ pub extern "C" fn _start() -> ! {
         let reaped_pid = waitpid(pid, &mut status as *mut i32, 0);
 
         if reaped_pid == pid {
-             // We can format the status if we had a formatter, but for now just exit.
-             // status should be (42 << 8)
-             if (status >> 8) == 42 {
-                 let msg = "Child exited with 42! Success.\n";
-                 write(1, msg.as_bytes());
-                 exit(0);
-             } else {
-                 let msg = "Child exited with wrong code.\n";
-                 write(1, msg.as_bytes());
-                 exit(1);
-             }
+            // We can format the status if we had a formatter, but for now just exit.
+            // status should be (42 << 8)
+            if (status >> 8) == 42 {
+                let msg = "Child exited with 42! Success.\n";
+                write(1, msg.as_bytes());
+                exit(0);
+            } else {
+                let msg = "Child exited with wrong code.\n";
+                write(1, msg.as_bytes());
+                exit(1);
+            }
         } else {
-             let msg = "Waitpid returned wrong PID.\n";
-             write(1, msg.as_bytes());
-             exit(1);
+            let msg = "Waitpid returned wrong PID.\n";
+            write(1, msg.as_bytes());
+            exit(1);
         }
     }
 }

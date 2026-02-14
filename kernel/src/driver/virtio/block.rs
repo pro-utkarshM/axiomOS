@@ -3,30 +3,30 @@ use alloc::sync::Arc;
 use core::error::Error;
 use core::fmt::{Debug, Formatter};
 
-use kernel_device::Device;
 use kernel_device::block::{BlockBuf, BlockDevice};
-#[cfg(target_arch = "x86_64")]
-use kernel_pci::PciAddress;
+use kernel_device::Device;
 #[cfg(target_arch = "x86_64")]
 use kernel_pci::config::ConfigurationAccess;
 #[cfg(target_arch = "x86_64")]
+use kernel_pci::PciAddress;
+#[cfg(target_arch = "x86_64")]
 use linkme::distributed_slice;
-use spin::Mutex;
 use spin::rwlock::RwLock;
+use spin::Mutex;
 use virtio_drivers::device::blk::VirtIOBlk;
 #[cfg(target_arch = "aarch64")]
 use virtio_drivers::transport::mmio::MmioTransport;
 #[cfg(target_arch = "x86_64")]
 use virtio_drivers::transport::pci::PciTransport;
 
-use crate::U64Ext;
-use crate::driver::KernelDeviceId;
 use crate::driver::block::BlockDevices;
 #[cfg(target_arch = "x86_64")]
-use crate::driver::pci::{PCI_DRIVERS, PciDriverDescriptor, PciDriverType};
+use crate::driver::pci::{PciDriverDescriptor, PciDriverType, PCI_DRIVERS};
 #[cfg(target_arch = "x86_64")]
 use crate::driver::virtio::hal::transport;
 use crate::driver::virtio::hal::HalImpl;
+use crate::driver::KernelDeviceId;
+use crate::U64Ext;
 
 #[cfg(target_arch = "x86_64")]
 #[distributed_slice(PCI_DRIVERS)]

@@ -3,6 +3,7 @@
 //\! The virt platform UART is a standard PL011.
 
 use core::fmt::{self, Write};
+
 use super::mmio::MmioReg;
 
 /// PL011 UART base address on QEMU virt

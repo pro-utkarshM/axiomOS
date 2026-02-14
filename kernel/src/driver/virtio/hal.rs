@@ -1,27 +1,31 @@
 #[cfg(target_arch = "x86_64")]
 use alloc::boxed::Box;
 use core::ptr::NonNull;
+#[cfg(target_arch = "aarch64")]
+use core::sync::atomic::{AtomicUsize, Ordering};
 
-#[cfg(target_arch = "x86_64")]
-use kernel_pci::PciAddress;
 #[cfg(target_arch = "x86_64")]
 use kernel_pci::config::ConfigurationAccess;
 #[cfg(target_arch = "x86_64")]
+use kernel_pci::PciAddress;
+#[cfg(target_arch = "x86_64")]
 use kernel_virtual_memory::Segment;
 #[cfg(target_arch = "x86_64")]
-use virtio_drivers::transport::pci::PciTransport;
-#[cfg(target_arch = "x86_64")]
 use virtio_drivers::transport::pci::bus::{DeviceFunction, PciRoot};
-
+#[cfg(target_arch = "x86_64")]
+use virtio_drivers::transport::pci::PciTransport;
 use virtio_drivers::{BufferDirection, Hal};
 
-use crate::arch::types::{
-    PhysAddr, PhysFrame, PhysFrameRangeInclusive, Size4KiB,
+#[cfg(target_arch = "aarch64")]
+use crate::arch::aarch64::{
+    mem::{self, pte_flags, PAGE_SIZE},
+    mm,
+    paging::{self, PageTableWalker},
+    phys,
 };
-
 #[cfg(target_arch = "x86_64")]
 use crate::arch::types::{PageSize, PageTableFlags, VirtAddr};
-
+use crate::arch::types::{PhysAddr, PhysFrame, PhysFrameRangeInclusive, Size4KiB};
 #[cfg(target_arch = "x86_64")]
 use crate::driver::pci::VirtIoCam;
 #[cfg(target_arch = "x86_64")]
@@ -32,16 +36,6 @@ use crate::mem::phys::PhysicalMemory;
 use crate::mem::virt::{VirtualMemoryAllocator, VirtualMemoryHigherHalf};
 #[cfg(target_arch = "x86_64")]
 use crate::{U64Ext, UsizeExt};
-
-#[cfg(target_arch = "aarch64")]
-use crate::arch::aarch64::{
-    mem::{self, pte_flags, PAGE_SIZE},
-    mm,
-    paging::{self, PageTableWalker},
-    phys,
-};
-#[cfg(target_arch = "aarch64")]
-use core::sync::atomic::{AtomicUsize, Ordering};
 
 #[cfg(target_arch = "x86_64")]
 pub fn transport(addr: PciAddress, cam: Box<dyn ConfigurationAccess>) -> PciTransport {
@@ -136,8 +130,11 @@ unsafe impl Hal for HalImpl {
         }
         #[cfg(target_arch = "aarch64")]
         {
-            let start_frame: PhysFrame<Size4KiB> = PhysFrame::containing_address(PhysAddr::new(paddr));
-            let end_frame: PhysFrame<Size4KiB> = PhysFrame::containing_address(PhysAddr::new(paddr + (pages as u64 - 1) * PAGE_SIZE as u64));
+            let start_frame: PhysFrame<Size4KiB> =
+                PhysFrame::containing_address(PhysAddr::new(paddr));
+            let end_frame: PhysFrame<Size4KiB> = PhysFrame::containing_address(PhysAddr::new(
+                paddr + (pages as u64 - 1) * PAGE_SIZE as u64,
+            ));
             let range = PhysFrameRangeInclusive {
                 start: start_frame,
                 end: end_frame,

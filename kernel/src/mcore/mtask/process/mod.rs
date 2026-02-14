@@ -12,13 +12,12 @@ use core::ptr;
 use conquer_once::spin::OnceCell;
 use kernel_elfloader::{ElfFile, ElfLoader};
 use kernel_memapi::{Allocation, Guarded, Location, MemoryApi, UserAccessible};
-use kernel_vfs::Stat;
 use kernel_vfs::path::{AbsoluteOwnedPath, AbsolutePath, ROOT};
+use kernel_vfs::Stat;
 use kernel_virtual_memory::VirtualMemoryManager;
 use log::debug;
 use spin::RwLock;
 use thiserror::Error;
-use crate::arch::{PageSize, Size4KiB, VirtAddr};
 #[cfg(target_arch = "x86_64")]
 use x86_64::registers::model_specific::FsBase;
 #[cfg(target_arch = "x86_64")]
@@ -26,7 +25,8 @@ use x86_64::registers::rflags::RFlags;
 #[cfg(target_arch = "x86_64")]
 use x86_64::structures::idt::InterruptStackFrameValue;
 
-use crate::file::{OpenFileDescription, vfs};
+use crate::arch::{PageSize, Size4KiB, VirtAddr};
+use crate::file::{vfs, OpenFileDescription};
 use crate::mcore::context::ExecutionContext;
 use crate::mcore::mtask::process::fd::{FdNum, FileDescriptor, FileDescriptorFlags};
 use crate::mcore::mtask::process::mem::MemoryRegions;
@@ -43,9 +43,9 @@ pub use id::*;
 pub mod mem;
 pub mod telemetry;
 
+use crate::arch::UserContext;
 use crate::mcore::mtask::scheduler::global::GlobalTaskQueue;
 use crate::mem::virt::VirtualMemoryAllocator;
-use crate::arch::UserContext;
 
 pub mod tree;
 
@@ -252,7 +252,11 @@ impl Process {
     ///
     /// # Errors
     /// Returns an error if memory allocation fails.
-    pub fn fork(self: &Arc<Self>, current_task: &Task, ctx: &UserContext) -> Result<Arc<Self>, &'static str> {
+    pub fn fork(
+        self: &Arc<Self>,
+        current_task: &Task,
+        ctx: &UserContext,
+    ) -> Result<Arc<Self>, &'static str> {
         let name = self.name.clone();
         let executable_path = self.executable_path.clone();
 
@@ -260,7 +264,7 @@ impl Process {
         let child = Self::create_new(
             self, // Parent is self. (Self is the parent of the child)
             name,
-            executable_path.as_ref()
+            executable_path.as_ref(),
         );
 
         // 2. Clone File Descriptors
@@ -281,7 +285,9 @@ impl Process {
         {
             let parent_exec = self.executable_file_data.read();
             if let Some(alloc) = parent_exec.as_ref() {
-                let cloned = alloc.clone_to_process(child.clone()).ok_or("Failed to clone executable data")?;
+                let cloned = alloc
+                    .clone_to_process(child.clone())
+                    .ok_or("Failed to clone executable data")?;
                 *child.executable_file_data.write() = Some(cloned);
             }
         }
@@ -292,20 +298,23 @@ impl Process {
             let mut child_segs = child.elf_segments.write();
             for alloc in &parent_segs.executable {
                 child_segs.executable.push(
-                    alloc.clone_to_process(child.clone())
-                        .ok_or("Failed to clone executable ELF segment")?
+                    alloc
+                        .clone_to_process(child.clone())
+                        .ok_or("Failed to clone executable ELF segment")?,
                 );
             }
             for alloc in &parent_segs.readonly {
                 child_segs.readonly.push(
-                    alloc.clone_to_process(child.clone())
-                        .ok_or("Failed to clone readonly ELF segment")?
+                    alloc
+                        .clone_to_process(child.clone())
+                        .ok_or("Failed to clone readonly ELF segment")?,
                 );
             }
             for alloc in &parent_segs.writable {
                 child_segs.writable.push(
-                    alloc.clone_to_process(child.clone())
-                        .ok_or("Failed to clone writable ELF segment")?
+                    alloc
+                        .clone_to_process(child.clone())
+                        .ok_or("Failed to clone writable ELF segment")?,
                 );
             }
         }
@@ -314,7 +323,8 @@ impl Process {
         self.children_mut().insert(child.clone());
 
         // 6. Fork the Task
-        let child_task = Task::fork(&child, current_task, ctx).map_err(|_| "Failed to allocate stack for child task")?;
+        let child_task = Task::fork(&child, current_task, ctx)
+            .map_err(|_| "Failed to allocate stack for child task")?;
         GlobalTaskQueue::enqueue(Box::pin(child_task));
 
         Ok(child)
@@ -338,15 +348,18 @@ impl Process {
             .map_err(|_| "Failed to open executable")?;
 
         let mut stat = Stat::default();
-        node.stat(&mut stat).map_err(|_| "Failed to stat executable")?;
+        node.stat(&mut stat)
+            .map_err(|_| "Failed to stat executable")?;
 
         // Read file into a temporary kernel buffer
         // TODO: This might be too large for kernel heap.
         // For now, we assume reasonable executable sizes.
-        let mut file_content = alloc::vec![0u8; stat.size as usize];
+        let mut file_content = alloc::vec![0u8; stat.size];
         let mut offset = 0;
         loop {
-            let read = node.read(&mut file_content[offset..], offset).map_err(|_| "Failed to read executable")?;
+            let read = node
+                .read(&mut file_content[offset..], offset)
+                .map_err(|_| "Failed to read executable")?;
             if read == 0 {
                 break;
             }
@@ -622,10 +635,13 @@ extern "C" fn trampoline(_arg: *mut c_void) {
         )
         .expect("should be able to allocate userspace stack");
 
-
     let code_ptr = elf_file.entry();
     let ustack_rsp = ustack_allocation.start() + ustack_allocation.len().into_u64();
-    log::info!("Trampoline: ustack_rsp={:#x}, entry_point={:#x}", ustack_rsp.as_u64(), code_ptr as usize);
+    log::info!(
+        "Trampoline: ustack_rsp={:#x}, entry_point={:#x}",
+        ustack_rsp.as_u64(),
+        code_ptr as usize
+    );
     {
         let mut ustack_guard = current_task.ustack().write();
         assert!(ustack_guard.is_none(), "ustack should not exist yet");

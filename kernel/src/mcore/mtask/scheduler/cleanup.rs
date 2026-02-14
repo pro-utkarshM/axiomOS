@@ -1,10 +1,12 @@
-use core::ptr;
-use core::pin::Pin;
 use alloc::boxed::Box;
+use core::pin::Pin;
+use core::ptr;
+
+use conquer_once::spin::OnceCell;
+
 use crate::mcore::mtask::process::Process;
 use crate::mcore::mtask::scheduler::global::GlobalTaskQueue;
 use crate::mcore::mtask::task::{Task, TaskQueue};
-use conquer_once::spin::OnceCell;
 
 static CLEANUP_QUEUE: OnceCell<TaskQueue> = OnceCell::uninit();
 

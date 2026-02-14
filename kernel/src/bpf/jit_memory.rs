@@ -7,10 +7,10 @@
 #[cfg(target_arch = "aarch64")]
 pub mod aarch64 {
     use core::sync::atomic::{AtomicUsize, Ordering};
+
     use crate::arch::aarch64::mem::{pte_flags, PAGE_SIZE};
-    use crate::arch::aarch64::mm;
     use crate::arch::aarch64::paging::PageTableWalker;
-    use crate::arch::aarch64::phys;
+    use crate::arch::aarch64::{mm, phys};
 
     // Dedicated region for BPF JIT programs: 0xFFFF_FFFF_9000_0000 (256MB)
     // This is below the kernel image and MMIO.
@@ -105,12 +105,20 @@ pub mod aarch64 {
 #[cfg(not(target_arch = "aarch64"))]
 pub mod generic {
     // Stub for non-aarch64 architectures or use existing memory manager
+
+    /// Allocates executable memory for JIT-compiled BPF code.
+    ///
+    /// # Safety
+    /// This function is a stub for non-aarch64 architectures and always returns null.
     #[no_mangle]
     pub unsafe extern "C" fn bpf_jit_alloc_exec(_size: usize) -> *mut u8 {
         core::ptr::null_mut()
     }
 
+    /// Frees executable memory previously allocated by `bpf_jit_alloc_exec`.
+    ///
+    /// # Safety
+    /// This function is a stub for non-aarch64 architectures and performs no operation.
     #[no_mangle]
-    pub unsafe extern "C" fn bpf_jit_free_exec(_ptr: *mut u8, _size: usize) {
-    }
+    pub unsafe extern "C" fn bpf_jit_free_exec(_ptr: *mut u8, _size: usize) {}
 }

@@ -1,17 +1,16 @@
-use kernel_syscall::UserspacePtr;
 use kernel_syscall::access::{
     AllocationStrategy, CreateMappingError, Location, Mapping, MemoryAccess,
 };
+use kernel_syscall::UserspacePtr;
 use kernel_virtual_memory::Segment;
 
 use crate::arch::types::{PageSize, PageTableFlags, PhysFrameRangeInclusive, Size4KiB, VirtAddr};
-
-use crate::UsizeExt;
 use crate::mcore::mtask::process::mem::{MappedMemoryRegion, MemoryRegion};
 use crate::mem::phys::PhysicalMemory;
+use crate::mem::phys_to_virt;
 use crate::mem::virt::{OwnedSegment, VirtualMemoryAllocator};
 use crate::syscall::access::{KernelAccess, KernelMemoryRegionHandle};
-use crate::mem::phys_to_virt;
+use crate::UsizeExt;
 
 impl MemoryAccess for KernelAccess<'_> {
     type Mapping = KernelMapping;
@@ -53,7 +52,7 @@ impl MemoryAccess for KernelAccess<'_> {
 
         // Zero the allocated frames for security
         // We use the direct map (phys_to_virt) to access the physical memory.
-        for frame in frames.clone() {
+        for frame in frames {
             let paddr = frame.start_address().as_u64();
             let vaddr = phys_to_virt(paddr as usize);
             // SAFETY: We just allocated this frame, so we have exclusive access to it.
@@ -64,14 +63,16 @@ impl MemoryAccess for KernelAccess<'_> {
         }
 
         self.process
-            .with_address_space(|as_| as_.map_range::<Size4KiB>(
-                &*segment,
-                frames.into_iter(),
-                PageTableFlags::PRESENT
-                    | PageTableFlags::WRITABLE
-                    | PageTableFlags::USER_ACCESSIBLE
-                    | PageTableFlags::NO_EXECUTE,
-            ))
+            .with_address_space(|as_| {
+                as_.map_range::<Size4KiB>(
+                    &*segment,
+                    frames.into_iter(),
+                    PageTableFlags::PRESENT
+                        | PageTableFlags::WRITABLE
+                        | PageTableFlags::USER_ACCESSIBLE
+                        | PageTableFlags::NO_EXECUTE,
+                )
+            })
             .map_err(|_| CreateMappingError::OutOfMemory)?;
 
         Ok(KernelMapping {
