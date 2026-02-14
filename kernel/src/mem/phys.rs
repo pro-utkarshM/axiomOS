@@ -3,10 +3,10 @@ use core::iter::from_fn;
 use core::mem::swap;
 
 use conquer_once::spin::OnceCell;
-use kernel_physical_memory::{PhysicalFrameAllocator, PhysicalMemoryManager, FrameState};
+use kernel_physical_memory::{FrameState, PhysicalFrameAllocator, PhysicalMemoryManager};
 #[cfg(target_arch = "x86_64")]
 use limine::memory_map::{Entry, EntryType};
-use log::{info, warn, error};
+use log::{error, info, warn};
 use spin::Mutex;
 
 use crate::arch::types::{PageSize, PhysAddr, PhysFrame, PhysFrameRange, Size4KiB};
@@ -177,13 +177,21 @@ pub fn init_stage2() {
 
     let regions = stage1.regions;
     let stage_one_next_free = stage1.next_frame;
-    info!("Transitioning to stage 2. Stage 1 allocated {} frames", stage_one_next_free);
+    info!(
+        "Transitioning to stage 2. Stage 1 allocated {} frames",
+        stage_one_next_free
+    );
 
     let mut memory_regions = Vec::with_capacity(regions.len());
 
     for entry in regions {
         let num_frames = (entry.length / Size4KiB::SIZE) as usize;
-        info!("Adding memory region: {:#x} - {:#x} ({} frames)", entry.base, entry.base + entry.length, num_frames);
+        info!(
+            "Adding memory region: {:#x} - {:#x} ({} frames)",
+            entry.base,
+            entry.base + entry.length,
+            num_frames
+        );
         let region = kernel_physical_memory::MemoryRegion::new(
             entry.base,
             num_frames,
@@ -218,10 +226,10 @@ pub fn init_stage2() {
         let res = &reserved.regions[i];
         let start_addr = res.base;
         let end_addr = res.base + res.length;
-        
+
         // Align to 4KiB
         let start_addr = (start_addr / 4096) * 4096;
-        let end_addr = ((end_addr + 4095) / 4096) * 4096;
+        let end_addr = end_addr.div_ceil(4096) * 4096;
 
         for addr in (start_addr..end_addr).step_by(4096) {
             for region in &mut memory_regions {
@@ -235,7 +243,10 @@ pub fn init_stage2() {
             }
         }
     }
-    info!("Marked {} additional reserved frames as allocated", reserved_marked);
+    info!(
+        "Marked {} additional reserved frames as allocated",
+        reserved_marked
+    );
 
     let mut free_count = 0;
     for region in &memory_regions {
@@ -274,7 +285,12 @@ where
                     // but we need to cast the result to the generic PhysFrame<S>
                     // Since we checked S::SIZE == 4KiB, this is safe-ish for now.
                     let frame_4k = a.allocate_frame()?;
-                    Some(PhysFrame::<S>::from_start_address(PhysAddr::new(frame_4k.start_address().as_u64())).unwrap())
+                    Some(
+                        PhysFrame::<S>::from_start_address(PhysAddr::new(
+                            frame_4k.start_address().as_u64(),
+                        ))
+                        .unwrap(),
+                    )
                 } else {
                     unimplemented!("can't allocate non-4KiB frames in stage1")
                 }
@@ -299,9 +315,14 @@ where
             Self::Stage1(_) => unimplemented!("can't deallocate frames in stage1"),
             Self::Stage2(_a) => {
                 #[cfg(target_arch = "aarch64")]
-                { if _a.deallocate_frame(_frame).is_none() {
-                    warn!("Failed to deallocate frame {:#x}", _frame.start_address().as_u64());
-                } }
+                {
+                    if _a.deallocate_frame(_frame).is_none() {
+                        warn!(
+                            "Failed to deallocate frame {:#x}",
+                            _frame.start_address().as_u64()
+                        );
+                    }
+                }
                 #[cfg(target_arch = "x86_64")]
                 { /* omitted */ }
             }
@@ -313,7 +334,7 @@ where
             Self::Stage1(_) => unimplemented!("can't deallocate frames in stage1"),
             Self::Stage2(_a) => {
                 #[cfg(target_arch = "aarch64")]
-                { 
+                {
                     // kernel_physical_memory::PhysFrameRangeInclusive is different from our PhysFrameRange
                     // Need to be careful here if we ever use this.
                     // For now, let's just use the trait's default deallocate_frames or loop.
@@ -337,22 +358,28 @@ struct PhysicalBumpAllocator {
 
 impl PhysicalBumpAllocator {
     fn new(regions: &'static [MemoryRegion]) -> Self {
-        Self { regions, next_frame: 0 }
+        Self {
+            regions,
+            next_frame: 0,
+        }
     }
 
     fn usable_frames(&self) -> impl Iterator<Item = PhysFrame> {
-        self.regions.iter()
+        self.regions
+            .iter()
             .flat_map(|region| (region.base..(region.base + region.length)).step_by(4096))
             .map(|addr| PhysFrame::containing_address(PhysAddr::new(addr)))
             .filter(|frame| {
                 let addr = frame.start_address().as_u64();
-                RESERVED_REGIONS.lock().is_reserved(addr) == false
+                !RESERVED_REGIONS.lock().is_reserved(addr)
             })
     }
 
     fn allocate_frame(&mut self) -> Option<PhysFrame> {
         let frame = self.usable_frames().nth(self.next_frame);
-        if frame.is_some() { self.next_frame += 1; }
+        if frame.is_some() {
+            self.next_frame += 1;
+        }
         frame
     }
 }

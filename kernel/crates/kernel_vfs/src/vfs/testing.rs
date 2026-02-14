@@ -8,7 +8,9 @@ use spin::RwLock;
 
 use crate::fs::{FileSystem, FsHandle};
 use crate::path::{AbsoluteOwnedPath, AbsolutePath};
-use crate::{CloseError, FsError, OpenError, ReadError, Stat, StatError, WriteError};
+use crate::{
+    CloseError, FsError, MkdirError, OpenError, ReadError, RmdirError, Stat, StatError, WriteError,
+};
 
 #[derive(Default)]
 pub struct TestFs {
@@ -87,6 +89,14 @@ impl FileSystem for TestFs {
     }
 
     fn stat(&mut self, _handle: FsHandle, _stat: &mut Stat) -> Result<(), StatError> {
+        todo!()
+    }
+
+    fn mkdir(&mut self, _path: &AbsolutePath) -> Result<(), MkdirError> {
+        todo!()
+    }
+
+    fn rmdir(&mut self, _path: &AbsolutePath) -> Result<(), RmdirError> {
         todo!()
     }
 }

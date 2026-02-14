@@ -7,9 +7,9 @@ use alloc::vec::Vec;
 
 use kernel_bpf::bytecode::insn::BpfInsn;
 use kernel_bpf::bytecode::program::BpfProgram;
-use kernel_bpf::execution::{BpfContext, BpfError, BpfExecutor};
 #[cfg(not(target_arch = "aarch64"))]
 use kernel_bpf::execution::Interpreter;
+use kernel_bpf::execution::{BpfContext, BpfError, BpfExecutor};
 use kernel_bpf::loader::BpfLoader;
 use kernel_bpf::maps::{ArrayMap, BpfMap, HashMap as BpfHashMap, RingBufMap, TimeSeriesMap};
 use kernel_bpf::profile::ActiveProfile;
@@ -68,14 +68,27 @@ impl BpfManager {
 
         let id = self.programs.len() as u32;
         self.programs.push(bpf_prog);
-        log::info!("BpfManager: Loaded raw program. Assigned id={}. Total programs={}", id, self.programs.len());
+        log::info!(
+            "BpfManager: Loaded raw program. Assigned id={}. Total programs={}",
+            id,
+            self.programs.len()
+        );
         Ok(id)
     }
 
     pub fn attach(&mut self, attach_type: u32, prog_id: u32) -> Result<(), BpfError> {
-        log::info!("BpfManager: Attaching prog_id={} to type={}. Total programs={}", prog_id, attach_type, self.programs.len());
+        log::info!(
+            "BpfManager: Attaching prog_id={} to type={}. Total programs={}",
+            prog_id,
+            attach_type,
+            self.programs.len()
+        );
         if prog_id as usize >= self.programs.len() {
-            log::error!("BpfManager: Attach failed. prog_id={} >= programs.len()={}", prog_id, self.programs.len());
+            log::error!(
+                "BpfManager: Attach failed. prog_id={} >= programs.len()={}",
+                prog_id,
+                self.programs.len()
+            );
             return Err(BpfError::NotLoaded);
         }
 
@@ -102,6 +115,18 @@ impl BpfManager {
             .get(program_id as usize)
             .ok_or(BpfError::NotLoaded)?;
 
+        Self::execute_program(program, ctx)
+    }
+
+    /// Execute a BPF program directly (without needing &self).
+    ///
+    /// This is useful when the caller has already cloned the program
+    /// and released the BpfManager lock, allowing BPF helpers to
+    /// re-acquire the lock for map operations.
+    pub fn execute_program(
+        program: &BpfProgram<ActiveProfile>,
+        ctx: &BpfContext,
+    ) -> Result<u64, BpfError> {
         #[cfg(target_arch = "aarch64")]
         {
             use kernel_bpf::execution::Arm64JitExecutor;
@@ -114,6 +139,24 @@ impl BpfManager {
             let interpreter = Interpreter::<ActiveProfile>::new();
             interpreter.execute(program, ctx)
         }
+    }
+
+    /// Collect cloned programs for a given attach type.
+    ///
+    /// Returns a Vec of (prog_id, cloned_program) pairs. This allows callers
+    /// to release the BpfManager lock before executing programs, preventing
+    /// deadlocks when BPF helpers (like bpf_ringbuf_output) need to re-acquire
+    /// the lock to access maps.
+    pub fn get_hook_programs(&self, attach_type: u32) -> Vec<(u32, BpfProgram<ActiveProfile>)> {
+        let mut result = Vec::new();
+        if let Some(progs) = self.attachments.get(&attach_type) {
+            for &prog_id in progs {
+                if let Some(program) = self.programs.get(prog_id as usize) {
+                    result.push((prog_id, program.clone()));
+                }
+            }
+        }
+        result
     }
 
     pub fn execute_hooks(&self, attach_type: u32, ctx: &BpfContext) {
@@ -230,6 +273,16 @@ impl BpfManager {
 
     pub fn get_map_def(&self, map_id: u32) -> Option<&kernel_bpf::maps::MapDef> {
         self.maps.get(map_id as usize).map(|m| m.def())
+    }
+
+    /// Poll for the next event from a ring buffer map.
+    ///
+    /// Returns the event data if available, or None if the ringbuf is empty.
+    /// This is used by the BPF_RINGBUF_POLL syscall command.
+    pub fn ringbuf_poll(&self, map_id: u32) -> Option<Vec<u8>> {
+        let map = self.maps.get(map_id as usize)?;
+        // RingBufMap::lookup() delegates to poll(), which reads and advances the tail
+        map.lookup(&[])
     }
 
     /// Output data to a ring buffer map.

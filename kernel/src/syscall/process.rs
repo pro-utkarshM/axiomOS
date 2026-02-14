@@ -1,8 +1,11 @@
-use kernel_abi::{Errno, EINVAL, ENOMEM, ECHILD, WNOHANG, ENOENT};
-use crate::mcore::context::ExecutionContext;
-use crate::arch::UserContext;
-use crate::syscall::validation::{copy_to_userspace, read_userspace_string, read_userspace_string_array};
+use kernel_abi::{Errno, ECHILD, EINVAL, ENOENT, ENOMEM, WNOHANG};
 use kernel_vfs::path::AbsolutePath;
+
+use crate::arch::UserContext;
+use crate::mcore::context::ExecutionContext;
+use crate::syscall::validation::{
+    copy_to_userspace, read_userspace_string, read_userspace_string_array,
+};
 
 pub fn sys_fork(ctx: &UserContext) -> Result<usize, Errno> {
     let execution_context = ExecutionContext::load();
@@ -24,9 +27,9 @@ pub fn sys_fork(ctx: &UserContext) -> Result<usize, Errno> {
 
     match current_process.fork(current_task, &child_ctx) {
         Ok(child_process) => {
-             use crate::U64Ext;
-             Ok(child_process.pid().as_u64().into_usize())
-        },
+            use crate::U64Ext;
+            Ok(child_process.pid().as_u64().into_usize())
+        }
         Err(e) => {
             log::error!("sys_fork failed: {}", e);
             Err(ENOMEM)
@@ -34,7 +37,12 @@ pub fn sys_fork(ctx: &UserContext) -> Result<usize, Errno> {
     }
 }
 
-pub fn sys_execve(ctx: &mut UserContext, path_ptr: usize, argv_ptr: usize, envp_ptr: usize) -> Result<usize, Errno> {
+pub fn sys_execve(
+    ctx: &mut UserContext,
+    path_ptr: usize,
+    argv_ptr: usize,
+    envp_ptr: usize,
+) -> Result<usize, Errno> {
     let execution_context = ExecutionContext::load();
     let current_task = execution_context.current_task();
     let current_process = current_task.process();
@@ -78,7 +86,7 @@ pub fn sys_execve(ctx: &mut UserContext, path_ptr: usize, argv_ptr: usize, envp_
                 ctx.inner.x0 = 0; // argc
                 ctx.inner.x1 = 0; // argv
                 ctx.inner.x2 = 0; // envp
-                // Clear other registers...
+                                  // Clear other registers...
             }
 
             Ok(0)
@@ -119,7 +127,7 @@ pub fn sys_waitpid(pid: isize, status_ptr: usize, options: usize) -> Result<usiz
                     if let Some(code) = *child.exit_code().read() {
                         reaped_pid = Some(child.pid());
                         // Construct status: (exit_code << 8) | sig (0)
-                        reaped_status = ((code & 0xff) << 8) as i32;
+                        reaped_status = (code & 0xff) << 8;
                         index_to_remove = Some(i);
                         break;
                     }
@@ -131,8 +139,8 @@ pub fn sys_waitpid(pid: isize, status_ptr: usize, options: usize) -> Result<usiz
                     tree.processes.remove(&child_proc.pid());
                 }
             } else {
-                 // No children at all
-                 return Err(ECHILD);
+                // No children at all
+                return Err(ECHILD);
             }
         }
 
@@ -140,7 +148,7 @@ pub fn sys_waitpid(pid: isize, status_ptr: usize, options: usize) -> Result<usiz
             if status_ptr != 0 {
                 // Copy status to userspace
                 let slice = unsafe {
-                     core::slice::from_raw_parts(&reaped_status as *const _ as *const u8, 4)
+                    core::slice::from_raw_parts(&reaped_status as *const _ as *const u8, 4)
                 };
                 copy_to_userspace(status_ptr, slice)?;
             }

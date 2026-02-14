@@ -1,6 +1,6 @@
 {
   "mode": "interactive",
-  "depth": "standard",
+  "depth": "quick",
   "gates": {
     "confirm_project": true,
     "confirm_phases": true,

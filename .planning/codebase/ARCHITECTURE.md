@@ -1,186 +1,207 @@
 # Architecture
 
-**Analysis Date:** 2026-01-27
+**Analysis Date:** 2026-02-13
 
 ## Pattern Overview
 
-**Overall:** Layered Monolithic Kernel with Modular Runtime Subsystems
+**Overall:** Layered monolithic kernel with modular workspace crates and eBPF extensibility
 
 **Key Characteristics:**
-- Bare-metal operating system kernel for runtime programmability
-- BPF as first-class kernel primitive (not bolted on)
-- Multi-architecture support via trait abstraction
-- Compile-time profile selection (cloud vs embedded)
-- POSIX-like syscall interface
+- No_std Rust kernel with bare-metal boot on x86_64, AArch64, RISC-V
+- Multi-core capable with per-CPU context and work-stealing scheduler
+- Trait-based hardware abstraction layer (HAL)
+- eBPF subsystem with compile-time cloud/embedded profile selection
+- Process model with fork/exec/waitpid and file descriptors
 
 ## Layers
 
 ```
-┌─────────────────────────────────────────────────┐
-│           ENTRY POINT (Bootloader)              │
-│           kernel_main() for each arch           │
-├─────────────────────────────────────────────────┤
-│         USERSPACE INIT & PROGRAMS               │
-├─────────────────────────────────────────────────┤
-│              SYSCALL DISPATCHER                 │
-│    dispatch_syscall() → routes to handlers      │
-├─────────────────────────────────────────────────┤
-│         KERNEL SERVICE LAYER                    │
-│  BPF Manager  │ Process Manager  │ File System  │
-│  Memory Mgmt  │ Device Drivers   │ VFS          │
-├─────────────────────────────────────────────────┤
-│          ARCHITECTURE-SPECIFIC LAYER            │
-│  x86_64 (complete) │ AArch64 (complete) │ RISC-V│
-├─────────────────────────────────────────────────┤
-│          HARDWARE (QEMU/Real Hardware)          │
-└─────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│ USERSPACE                                                    │
+│ - init, demos, bpf_loader                                   │
+│ - minilib syscall wrappers                                  │
+└──────────────────────────────────────────────────────────────┘
+                    ↑ Syscalls (int 0x80 / SVC)
+┌─────────────────────────────────────────────────────────────┐
+│ PROCESS/TASK LAYER                                           │
+│ - Process & Task management    kernel/src/mcore/mtask/      │
+│ - Work-stealing scheduler      kernel/src/mcore/mtask/scheduler/ │
+│ - File descriptors & memory    kernel/src/mcore/mtask/process/   │
+└──────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│ SUBSYSTEM LAYER                                              │
+│ - BPF Runtime                  kernel/src/bpf/              │
+│ - BPF Engine (crate)           kernel/crates/kernel_bpf/    │
+│ - Syscall Dispatch             kernel/src/syscall/           │
+│ - Device Drivers               kernel/src/driver/            │
+│ - Virtual File System          kernel/src/file/              │
+└──────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│ MEMORY & INTERRUPT LAYER                                     │
+│ - Physical/Virtual Allocators  kernel/src/mem/               │
+│ - Page Tables & Address Space  kernel/src/mem/address_space/ │
+│ - Exception/Interrupt Handlers kernel/src/arch/*/            │
+└──────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│ HARDWARE ABSTRACTION LAYER                                   │
+│ - Architecture trait           kernel/src/arch/traits.rs     │
+│ - x86_64 implementation       kernel/src/arch/x86_64.rs     │
+│ - AArch64 implementation      kernel/src/arch/aarch64/      │
+│ - RISC-V implementation       kernel/src/arch/riscv64/      │
+└──────────────────────────────────────────────────────────────┘
 ```
 
-**Hardware Abstraction** (`kernel/src/arch/`)
-- Purpose: CPU-specific initialization, context switching, interrupts
-- Contains: Per-architecture boot, paging, exception handlers
-- Depends on: Hardware only
-- Used by: All kernel layers
+**Userspace Layer:**
+- Purpose: User applications communicating with kernel via syscalls
+- Contains: init process, demo programs, minilib (libc replacement)
+- Depends on: kernel_abi for syscall numbers and ABI definitions
 
-**Memory Management** (`kernel/src/mem/`)
-- Purpose: Physical/virtual memory management, heap allocation
-- Contains: `phys.rs`, `virt.rs`, `heap.rs`, `memapi.rs`
-- Depends on: Architecture layer for paging
-- Used by: Process management, file system
+**Process/Task Layer:**
+- Purpose: Process lifecycle, scheduling, context switching
+- Contains: Process struct (pid, address space, fd table), Task struct (execution context)
+- Depends on: Memory layer for address spaces, HAL for context switch
 
-**Process Management** (`kernel/src/mcore/mtask/`)
-- Purpose: Tasks, processes, scheduling
-- Contains: Process abstraction, task state machine, scheduler
-- Depends on: Memory management, architecture
-- Used by: Syscall dispatcher
+**Subsystem Layer:**
+- Purpose: Kernel services and extensibility
+- Contains: BPF manager, syscall dispatch, VFS (ext2, devfs, pipes), device drivers
+- Depends on: Process layer for current task, Memory layer for allocations
 
-**File System** (`kernel/src/file/`)
-- Purpose: VFS abstraction, Ext2, DevFS
-- Contains: `ext2.rs`, `devfs.rs`, VFS adapter
-- Depends on: Block device drivers
-- Used by: Syscall handlers
+**Memory & Interrupt Layer:**
+- Purpose: Physical/virtual memory management, exception handling
+- Contains: Frame allocator, page table management, interrupt dispatch
+- Depends on: HAL for architecture-specific paging and interrupt setup
 
-**BPF Subsystem** (`kernel/crates/kernel_bpf/`)
-- Purpose: Verified bytecode execution engine
-- Contains: Verifier, interpreter, JIT, maps, loader
-- Depends on: Memory management
-- Used by: BPF syscall handler
-
-**Driver Layer** (`kernel/src/driver/`)
-- Purpose: VirtIO block/GPU, PCI, device management
-- Contains: Block device abstraction, VirtIO implementation
-- Depends on: Architecture I/O
-- Used by: File system
+**HAL Layer:**
+- Purpose: Abstract architecture differences behind common trait
+- Contains: `Architecture` trait with early_init, init, interrupt control, shutdown
+- Depends on: CPU/firmware directly
 
 ## Data Flow
 
-**Syscall Request Flow:**
-```
-Userspace Program
-        ↓
-   [Interrupt 0x80]
-        ↓
-   kernel/src/arch/idt.rs (syscall_handler)
-        ↓
-   kernel/src/syscall/mod.rs (dispatch_syscall)
-        ↓
-   Specific Syscall Handler:
-   ├─ SYS_BPF → kernel/src/syscall/bpf.rs
-   ├─ SYS_READ → kernel_syscall crate
-   ├─ SYS_WRITE → kernel_syscall crate
-   └─ SYS_MMAP → kernel_syscall crate
-        ↓
-   Return to userspace via interrupt frame
-```
+**Boot Sequence (x86_64):**
+1. Limine bootloader loads kernel ELF at high memory
+2. `kernel_main` entry — `kernel/src/main.rs:53`
+3. `kernel::init()` coordination — `kernel/src/lib.rs:66-131`
+   - Logging, HHDM, heap, page tables
+   - ACPI, APIC, HPET initialization
+   - BPF Manager initialization
+   - VFS init (devfs at /dev)
+   - Multi-core/scheduler init
+   - PCI enumeration, VirtIO driver init
+   - Root filesystem mount (ext2)
+4. Spawn init process from `/bin/init`
+5. Enter scheduler loop
+
+**Syscall Flow:**
+1. User process executes syscall instruction (int 0x80 / SVC)
+2. Exception handler saves context — `kernel/src/arch/idt.rs` or `kernel/src/arch/aarch64/exceptions.rs`
+3. `dispatch_syscall()` routes by syscall number — `kernel/src/syscall/mod.rs`
+4. BPF hooks execute if attached (ATTACH_TYPE_SYSCALL) — `kernel/src/bpf/mod.rs:119-140`
+5. Syscall handler executes (sys_read, sys_write, sys_bpf, etc.)
+6. Result returned to userspace as isize (negative = errno)
 
 **BPF Program Lifecycle:**
-```
-1. LOAD (sys_bpf, BPF_PROG_LOAD)
-   → kernel/src/syscall/bpf.rs: parse instructions
-   → BpfManager::load_raw_program()
-   → kernel_bpf verifier validates
-   → Store in programs vec, return program ID
-
-2. ATTACH (sys_bpf, BPF_PROG_ATTACH)
-   → BpfManager::attach(attach_type, prog_id)
-   → Map attach_type → program IDs
-
-3. EXECUTE
-   → Triggered by syscall entry (attach_type=2)
-   → Or timer interrupt (attach_type=1)
-   → BpfManager::execute_hooks()
-   → Execute via Interpreter<ActiveProfile>
-   → Return result
-```
+1. Userspace calls `sys_bpf(BPF_PROG_LOAD, elf_bytes)` — `kernel/src/syscall/bpf.rs`
+2. BPF Manager loads ELF, verifies bytecode — `kernel/src/bpf/mod.rs`
+3. Program stored with ID in manager
+4. `sys_bpf(BPF_PROG_ATTACH, attach_type, prog_id)` hooks program to event
+5. On event (timer tick, GPIO edge, syscall), `execute_hooks()` runs all attached programs
+6. Execution via interpreter (x86_64) or JIT (AArch64)
 
 **State Management:**
-- File-based: All persistent state in filesystem
-- No persistent in-memory state across reboots
-- Each syscall is independent
+- Per-process: Address space, file descriptors, memory regions
+- Global: BPF Manager (Mutex-protected singleton), VFS, process tree
+- Per-CPU: Scheduler, execution context
 
 ## Key Abstractions
 
-**Architecture Trait** (`kernel/src/arch/traits.rs`)
-- Purpose: Platform-independent kernel operations
-- Examples: `Aarch64`, `x86_64` implementations
-- Pattern: Trait abstraction for architecture-specific code
+**Architecture Trait (HAL):**
+- Purpose: Abstract hardware differences
+- Location: `kernel/src/arch/traits.rs`
+- Methods: early_init, init, enable/disable_interrupts, wait_for_interrupt, shutdown, reboot
+- Implementations: Aarch64, X86_64, Riscv64
 
-**BpfManager** (`kernel/src/bpf/mod.rs`)
-- Purpose: Central hub for all BPF operations
-- Examples: Program loading, map creation, hook execution
-- Pattern: Global singleton via `OnceCell`
+**Process:**
+- Purpose: Resource container (address space, file descriptors, children)
+- Location: `kernel/src/mcore/mtask/process/mod.rs`
+- Pattern: Arc-wrapped with RwLock for concurrent access
+- Key: Process::root() as initial process, Process::create_from_executable() for new programs
 
-**Profile System** (`kernel/crates/kernel_bpf/src/profile/`)
-- Purpose: Compile-time resource selection
-- Examples: `CloudProfile`, `EmbeddedProfile`
-- Pattern: Generic type parameter `P: PhysicalProfile`
+**Task:**
+- Purpose: Execution unit (kernel/user stacks, registers, state)
+- Location: `kernel/src/mcore/mtask/task/mod.rs`
+- States: Ready, Running, Blocked, Zombie
+- Pattern: Intrusive linked list for scheduler queues
 
-**Execution Context** (`kernel/src/mcore/context.rs`)
-- Purpose: Per-CPU execution state
-- Examples: Current GDT/IDT, LAPIC, task pointer
-- Pattern: Thread-local storage equivalent
+**BPF Profile (Sealed Trait):**
+- Purpose: Compile-time selection between cloud and embedded behavior
+- Location: `kernel/crates/kernel_bpf/src/profile/mod.rs`
+- Pattern: Sealed trait with const generics (MAX_STACK_SIZE, MAX_INSN_COUNT, JIT_ALLOWED)
+- Associated types: MemoryStrategy, SchedulerPolicy, FailureSemantic
 
-**VFS** (`kernel/src/file/mod.rs`)
-- Purpose: Virtual filesystem abstraction
-- Examples: Mount points, file operations
-- Pattern: Global `RwLock<Vfs>` singleton
+**BPF Manager:**
+- Purpose: Runtime BPF program management
+- Location: `kernel/src/bpf/mod.rs`
+- Operations: load_program, attach, detach, execute, execute_hooks
+- Attach types: Timer(1), GPIO(2), PWM(3), IIO(4), Syscall(5)
 
 ## Entry Points
 
-| Purpose | Path | Function |
-|---------|------|----------|
-| Build Orchestrator | `src/main.rs` | Runner, invokes cargo, boots QEMU |
-| Kernel Entry (x86_64) | `kernel/src/main.rs` | `kernel_main()` |
-| Kernel Entry (ARM64) | `kernel/src/main.rs` | `kernel_main()` |
-| Kernel Init | `kernel/src/lib.rs` | `init()` |
-| Syscall Dispatcher | `kernel/src/syscall/mod.rs` | `dispatch_syscall()` |
-| BPF Syscall | `kernel/src/syscall/bpf.rs` | `sys_bpf()` |
-| Interrupt Handlers | `kernel/src/arch/idt.rs` | `create_idt()` |
-| Userspace Init | `userspace/init/src/main.rs` | `_start()` |
+**Kernel Main (x86_64):**
+- Location: `kernel/src/main.rs:53`
+- Triggers: Limine bootloader
+- Responsibilities: Call kernel::init(), spawn init, enter scheduler
+
+**Kernel Main (AArch64):**
+- Location: `kernel/src/main.rs:89`
+- Triggers: _start in boot.S → boot.rs
+- Responsibilities: Same as x86_64 after arch-specific init
+
+**Initialization Coordinator:**
+- Location: `kernel/src/lib.rs:66` (`init()`)
+- Triggers: kernel_main after arch early_init
+- Responsibilities: Initialize all subsystems in order
+
+**Syscall Dispatch:**
+- Location: `kernel/src/syscall/mod.rs`
+- Triggers: int 0x80 (x86_64) or SVC (AArch64)
+- Responsibilities: Route syscall number to handler, return result
 
 ## Error Handling
 
-**Strategy:** Throw errors, catch at boundaries
+**Strategy:** Panic on unrecoverable errors, Result for recoverable operations
 
-**Patterns:**
-- Result types for fallible operations
-- `expect()` for initialization failures (kernel panic acceptable)
-- Error codes returned to userspace via syscall return value
+**Kernel Panics:**
+- Boot failures (missing init, no block device)
+- Double faults, unhandled exceptions
+- Memory exhaustion during critical allocation
+
+**Syscall Errors:**
+- Negative return values = errno (EINVAL, ENOENT, ENOMEM, etc.)
+- Defined in `kernel/crates/kernel_abi/src/errno.rs`
+
+**BPF Errors:**
+- Enum-based: LoadError, VerifyError, AttachError — `kernel/crates/kernel_bpf/src/*/error.rs`
+- Custom Display implementations with context
 
 ## Cross-Cutting Concerns
 
 **Logging:**
-- `log` crate abstraction - `kernel/src/log.rs`
-- Serial console output for debug
+- `log` crate facade with serial backend — `kernel/src/log.rs`, `kernel/src/serial.rs`
+- Kernel-level logging via `log::info!`, `log::error!`, etc.
 
-**Validation:**
-- BPF verifier for bytecode safety - `kernel/crates/kernel_bpf/src/verifier/`
-- Syscall boundary validation in handlers
+**Synchronization:**
+- Spinlocks (`spin` crate) for kernel-level mutual exclusion
+- RwLock for read-heavy data (VFS, process tree)
+- Mutex for BPF Manager, allocators
+- Interrupts disabled during critical sections
 
-**Authentication:**
-- Not applicable (single-user bare-metal kernel)
+**Memory Safety:**
+- Rust ownership model for kernel code
+- BPF verifier for loaded programs (bounded loops, memory bounds)
+- Address space isolation between processes
 
 ---
 
-*Architecture analysis: 2026-01-27*
+*Architecture analysis: 2026-02-13*
 *Update when major patterns change*

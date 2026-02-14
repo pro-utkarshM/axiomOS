@@ -46,7 +46,9 @@ pub fn syscall0(n: usize) -> usize {
         rax
     }
     #[cfg(target_arch = "aarch64")]
-    unsafe { do_syscall(n, 0, 0, 0, 0, 0, 0) }
+    unsafe {
+        do_syscall(n, 0, 0, 0, 0, 0, 0)
+    }
 }
 
 pub fn syscall_debug(n: usize) -> usize {
@@ -61,7 +63,9 @@ pub fn syscall1(n: usize, arg1: usize) -> usize {
         rax
     }
     #[cfg(target_arch = "aarch64")]
-    unsafe { do_syscall(n, arg1, 0, 0, 0, 0, 0) }
+    unsafe {
+        do_syscall(n, arg1, 0, 0, 0, 0, 0)
+    }
 }
 
 pub fn syscall2(n: usize, arg1: usize, arg2: usize) -> usize {
@@ -72,7 +76,9 @@ pub fn syscall2(n: usize, arg1: usize, arg2: usize) -> usize {
         rax
     }
     #[cfg(target_arch = "aarch64")]
-    unsafe { do_syscall(n, arg1, arg2, 0, 0, 0, 0) }
+    unsafe {
+        do_syscall(n, arg1, arg2, 0, 0, 0, 0)
+    }
 }
 
 pub fn syscall3(n: usize, arg1: usize, arg2: usize, arg3: usize) -> usize {
@@ -83,7 +89,9 @@ pub fn syscall3(n: usize, arg1: usize, arg2: usize, arg3: usize) -> usize {
         rax
     }
     #[cfg(target_arch = "aarch64")]
-    unsafe { do_syscall(n, arg1, arg2, arg3, 0, 0, 0) }
+    unsafe {
+        do_syscall(n, arg1, arg2, arg3, 0, 0, 0)
+    }
 }
 
 pub fn syscall4(n: usize, arg1: usize, arg2: usize, arg3: usize, arg4: usize) -> usize {
@@ -94,7 +102,9 @@ pub fn syscall4(n: usize, arg1: usize, arg2: usize, arg3: usize, arg4: usize) ->
         rax
     }
     #[cfg(target_arch = "aarch64")]
-    unsafe { do_syscall(n, arg1, arg2, arg3, arg4, 0, 0) }
+    unsafe {
+        do_syscall(n, arg1, arg2, arg3, arg4, 0, 0)
+    }
 }
 
 // --- libc-like functions ---

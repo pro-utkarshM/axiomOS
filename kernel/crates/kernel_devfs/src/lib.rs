@@ -14,7 +14,9 @@ mod node;
 pub use fs::*;
 use kernel_vfs::fs::{FileSystem, FsHandle};
 use kernel_vfs::path::AbsolutePath;
-use kernel_vfs::{CloseError, MkdirError, OpenError, ReadError, RmdirError, Stat, StatError, WriteError};
+use kernel_vfs::{
+    CloseError, MkdirError, OpenError, ReadError, RmdirError, Stat, StatError, WriteError,
+};
 
 #[derive(Clone)]
 pub struct ArcLockedDevFs {

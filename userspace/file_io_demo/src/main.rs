@@ -1,9 +1,7 @@
 #![no_std]
 #![no_main]
 
-use minilib::{
-    close, open, read, write, O_RDONLY, O_WRONLY,
-};
+use minilib::{close, open, read, write, O_RDONLY, O_WRONLY};
 
 #[unsafe(no_mangle)]
 pub extern "C" fn _start() -> ! {
@@ -32,8 +30,8 @@ pub extern "C" fn _start() -> ! {
             print_num(read_bytes as u64);
             print(" bytes: ");
             // Print hex
-            for i in 0..read_bytes as usize {
-                print_hex(buffer[i]);
+            for byte in buffer.iter().take(read_bytes as usize) {
+                print_hex(*byte);
                 print(" ");
             }
             print("\n");

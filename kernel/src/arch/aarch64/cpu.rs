@@ -4,6 +4,7 @@
 //! CPU-local data. Uses TPIDR_EL1 to store a pointer to the CPU context.
 
 use alloc::boxed::Box;
+
 use crate::mcore::context::ExecutionContext;
 
 /// Maximum number of CPUs supported
@@ -73,7 +74,10 @@ pub fn cpu_id() -> usize {
 /// Called from the timer interrupt handler.
 pub fn timer_tick() {
     if let Some(ctx) = try_current() {
-        log::trace!("timer_tick: setting need_reschedule for CPU {}", ctx.cpu_id());
+        log::trace!(
+            "timer_tick: setting need_reschedule for CPU {}",
+            ctx.cpu_id()
+        );
         ctx.set_need_reschedule();
     } else {
         log::warn!("timer_tick: no context for current CPU");

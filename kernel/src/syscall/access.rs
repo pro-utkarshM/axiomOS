@@ -1,20 +1,20 @@
-use alloc::sync::Arc;
 use alloc::borrow::ToOwned;
+use alloc::sync::Arc;
 use core::sync::atomic::Ordering::Relaxed;
 
 use kernel_abi::{Errno, ENOENT};
 use kernel_syscall::access::{CwdAccess, FileAccess};
-use kernel_syscall::stat::{StatAccess, UserStat, mode};
+use kernel_syscall::stat::{mode, StatAccess, UserStat};
 use kernel_vfs::node::VfsNode;
 use kernel_vfs::path::AbsolutePath;
 use spin::rwlock::RwLock;
 
-use crate::U64Ext;
-use crate::file::{OpenFileDescription, vfs};
+use crate::file::{vfs, OpenFileDescription};
 use crate::mcore::context::ExecutionContext;
-use crate::mcore::mtask::process::Process;
 use crate::mcore::mtask::process::fd::{FdNum, FileDescriptor, FileDescriptorFlags};
+use crate::mcore::mtask::process::Process;
 use crate::mcore::mtask::task::Task;
+use crate::U64Ext;
 
 mod mem;
 
@@ -207,9 +207,10 @@ impl FileAccess for KernelAccess<'_> {
     }
 
     fn pipe(&self) -> Result<(Self::Fd, Self::Fd), ()> {
-        use crate::file::pipe::PIPE_FS;
-        use kernel_vfs::path::AbsoluteOwnedPath;
         use kernel_vfs::node::VfsNode;
+        use kernel_vfs::path::AbsoluteOwnedPath;
+
+        use crate::file::pipe::PIPE_FS;
 
         let pipe_fs_lock = PIPE_FS.get().ok_or(())?;
 
@@ -244,7 +245,10 @@ impl FileAccess for KernelAccess<'_> {
             fd1_int += 1;
         }
         let fd1 = FdNum::from(fd1_int);
-        fds.insert(fd1, FileDescriptor::new(fd1, FileDescriptorFlags::empty(), Arc::new(read_ofd)));
+        fds.insert(
+            fd1,
+            FileDescriptor::new(fd1, FileDescriptorFlags::empty(), Arc::new(read_ofd)),
+        );
 
         // Find second free FD
         let mut fd2_int = fd1_int + 1;
@@ -256,7 +260,10 @@ impl FileAccess for KernelAccess<'_> {
             fd2_int += 1;
         }
         let fd2 = FdNum::from(fd2_int);
-        fds.insert(fd2, FileDescriptor::new(fd2, FileDescriptorFlags::empty(), Arc::new(write_ofd)));
+        fds.insert(
+            fd2,
+            FileDescriptor::new(fd2, FileDescriptorFlags::empty(), Arc::new(write_ofd)),
+        );
 
         Ok((fd1, fd2))
     }
@@ -271,9 +278,13 @@ impl FileAccess for KernelAccess<'_> {
         let mut candidate = 0;
         loop {
             let fd_num = FdNum::from(candidate);
-            if !fds.contains_key(&fd_num) {
+            if let alloc::collections::btree_map::Entry::Vacant(e) = fds.entry(fd_num) {
                 // Found free FD
-                fds.insert(fd_num, FileDescriptor::new(fd_num, FileDescriptorFlags::empty(), ofd));
+                e.insert(FileDescriptor::new(
+                    fd_num,
+                    FileDescriptorFlags::empty(),
+                    ofd,
+                ));
                 return Ok(fd_num);
             }
             candidate += 1;
@@ -296,7 +307,10 @@ impl FileAccess for KernelAccess<'_> {
 
         // Insert new FD, replacing existing one if present
         // dup2 clears FD_CLOEXEC
-        fds.insert(newfd, FileDescriptor::new(newfd, FileDescriptorFlags::empty(), ofd));
+        fds.insert(
+            newfd,
+            FileDescriptor::new(newfd, FileDescriptorFlags::empty(), ofd),
+        );
 
         Ok(newfd)
     }
@@ -378,7 +392,11 @@ impl kernel_syscall::access::MemoryRegionAccess for KernelAccess<'_> {
         use crate::arch::types::VirtAddr;
         let vaddr = VirtAddr::new(addr.as_ptr() as u64);
 
-        if self.process.memory_regions().remove_region_at_address(vaddr) {
+        if self
+            .process
+            .memory_regions()
+            .remove_region_at_address(vaddr)
+        {
             Ok(())
         } else {
             Err(kernel_syscall::access::CreateMappingError::NotFound)

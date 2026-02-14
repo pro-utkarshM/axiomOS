@@ -1,255 +1,180 @@
 # Testing Patterns
 
-**Analysis Date:** 2026-01-27
+**Analysis Date:** 2026-02-13
 
 ## Test Framework
 
 **Runner:**
-- Rust built-in test framework
-- No separate config file needed
+- Standard Rust test framework (host-based)
+- Kernel binary cannot be unit-tested (bare-metal linker); logic extracted to testable crates
 
 **Assertion Library:**
-- Rust built-in: `assert!`, `assert_eq!`, `assert_ne!`
-- Pattern matching: `assert!(matches!(...))`
+- Built-in `assert!`, `assert_eq!`, `assert!(matches!())`
+
+**Benchmarks:**
+- Criterion 0.5 — `kernel/crates/kernel_bpf/Cargo.toml`
+
+**UB Detection:**
+- Miri (undefined behavior detection) — `.github/workflows/build.yml`
 
 **Run Commands:**
 ```bash
-cargo test                              # Run all tests
+cargo test                              # All tests across workspace
 cargo test -p kernel_bpf                # Single crate
+cargo test --test bpf_integration       # Single integration test
 cargo test --release                    # Release mode
-cargo miri test -p <crate>              # Miri undefined behavior check
-cargo bench -p kernel_bpf               # Run benchmarks
+cargo bench -p kernel_bpf              # All BPF benchmarks
+cargo bench --bench interpreter         # Single benchmark
+cargo miri test -p kernel_bpf          # Miri UB detection
 ```
 
 ## Test File Organization
 
 **Location:**
-- Co-located with source in `#[cfg(test)]` modules
-- No separate `tests/` directories (except `kernel/crates/kernel_bpf/tests/`)
+- Integration tests: `kernel/crates/kernel_bpf/tests/*.rs`
+- Unit tests: `#[cfg(test)] mod tests` within source files
+- Benchmarks: `kernel/crates/kernel_bpf/benches/*.rs`
+- VFS test helpers: `kernel/crates/kernel_vfs/src/vfs/testing.rs`
 
-**Naming:**
-- Unit tests: Same file, `mod tests` at end
-- Integration tests: `kernel/crates/kernel_bpf/tests/`
-- Benchmarks: `kernel/crates/kernel_bpf/benches/`
+**Testable Crates:**
+- `kernel_abi`, `kernel_bpf`, `kernel_vfs`, `kernel_syscall`
+- `kernel_devfs`, `kernel_elfloader`, `kernel_physical_memory`, `kernel_virtual_memory`
 
-**Structure:**
-```
-kernel/crates/kernel_bpf/
-├── src/
-│   ├── attach/
-│   │   ├── gpio.rs          # contains #[cfg(test)] mod tests
-│   │   └── kprobe.rs         # contains #[cfg(test)] mod tests
-│   ├── bytecode/
-│   │   └── insn.rs           # contains #[cfg(test)] mod tests
-│   └── ...
-├── tests/
-│   └── semantic_consistency.rs
-└── benches/
-    ├── interpreter.rs
-    ├── verifier.rs
-    └── maps.rs
-```
+**Non-Testable:**
+- `kernel` (main binary) — bare-metal linker script incompatible with test harness
 
 ## Test Structure
 
-**Suite Organization:**
+**Integration Test Organization** (`kernel/crates/kernel_bpf/tests/bpf_integration.rs`):
+```rust
+// Setup helpers at module level
+fn interpreter() -> Interpreter<ActiveProfile> {
+    Interpreter::new()
+}
+
+// Test stubs for external C functions (~90 lines)
+#[unsafe(no_mangle)]
+pub extern "C" fn bpf_ktime_get_ns() -> u64 { 0 }
+
+// Organized in submodules by feature
+mod program_lifecycle { ... }
+mod arithmetic_operations { ... }
+mod control_flow { ... }
+mod memory_operations { ... }
+mod map_operations { ... }
+```
+
+**Integration Test Files:**
+- `bpf_integration.rs` - Core BPF (program lifecycle, arithmetic, control flow, memory, maps)
+- `gpio_integration.rs` - GPIO hardware attachment
+- `pwm_integration.rs` - PWM control and observation
+- `profile_contracts.rs` - Profile-specific constraints
+- `semantic_consistency.rs` - Cross-profile semantic validation
+
+**Unit Test Pattern:**
 ```rust
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn create_gpio_attach() {
-        let gpio = GpioAttach::<ActiveProfile>::new(
-            "gpiochip0", 17, GpioEdge::Rising
-        ).unwrap();
-
-        assert_eq!(gpio.chip(), "gpiochip0");
-        assert_eq!(gpio.line(), 17);
-        assert_eq!(gpio.edge(), GpioEdge::Rising);
-    }
+    fn attach_type_availability() { ... }
 
     #[test]
-    fn invalid_function_name() {
-        let result = KprobeAttach::<ActiveProfile>::new("", KprobeType::Entry);
-        assert!(matches!(result, Err(AttachError::InvalidTarget(_))));
-    }
+    fn attach_config_creation() { ... }
 }
 ```
 
 **Patterns:**
-- One test per behavior
-- Descriptive test names
-- Arrange/Act/Assert structure (implicit)
+- Builder pattern for test program creation (ProgramBuilder)
+- Test stubs for FFI functions (bpf_ktime_get_ns, etc.)
+- Submodule organization by feature area
+- `assert!(matches!())` for enum variant checking
 
-## Mocking
+## Benchmarks
 
-**Framework:**
-- No mocking framework used
-- Manual test doubles where needed
+**Criterion Configuration** (`kernel/crates/kernel_bpf/benches/`):
 
-**Patterns:**
-- Profile-specific testing via feature flags
-- Generic type parameters for dependency injection
+1. **interpreter.rs** - BPF execution performance
+   - Arithmetic operations (simple_math)
+   - Loop execution (10, 100, 1000 iterations)
+   - Conditional jumps
 
-**What to Mock:**
-- External hardware interactions (via abstractions)
+2. **verifier.rs** - Verification performance
 
-**What NOT to Mock:**
-- Pure functions
-- Internal logic
+3. **maps.rs** - Map operation performance
 
-## Fixtures and Factories
-
-**Test Data:**
+**Pattern:**
 ```rust
-// Factory pattern in test
-fn create_test_program() -> BpfProgram<ActiveProfile> {
-    ProgramBuilder::<ActiveProfile>::new(BpfProgType::SocketFilter)
+fn bench_arithmetic(c: &mut Criterion) {
+    let mut group = c.benchmark_group("interpreter/arithmetic");
+    let program = ProgramBuilder::<ActiveProfile>::new(BpfProgType::SocketFilter)
         .insn(BpfInsn::mov64_imm(0, 0))
         .insn(BpfInsn::exit())
         .build()
-        .expect("valid program")
+        .expect("valid program");
+    group.bench_function("simple_math", |b| {
+        b.iter(|| interp.execute(black_box(&program), black_box(&ctx)))
+    });
 }
 ```
 
-**Location:**
-- Factory functions in test modules
-- No shared fixtures directory
+## Test Data
+
+**Factory Pattern:**
+```rust
+// In test file
+fn interpreter() -> Interpreter<ActiveProfile> {
+    Interpreter::new()
+}
+
+// Program construction via builder
+let program = ProgramBuilder::<ActiveProfile>::new(BpfProgType::SocketFilter)
+    .insn(BpfInsn::mov64_imm(0, 42))
+    .insn(BpfInsn::exit())
+    .build()
+    .expect("valid program");
+```
+
+**VFS Test Helper:**
+- `TestFs` struct in `kernel/crates/kernel_vfs/src/vfs/testing.rs` for mocking filesystem
 
 ## Coverage
 
 **Requirements:**
 - No enforced coverage target
-- Focus on critical paths (verifier, execution)
+- Focus on BPF subsystem (highest test density)
+- Miri runs per-crate in CI for undefined behavior detection
 
-**Configuration:**
-- No coverage tool configured
-- Miri for undefined behavior detection
+**Gaps:**
+- Fork/exec/waitpid only smoke-tested via `userspace/fork_test/`
+- Page fault handling untested
+- BPF kernel integration (attachment lifecycle) not integration-tested
+- No stress tests for concurrent scenarios
 
-**View Coverage:**
+## CI/CD Integration
+
+**GitHub Actions Pipeline** (`.github/workflows/build.yml`):
+1. **Lint** - rustfmt check + clippy with `-D clippy::all`
+2. **Test** - Debug + Release modes
+3. **Miri** - UB detection on kernel crates
+4. **Build** - Full bootable ISO creation
+
+**BPF Profile CI** (`.github/workflows/bpf-profiles.yml`):
+- Cloud and embedded profile separate testing
+- Mutual exclusion verification
+- Semantic consistency validation
+
+**Pre-Commit Workflow:**
 ```bash
-# Not configured - use cargo-tarpaulin if needed
-cargo install cargo-tarpaulin
-cargo tarpaulin -p kernel_bpf
+cargo fmt -- --check          # Format check
+cargo clippy -- -D clippy::all # Lint
+cargo build                    # Build
+cargo test                     # Tests
+cargo miri test -p <crate>    # Optional: Miri
 ```
-
-## Test Types
-
-**Unit Tests:**
-- Scope: Single function/struct in isolation
-- Location: `#[cfg(test)] mod tests` in source files
-- Examples: `kernel/crates/kernel_bpf/src/bytecode/insn.rs`
-
-**Integration Tests:**
-- Scope: Multiple modules together
-- Location: `kernel/crates/kernel_bpf/tests/`
-- Examples: `semantic_consistency.rs` (profile consistency)
-
-**Benchmarks:**
-- Framework: Criterion 0.5
-- Location: `kernel/crates/kernel_bpf/benches/`
-- Examples: `interpreter.rs`, `verifier.rs`, `maps.rs`
-
-**Profile-Specific Tests:**
-```bash
-# Cloud profile
-cargo test -p kernel_bpf --no-default-features --features cloud-profile
-
-# Embedded profile (default)
-cargo test -p kernel_bpf --no-default-features --features embedded-profile
-```
-
-## Common Patterns
-
-**Async Testing:**
-- Not applicable (no async in kernel_bpf)
-
-**Error Testing:**
-```rust
-#[test]
-fn invalid_function_name() {
-    let result = KprobeAttach::<ActiveProfile>::new("", KprobeType::Entry);
-    assert!(matches!(result, Err(AttachError::InvalidTarget(_))));
-}
-```
-
-**Snapshot Testing:**
-- Not used
-
-**Benchmark Pattern:**
-```rust
-use criterion::{criterion_group, criterion_main, Criterion, black_box};
-
-fn bench_arithmetic(c: &mut Criterion) {
-    let mut group = c.benchmark_group("interpreter/arithmetic");
-
-    let program = create_test_program();
-    let interp = Interpreter::<ActiveProfile>::new();
-    let ctx = BpfContext::empty();
-
-    group.bench_function("simple_math", |b| {
-        b.iter(|| interp.execute(black_box(&program), black_box(&ctx)))
-    });
-
-    group.finish();
-}
-
-criterion_group!(benches, bench_arithmetic);
-criterion_main!(benches);
-```
-
-## CI Pipeline
-
-**Jobs (`.github/workflows/build.yml`):**
-
-1. **Lint:**
-   - `cargo fmt -- --check`
-   - `cargo clippy --workspace --lib -- -D clippy::all`
-
-2. **Test:**
-   - Matrix: debug and release modes
-   - `cargo test` and `cargo test --release`
-
-3. **Miri (per-crate):**
-   - `cargo miri test -p <package>`
-   - Excludes kernel_bpf (has dedicated job)
-
-4. **Miri kernel_bpf:**
-   - Profile matrix: cloud-profile, embedded-profile
-   - `cargo miri test -p kernel_bpf --no-default-features --features <profile>`
-
-5. **Build:**
-   - `cargo build --release`
-   - Artifacts: `muffin.iso`
-
-**Schedule:** On push + twice daily (0 5,17 * * *)
-
-**Local Validation:**
-```bash
-cargo fmt -- --check
-cargo clippy --workspace --lib -- -D clippy::all
-cargo build
-cargo test
-cargo miri setup
-cargo miri test -p kernel_bpf
-cargo build --release
-```
-
-## Test Gaps
-
-**Known Gaps:**
-- BPF syscall handler (`kernel/src/syscall/bpf.rs`) - No unit tests
-- Unsafe pointer operations - Limited testing
-- Full BPF lifecycle integration - Manual testing only
-- JIT compiler correctness - Limited coverage
-
-**Priority Areas:**
-- Verifier (critical for safety)
-- Map operations (data integrity)
-- Syscall boundary validation
 
 ---
 
-*Testing analysis: 2026-01-27*
+*Testing analysis: 2026-02-13*
 *Update when test patterns change*

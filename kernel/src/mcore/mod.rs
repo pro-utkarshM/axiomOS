@@ -2,11 +2,11 @@
 use alloc::boxed::Box;
 #[cfg(target_arch = "x86_64")]
 use core::sync::atomic::Ordering::{Acquire, Release};
-#[cfg(target_arch = "x86_64")]
-use log::trace;
 
 #[cfg(target_arch = "x86_64")]
 use log::info;
+#[cfg(target_arch = "x86_64")]
+use log::trace;
 #[cfg(target_arch = "x86_64")]
 use x86_64::instructions::segmentation::{CS, DS, SS};
 #[cfg(target_arch = "x86_64")]
@@ -21,14 +21,13 @@ use x86_64::registers::model_specific::KernelGsBase;
 use x86_64::registers::segmentation::Segment;
 
 #[cfg(target_arch = "x86_64")]
-use crate::arch::types::{PhysAddr, PhysFrame, VirtAddr};
-
-#[cfg(target_arch = "x86_64")]
 use crate::apic::io_apic;
 #[cfg(target_arch = "x86_64")]
 use crate::arch::gdt::create_gdt_and_tss;
 #[cfg(target_arch = "x86_64")]
 use crate::arch::idt::create_idt;
+#[cfg(target_arch = "x86_64")]
+use crate::arch::types::{PhysAddr, PhysFrame, VirtAddr};
 #[cfg(target_arch = "x86_64")]
 use crate::limine::MP_REQUEST;
 use crate::mcore::mtask::scheduler::cleanup::TaskCleanup;
@@ -99,7 +98,10 @@ unsafe extern "C" fn cpu_init_and_return(cpu: &limine::mp::Cpu) {
         // This switches the address space for this CPU.
         unsafe {
             let flags = Cr3Flags::from_bits_truncate(_cpu_arg);
-            Cr3::write(PhysFrame::containing_address(PhysAddr::new(_cpu_arg)), flags);
+            Cr3::write(
+                PhysFrame::containing_address(PhysAddr::new(_cpu_arg)),
+                flags,
+            );
         }
 
         // set up the GDT

@@ -1,149 +1,115 @@
 # External Integrations
 
-**Analysis Date:** 2026-01-27
+**Analysis Date:** 2026-02-13
 
 ## APIs & External Services
 
-**Payment Processing:**
-- Not applicable (bare-metal kernel)
+Not applicable — bare-metal kernel with no external API dependencies.
 
-**Email/SMS:**
-- Not applicable
+## Bootloader
 
-**External APIs:**
-- Not applicable - Bare-metal kernel with no external service dependencies
+**Limine v9.x-binary:**
+- Purpose: BIOS/UEFI boot for x86_64 kernel
+- Integration: Downloaded during build via git clone — `build.rs`
+- Config: `limine.conf` (protocol: limine, timeout: 0)
+- Files staged: `limine-bios.sys`, `limine-bios-cd.bin`, `limine-uefi-cd.bin`, EFI boot files
+- Repository: https://github.com/limine-bootloader/limine.git
 
-## Data Storage
+**Device Tree (AArch64):**
+- Purpose: Hardware discovery on ARM platforms
+- Integration: DTB address passed in x0 register at boot — `kernel/src/arch/aarch64/boot.S`
+- Parsed via `fdt` crate — `kernel/src/arch/aarch64/dtb.rs`
 
-**Databases:**
-- Not applicable (no database clients)
+## Emulation
 
-**File Storage:**
-- Ext2 filesystem - Primary filesystem implementation - `kernel/src/file/ext2.rs`
-- DevFS - Device filesystem - `kernel/src/file/devfs.rs`
-- VFS abstraction - `kernel/crates/kernel_vfs/`
+**QEMU System Emulators:**
+- `qemu-system-x86_64` - x86_64 with UEFI/BIOS boot — `src/main.rs`
+- `qemu-system-aarch64` - ARM64 virt machine and RPi5 emulation — `scripts/run-virt.sh`
+- Parameters: SMP, memory, disk image, debug port (localhost:1234 for GDB)
+- Disk: Generated 10M ext2 filesystem — `build.rs`
 
-**Caching:**
-- None (all in-memory, no persistent cache)
+**OVMF (UEFI Firmware):**
+- Prebuilt x86_64 firmware images (Code + Vars) — `ovmf-prebuilt` crate in `build.rs`
+- Used for UEFI boot in QEMU
 
-## Authentication & Identity
+## Hardware Targets
 
-**Auth Provider:**
-- Not applicable
+**x86_64 (Primary Dev Target):**
+- QEMU emulation via Limine bootloader
+- Kernel loaded at 0xffffffff80000000
+- ACPI for hardware discovery, APIC for interrupts, HPET for timers
 
-**OAuth Integrations:**
-- None
+**ARM64 / AArch64:**
+- QEMU virt machine (generic ARM SoC) — `scripts/run-virt.sh`
+- Raspberry Pi 5 (RP1 SoC) — `scripts/build-rpi5.sh`, `scripts/deploy-rpi5.sh`
+- GIC (Generic Interrupt Controller) for interrupts
+- Platform-specific UART, GPIO, PWM drivers for RPi5
 
-## Monitoring & Observability
+**RISC-V 64-bit (Experimental):**
+- Demo kernel in `kernel/demos/riscv/`
+- Separate Cargo workspace — `kernel/demos/riscv/.cargo/config.toml`
+- QEMU execution — `scripts/run-riscv.sh`
 
-**Error Tracking:**
-- Serial console output - `kernel/src/serial.rs`
-- Backtrace support - `kernel/src/backtrace.rs`
+## Device Drivers
 
-**Analytics:**
-- Not applicable
+**VirtIO:**
+- Block device (disk.img mounting) — `virtio-drivers = "0.12"`
+- GPU (framebuffer) — `kernel/src/driver/virtio/gpu.rs`
+- MMIO transport for AArch64 — `kernel/src/driver/virtio/mmio.rs`
 
-**Logs:**
-- Kernel log via `log` crate - `kernel/src/log.rs`
-- Serial console output to UART
+**PCI:**
+- Enumeration and device discovery — `kernel/crates/kernel_pci/`
+- Device tree parsing for ARM platforms
 
-## CI/CD & Deployment
+**Serial/UART:**
+- 16550-compatible UART — `uart_16550 = "0.4"`
+- RP1 UART on RPi5, QEMU UART on virt/x86_64
 
-**Hosting:**
-- Bare-metal deployment or QEMU emulation
-- ISO image generation via `build.rs`
+**Platform-Specific (RPi5):**
+- RP1 GPIO controller — `kernel/src/arch/aarch64/platform/rpi5/gpio.rs`
+- RP1 PWM controller — `kernel/src/arch/aarch64/platform/rpi5/pwm.rs`
+- RP1 UART — `kernel/src/arch/aarch64/platform/rpi5/uart.rs`
 
-**CI Pipeline:**
-- GitHub Actions - `.github/workflows/build.yml`, `.github/workflows/bpf-profiles.yml`
-- Jobs: lint, test, miri, build
-- Schedule: On push + twice daily (5am and 5pm UTC)
+## Filesystem
 
-## Environment Configuration
+**ext2:**
+- Build-time: 10M ext2 disk image created via `mke2fs` — `build.rs`
+- Runtime: Mounted as root filesystem via VirtIO block device
+- VFS implementation — `kernel/crates/kernel_vfs/`, `kernel/src/file/ext2.rs`
 
-**Development:**
-- Required: Rust nightly toolchain
-- Optional: QEMU for testing
-- No secrets/env vars required
+## Build Artifacts
 
-**Staging:**
-- Not applicable (bare-metal)
+**Bootable ISO** (x86_64):
+- `target/*/build/*/out/muffin.iso` - Hybrid BIOS+UEFI
+- Created via xorriso + Limine installation — `build.rs`
 
-**Production:**
-- Boot via Limine bootloader
-- ISO image deployment
+**Disk Image:**
+- `target/*/build/*/out/disk.img` - 10M ext2
+- Contains: init, demos (gpio_demo, pwm_demo, bpf_loader, fork_test, etc.)
 
-## Webhooks & Callbacks
+**Kernel Binaries:**
+- x86_64: `target/x86_64-unknown-none/release/kernel` (ELF)
+- AArch64: `target/aarch64-unknown-none/release/kernel8.img` (raw binary for RPi5)
 
-**Incoming:**
-- None
+## CI/CD Pipeline
 
-**Outgoing:**
-- None
+**GitHub Actions:** `.github/workflows/`
+- `build.yml`: Lint (rustfmt/clippy), test (debug/release), Miri, full build
+- `bpf-profiles.yml`: BPF profile testing, mutual exclusion verification
+- Runs on: ubuntu-latest, scheduled (5 AM, 5 PM UTC)
+- Artifacts: `muffin-boot-images` (ISO)
 
-## BPF Subsystem Integration
+**Dependabot:** `.github/dependabot.yml` for dependency updates
 
-**Core eBPF Components:**
-- Verifier: Streaming verification (50KB peak memory) - `kernel/crates/kernel_bpf/src/verifier/`
-- Interpreter: Complete BPF instruction interpreter - `kernel/crates/kernel_bpf/src/execution/interpreter.rs`
-- JIT Compilers:
-  - x86_64 JIT (full) - `kernel/crates/kernel_bpf/src/execution/jit/`
-  - ARM64 JIT (partial) - `kernel/crates/kernel_bpf/src/execution/jit_aarch64.rs`
+## Development & Deployment Scripts
 
-**BPF Map Types:**
-1. Array Map - `kernel/crates/kernel_bpf/src/maps/array.rs`
-2. Hash Map - `kernel/crates/kernel_bpf/src/maps/hash.rs`
-3. Ring Buffer - `kernel/crates/kernel_bpf/src/maps/ringbuf.rs`
-4. Time Series Map - `kernel/crates/kernel_bpf/src/maps/timeseries.rs`
-5. Static Pool (embedded) - `kernel/crates/kernel_bpf/src/maps/static_pool.rs`
-
-**BPF Syscall Interface:**
-- `sys_bpf` handler - `kernel/src/syscall/bpf.rs`
-- Operations: BPF_MAP_CREATE, BPF_MAP_LOOKUP_ELEM, BPF_MAP_UPDATE_ELEM, BPF_MAP_DELETE_ELEM, BPF_PROG_LOAD, BPF_PROG_ATTACH
-
-**BPF Helper Functions:**
-- `bpf_ktime_get_ns` - Get kernel time - `kernel/src/bpf/helpers.rs`
-- `bpf_trace_printk` - Print to kernel logs - `kernel/src/bpf/helpers.rs`
-- `bpf_map_lookup_elem` - Map lookup - `kernel/src/bpf/helpers.rs`
-- `bpf_map_update_elem` - Map update - `kernel/src/bpf/helpers.rs`
-- `bpf_map_delete_elem` - Map deletion - `kernel/src/bpf/helpers.rs`
-
-**Attach Points:**
-- Timer events (attach_type=1) - `kernel/src/syscall/mod.rs`
-- Syscall entry (attach_type=2) - `kernel/src/syscall/mod.rs`
-- Planned: GPIO, PWM, IIO, Kprobe, Tracepoint - `kernel/crates/kernel_bpf/src/attach/`
-
-## Userspace Tools Integration
-
-**rk-bridge:**
-- eBPF Ring Buffer to ROS2 Bridge - `userspace/rk_bridge/`
-- Dependencies: tokio, serde, libc, clap
-- Optional ROS2 integration via `ros2` feature
-
-**rk-cli:**
-- BPF deployment & management CLI - `userspace/rk_cli/`
-- Dependencies: clap, ring (crypto), sha3, walkdir
-
-**Init Process:**
-- PID 1 init - `userspace/init/`
-- Starts BPF subsystem and loads initial programs
-
-## Profile-Based Deployment
-
-**Cloud Profile:**
-- Memory: Elastic heap allocation
-- Stack: 512 KB
-- Instructions: 1,000,000 soft limit
-- JIT: Available
-- Build: `cargo build --no-default-features --features cloud-profile -p kernel_bpf`
-
-**Embedded Profile (Default):**
-- Memory: Static 64KB pool
-- Stack: 8 KB
-- Instructions: 100,000 hard limit
-- JIT: Erased at compile time
-- Build: `cargo build --no-default-features --features embedded-profile -p kernel_bpf`
+- `scripts/build-rpi5.sh` - Compile kernel with rpi5 feature, create kernel8.img
+- `scripts/deploy-rpi5.sh` - Copy kernel8.img to SD card boot partition
+- `scripts/run-virt.sh` - Run ARM64 virt machine in QEMU
+- `scripts/build-riscv.sh` - RISC-V demo kernel build
+- `scripts/run-riscv.sh` - RISC-V QEMU execution
 
 ---
 
-*Integration audit: 2026-01-27*
+*Integration audit: 2026-02-13*
 *Update when adding/removing external services*

@@ -3,11 +3,11 @@ use core::slice;
 
 use kernel_vfs::node::VfsNode;
 use spin::mutex::Mutex;
-use crate::arch::{PhysFrame, PhysFrameRange as PhysFrameRangeInclusive, VirtAddr};
 
-use crate::UsizeExt;
+use crate::arch::{PhysFrame, PhysFrameRange as PhysFrameRangeInclusive, VirtAddr};
 use crate::mem::phys::PhysicalMemory;
 use crate::mem::virt::OwnedSegment;
+use crate::UsizeExt;
 
 pub struct MemoryRegions {
     regions: Mutex<Vec<MemoryRegion>>,
@@ -20,9 +20,10 @@ impl Default for MemoryRegions {
 }
 
 use alloc::sync::Arc;
+
+use crate::arch::types::{PageSize, PageTableFlags, Size4KiB};
 use crate::mcore::mtask::process::Process;
 use crate::mem::virt::VirtualMemoryAllocator;
-use crate::arch::types::{PageSize, Size4KiB, PageTableFlags};
 
 impl MemoryRegions {
     pub fn new() -> Self {
@@ -130,7 +131,9 @@ impl MemoryRegion {
         match self {
             MemoryRegion::Mapped(r) => Ok(MemoryRegion::Mapped(r.clone_to_process(new_process)?)),
             MemoryRegion::Lazy(r) => Ok(MemoryRegion::Lazy(r.clone_to_process(new_process)?)),
-            MemoryRegion::FileBacked(r) => Ok(MemoryRegion::FileBacked(r.clone_to_process(new_process)?)),
+            MemoryRegion::FileBacked(r) => {
+                Ok(MemoryRegion::FileBacked(r.clone_to_process(new_process)?))
+            }
         }
     }
 
@@ -162,25 +165,27 @@ use crate::mem::phys_to_virt;
 impl MappedMemoryRegion {
     pub fn clone_to_process(&self, new_process: &Arc<Process>) -> Result<Self, &'static str> {
         // 1. Reserve segment in new process
-        let new_segment_inner = kernel_virtual_memory::Segment::new(
-            self.segment.start,
-            self.segment.len
-        );
+        let new_segment_inner =
+            kernel_virtual_memory::Segment::new(self.segment.start, self.segment.len);
 
-        let new_segment = new_process.vmm().mark_as_reserved(new_segment_inner)
+        let new_segment = new_process
+            .vmm()
+            .mark_as_reserved(new_segment_inner)
             .map_err(|_| "Failed to reserve segment in new process")?;
 
         // 2. Allocate new physical frames (must be contiguous for MappedMemoryRegion)
         // actually self.segment should be page aligned and size covered.
         // self.physical_frames covers the whole segment?
         // Let's use the count from physical_frames.
-        let frame_count = self.physical_frames.end.start_address().as_u64() / Size4KiB::SIZE - self.physical_frames.start.start_address().as_u64() / Size4KiB::SIZE + 1;
+        let frame_count = self.physical_frames.end.start_address().as_u64() / Size4KiB::SIZE
+            - self.physical_frames.start.start_address().as_u64() / Size4KiB::SIZE
+            + 1;
 
         let new_frames = PhysicalMemory::allocate_frames::<Size4KiB>(frame_count as usize)
             .ok_or("Out of physical memory")?;
 
         // 3. Copy data
-        for (i, frame) in new_frames.clone().into_iter().enumerate() {
+        for (i, frame) in new_frames.into_iter().enumerate() {
             // Calculate source virtual address
             let src_vaddr = self.segment.start + (i as u64 * Size4KiB::SIZE);
             let src_ptr = src_vaddr.as_ptr::<u8>();
@@ -198,13 +203,14 @@ impl MappedMemoryRegion {
         // 4. Map in new process
         // We assume typical user permissions (RW).
         // TODO: Ideally we should preserve original permissions.
-        let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::USER_ACCESSIBLE | PageTableFlags::NO_EXECUTE;
+        let flags = PageTableFlags::PRESENT
+            | PageTableFlags::WRITABLE
+            | PageTableFlags::USER_ACCESSIBLE
+            | PageTableFlags::NO_EXECUTE;
 
-        new_process.with_address_space(|as_| as_.map_range(
-            &*new_segment,
-            new_frames.clone().into_iter(),
-            flags
-        )).map_err(|_| "Failed to map memory in new process")?;
+        new_process
+            .with_address_space(|as_| as_.map_range(&*new_segment, new_frames.into_iter(), flags))
+            .map_err(|_| "Failed to map memory in new process")?;
 
         Ok(MappedMemoryRegion {
             segment: new_segment,

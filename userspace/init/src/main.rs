@@ -6,269 +6,251 @@ use minilib::write;
 // SAFETY: Entry point for the init process, called by the kernel/loader.
 #[unsafe(no_mangle)]
 pub extern "C" fn _start() -> ! {
-    write(1, b"=== BPF Maps Demo (Updated) ===\n");
-    write(1, b"Testing print_num(123): ");
-    print_num(123);
-    write(1, b"\n");
+    write(1, b"=== Axiom eBPF Init ===\n");
 
-    write(1, b"Testing magic syscall 999: ");
-    print_num(8888); // Marker 8888
-    write(1, b"\n");
-    // let magic = minilib::syscall0(999);
-    // print_num(magic as u64);
-    // let r0 = minilib::syscall_debug(999);
-    // write(1, b"r0: ");
-    // print_num(r0 as u64);
-    // write(1, b"\n");
-
-    // Spawn fork_test
-    write(1, b"Spawning /bin/fork_test...\n");
-    let pid = minilib::spawn("/bin/fork_test");
+    // Spawn iio_demo to demonstrate IIO sensor filtering
+    write(1, b"Spawning /bin/iio_demo...\n");
+    let pid = minilib::spawn("/bin/iio_demo");
     if pid < 0 {
-        write(1, b"Failed to spawn fork_test!\n");
+        write(1, b"Failed to spawn iio_demo!\n");
     } else {
-        write(1, b"Spawned fork_test with PID: ");
+        write(1, b"Spawned iio_demo with PID: ");
         print_num(pid as u64);
         write(1, b"\n");
-
-        // Wait for it? init usually waits for children or just loops.
-        // We can try to wait for it to see output interleaved correctly if we want,
-        // or just let it run.
-        // Let's just let it run.
     }
 
     loop {
         minilib::pause();
     }
-/*
-    use kernel_abi::BpfAttr;
-    use minilib::bpf;
+    /*
+        use kernel_abi::BpfAttr;
+        use minilib::bpf;
 
-    #[repr(C)]
-    struct BpfInsn {
-        code: u8,
-        dst_src: u8,
-        off: i16,
-        imm: i32,
-    }
-
-    // Step 1: Create an array map for the counter
-    // map_type=2 (Array), key_size=4, value_size=8, max_entries=1
-    write(1, b"Creating counter map...\n");
-
-    let map_attr = BpfAttr {
-        prog_type: 2, // map_type = Array
-        insn_cnt: 4,  // key_size = 4 bytes (u32)
-        // Pack value_size (8) and max_entries (1) into insns field
-        // low 32 bits = value_size, high 32 bits = max_entries
-        insns: 8 | (1u64 << 32), // value_size=8, max_entries=1
-        ..Default::default()
-    };
-
-    let map_id = bpf(
-        0,
-        &map_attr as *const BpfAttr as *const u8,
-        core::mem::size_of::<BpfAttr>() as i32,
-    );
-
-    if map_id < 0 {
-        write(1, b"Failed to create map!\n");
-        loop {
-            minilib::pause();
+        #[repr(C)]
+        struct BpfInsn {
+            code: u8,
+            dst_src: u8,
+            off: i16,
+            imm: i32,
         }
-    }
 
-    write(1, b"Map created with id: ");
-    print_num(map_id as u64);
-    write(1, b"\n");
+        // Step 1: Create an array map for the counter
+        // map_type=2 (Array), key_size=4, value_size=8, max_entries=1
+        write(1, b"Creating counter map...\n");
 
-    // Step 2: Load BPF program that increments the counter
-    // This program:
-    //   1. Calls bpf_map_lookup_elem(map_id, &key) to get pointer to value
-    //   2. If pointer is valid, increments the value at that pointer
-    //   3. Exits
-    write(1, b"Loading counter BPF program...\n");
+        let map_attr = BpfAttr {
+            prog_type: 2, // map_type = Array
+            insn_cnt: 4,  // key_size = 4 bytes (u32)
+            // Pack value_size (8) and max_entries (1) into insns field
+            // low 32 bits = value_size, high 32 bits = max_entries
+            insns: 8 | (1u64 << 32), // value_size=8, max_entries=1
+            ..Default::default()
+        };
 
-    // BPF program bytecode:
-    // r6 = map_id (will be patched)
-    // *(u32 *)(r10 - 4) = 0  // key = 0 on stack
-    // r1 = r6                 // map_id
-    // r2 = r10 - 4            // key pointer
-    // call bpf_map_lookup_elem (3)
-    // if r0 == 0, goto exit
-    // r1 = *(u64 *)(r0)       // load current value
-    // r1 += 1                  // increment
-    // *(u64 *)(r0) = r1       // store back
-    // exit
+        let map_id = bpf(
+            0,
+            &map_attr as *const BpfAttr as *const u8,
+            core::mem::size_of::<BpfAttr>() as i32,
+        );
 
-    let insns = [
-        // r6 = map_id (0 in this case)
-        BpfInsn {
-            code: 0xb7,
-            dst_src: 0x06,
-            off: 0,
-            imm: map_id,
-        },
-        // r1 = 0 (key value)
-        BpfInsn {
-            code: 0xb7,
-            dst_src: 0x01,
-            off: 0,
-            imm: 0,
-        },
-        // *(u32 *)(r10 - 4) = r1 (store key on stack)
-        BpfInsn {
-            code: 0x63,
-            dst_src: 0x1a,
-            off: -4,
-            imm: 0,
-        },
-        // r1 = r6 (map_id for helper call)
-        BpfInsn {
-            code: 0xbf,
-            dst_src: 0x61,
-            off: 0,
-            imm: 0,
-        },
-        // r2 = r10 (frame pointer)
-        BpfInsn {
-            code: 0xbf,
-            dst_src: 0xa2,
-            off: 0,
-            imm: 0,
-        },
-        // r2 += -4 (point to key on stack)
-        BpfInsn {
-            code: 0x07,
-            dst_src: 0x02,
-            off: 0,
-            imm: -4,
-        },
-        // call bpf_map_lookup_elem (helper 3)
-        BpfInsn {
-            code: 0x85,
-            dst_src: 0x00,
-            off: 0,
-            imm: 3,
-        },
-        // if r0 == 0, skip 3 (goto exit)
-        BpfInsn {
-            code: 0x15,
-            dst_src: 0x00,
-            off: 3,
-            imm: 0,
-        },
-        // r1 = *(u64 *)(r0 + 0) (load counter)
-        BpfInsn {
-            code: 0x79,
-            dst_src: 0x01,
-            off: 0,
-            imm: 0,
-        },
-        // r1 += 1 (increment)
-        BpfInsn {
-            code: 0x07,
-            dst_src: 0x01,
-            off: 0,
-            imm: 1,
-        },
-        // *(u64 *)(r0 + 0) = r1 (store back)
-        BpfInsn {
-            code: 0x7b,
-            dst_src: 0x10,
-            off: 0,
-            imm: 0,
-        },
-        // exit
-        BpfInsn {
-            code: 0x95,
-            dst_src: 0x00,
-            off: 0,
-            imm: 0,
-        },
-    ];
-
-    let load_attr = BpfAttr {
-        prog_type: 1, // SocketFilter (or any valid type)
-        insn_cnt: insns.len() as u32,
-        insns: insns.as_ptr() as u64,
-        ..Default::default()
-    };
-
-    let prog_id = bpf(
-        5,
-        &load_attr as *const BpfAttr as *const u8,
-        core::mem::size_of::<BpfAttr>() as i32,
-    );
-
-    if prog_id < 0 {
-        write(1, b"Failed to load BPF program!\n");
-        loop {
-            minilib::pause();
-        }
-    }
-
-    write(1, b"BPF program loaded with id: ");
-    print_num(prog_id as u64);
-    write(1, b"\n");
-
-    // Step 3: Attach program to timer
-    write(1, b"Attaching to Timer...\n");
-
-    let attach_attr = BpfAttr {
-        attach_btf_id: 1, // Timer attach type
-        attach_prog_fd: prog_id as u32,
-        ..Default::default()
-    };
-
-    let attach_res = bpf(
-        8,
-        &attach_attr as *const BpfAttr as *const u8,
-        core::mem::size_of::<BpfAttr>() as i32,
-    );
-
-    if attach_res != 0 {
-        write(1, b"Failed to attach!\n");
-        loop {
-            minilib::pause();
-        }
-    }
-
-    write(1, b"Attached! Reading counter every ~1M iterations...\n\n");
-
-    // Step 4: Periodically read counter from map
-    let key: u32 = 0;
-    let mut value: u64 = 0;
-    let mut loop_count: u64 = 0;
-
-    loop {
-        loop_count += 1;
-
-        // Read counter every ~1 million iterations
-        if loop_count % 1_000_000 == 0 {
-            let lookup_attr = BpfAttr {
-                map_fd: map_id as u32,
-                key: &key as *const u32 as u64,
-                value: &mut value as *mut u64 as u64,
-                ..Default::default()
-            };
-
-            let res = bpf(
-                1,
-                &lookup_attr as *const BpfAttr as *const u8,
-                core::mem::size_of::<BpfAttr>() as i32,
-            );
-
-            if res == 0 {
-                write(1, b"Timer ticks: ");
-                print_num(value);
-                write(1, b"\n");
+        if map_id < 0 {
+            write(1, b"Failed to create map!\n");
+            loop {
+                minilib::pause();
             }
         }
 
-        minilib::pause();
-    }
-*/
+        write(1, b"Map created with id: ");
+        print_num(map_id as u64);
+        write(1, b"\n");
+
+        // Step 2: Load BPF program that increments the counter
+        // This program:
+        //   1. Calls bpf_map_lookup_elem(map_id, &key) to get pointer to value
+        //   2. If pointer is valid, increments the value at that pointer
+        //   3. Exits
+        write(1, b"Loading counter BPF program...\n");
+
+        // BPF program bytecode:
+        // r6 = map_id (will be patched)
+        // *(u32 *)(r10 - 4) = 0  // key = 0 on stack
+        // r1 = r6                 // map_id
+        // r2 = r10 - 4            // key pointer
+        // call bpf_map_lookup_elem (3)
+        // if r0 == 0, goto exit
+        // r1 = *(u64 *)(r0)       // load current value
+        // r1 += 1                  // increment
+        // *(u64 *)(r0) = r1       // store back
+        // exit
+
+        let insns = [
+            // r6 = map_id (0 in this case)
+            BpfInsn {
+                code: 0xb7,
+                dst_src: 0x06,
+                off: 0,
+                imm: map_id,
+            },
+            // r1 = 0 (key value)
+            BpfInsn {
+                code: 0xb7,
+                dst_src: 0x01,
+                off: 0,
+                imm: 0,
+            },
+            // *(u32 *)(r10 - 4) = r1 (store key on stack)
+            BpfInsn {
+                code: 0x63,
+                dst_src: 0x1a,
+                off: -4,
+                imm: 0,
+            },
+            // r1 = r6 (map_id for helper call)
+            BpfInsn {
+                code: 0xbf,
+                dst_src: 0x61,
+                off: 0,
+                imm: 0,
+            },
+            // r2 = r10 (frame pointer)
+            BpfInsn {
+                code: 0xbf,
+                dst_src: 0xa2,
+                off: 0,
+                imm: 0,
+            },
+            // r2 += -4 (point to key on stack)
+            BpfInsn {
+                code: 0x07,
+                dst_src: 0x02,
+                off: 0,
+                imm: -4,
+            },
+            // call bpf_map_lookup_elem (helper 3)
+            BpfInsn {
+                code: 0x85,
+                dst_src: 0x00,
+                off: 0,
+                imm: 3,
+            },
+            // if r0 == 0, skip 3 (goto exit)
+            BpfInsn {
+                code: 0x15,
+                dst_src: 0x00,
+                off: 3,
+                imm: 0,
+            },
+            // r1 = *(u64 *)(r0 + 0) (load counter)
+            BpfInsn {
+                code: 0x79,
+                dst_src: 0x01,
+                off: 0,
+                imm: 0,
+            },
+            // r1 += 1 (increment)
+            BpfInsn {
+                code: 0x07,
+                dst_src: 0x01,
+                off: 0,
+                imm: 1,
+            },
+            // *(u64 *)(r0 + 0) = r1 (store back)
+            BpfInsn {
+                code: 0x7b,
+                dst_src: 0x10,
+                off: 0,
+                imm: 0,
+            },
+            // exit
+            BpfInsn {
+                code: 0x95,
+                dst_src: 0x00,
+                off: 0,
+                imm: 0,
+            },
+        ];
+
+        let load_attr = BpfAttr {
+            prog_type: 1, // SocketFilter (or any valid type)
+            insn_cnt: insns.len() as u32,
+            insns: insns.as_ptr() as u64,
+            ..Default::default()
+        };
+
+        let prog_id = bpf(
+            5,
+            &load_attr as *const BpfAttr as *const u8,
+            core::mem::size_of::<BpfAttr>() as i32,
+        );
+
+        if prog_id < 0 {
+            write(1, b"Failed to load BPF program!\n");
+            loop {
+                minilib::pause();
+            }
+        }
+
+        write(1, b"BPF program loaded with id: ");
+        print_num(prog_id as u64);
+        write(1, b"\n");
+
+        // Step 3: Attach program to timer
+        write(1, b"Attaching to Timer...\n");
+
+        let attach_attr = BpfAttr {
+            attach_btf_id: 1, // Timer attach type
+            attach_prog_fd: prog_id as u32,
+            ..Default::default()
+        };
+
+        let attach_res = bpf(
+            8,
+            &attach_attr as *const BpfAttr as *const u8,
+            core::mem::size_of::<BpfAttr>() as i32,
+        );
+
+        if attach_res != 0 {
+            write(1, b"Failed to attach!\n");
+            loop {
+                minilib::pause();
+            }
+        }
+
+        write(1, b"Attached! Reading counter every ~1M iterations...\n\n");
+
+        // Step 4: Periodically read counter from map
+        let key: u32 = 0;
+        let mut value: u64 = 0;
+        let mut loop_count: u64 = 0;
+
+        loop {
+            loop_count += 1;
+
+            // Read counter every ~1 million iterations
+            if loop_count % 1_000_000 == 0 {
+                let lookup_attr = BpfAttr {
+                    map_fd: map_id as u32,
+                    key: &key as *const u32 as u64,
+                    value: &mut value as *mut u64 as u64,
+                    ..Default::default()
+                };
+
+                let res = bpf(
+                    1,
+                    &lookup_attr as *const BpfAttr as *const u8,
+                    core::mem::size_of::<BpfAttr>() as i32,
+                );
+
+                if res == 0 {
+                    write(1, b"Timer ticks: ");
+                    print_num(value);
+                    write(1, b"\n");
+                }
+            }
+
+            minilib::pause();
+        }
+    */
 }
 
 fn print_num(mut n: u64) {

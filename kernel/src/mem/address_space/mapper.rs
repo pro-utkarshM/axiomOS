@@ -7,11 +7,9 @@ use x86_64::structures::paging::{Mapper, PageTable, RecursivePageTable, Translat
 
 #[cfg(target_arch = "aarch64")]
 use crate::arch::aarch64::paging::PageTableWalker;
-
 use crate::arch::types::{
     Page, PageRangeInclusive, PageSize, PageTableFlags, PhysAddr, PhysFrame, VirtAddr,
 };
-
 #[cfg(target_arch = "x86_64")]
 use crate::mem::phys::PhysicalMemory;
 
@@ -294,7 +292,11 @@ impl AddressSpaceMapper {
 
     pub fn visit_user_pages<F>(&self, mut callback: F)
     where
-        F: FnMut(Page<crate::arch::types::Size4KiB>, PhysFrame<crate::arch::types::Size4KiB>, PageTableFlags),
+        F: FnMut(
+            Page<crate::arch::types::Size4KiB>,
+            PhysFrame<crate::arch::types::Size4KiB>,
+            PageTableFlags,
+        ),
     {
         #[cfg(target_arch = "x86_64")]
         {
@@ -311,22 +313,37 @@ impl AddressSpaceMapper {
             let pml4 = unsafe { &*self.level4_vaddr.as_ptr::<PageTable>() };
 
             for (i, entry) in pml4.iter().enumerate().take(256) {
-                if !entry.is_unused() && entry.flags().contains(PageTableFlags::PRESENT) && !entry.flags().contains(PageTableFlags::HUGE_PAGE) {
+                if !entry.is_unused()
+                    && entry.flags().contains(PageTableFlags::PRESENT)
+                    && !entry.flags().contains(PageTableFlags::HUGE_PAGE)
+                {
                     let pdpt_addr = crate::mem::phys_to_virt(entry.addr().as_u64() as usize);
                     let pdpt = unsafe { &*VirtAddr::new(pdpt_addr as u64).as_ptr::<PageTable>() };
 
                     for (j, entry) in pdpt.iter().enumerate() {
-                        if !entry.is_unused() && entry.flags().contains(PageTableFlags::PRESENT) && !entry.flags().contains(PageTableFlags::HUGE_PAGE) {
+                        if !entry.is_unused()
+                            && entry.flags().contains(PageTableFlags::PRESENT)
+                            && !entry.flags().contains(PageTableFlags::HUGE_PAGE)
+                        {
                             let pd_addr = crate::mem::phys_to_virt(entry.addr().as_u64() as usize);
-                            let pd = unsafe { &*VirtAddr::new(pd_addr as u64).as_ptr::<PageTable>() };
+                            let pd =
+                                unsafe { &*VirtAddr::new(pd_addr as u64).as_ptr::<PageTable>() };
 
                             for (k, entry) in pd.iter().enumerate() {
-                                if !entry.is_unused() && entry.flags().contains(PageTableFlags::PRESENT) && !entry.flags().contains(PageTableFlags::HUGE_PAGE) {
-                                    let pt_addr = crate::mem::phys_to_virt(entry.addr().as_u64() as usize);
-                                    let pt = unsafe { &*VirtAddr::new(pt_addr as u64).as_ptr::<PageTable>() };
+                                if !entry.is_unused()
+                                    && entry.flags().contains(PageTableFlags::PRESENT)
+                                    && !entry.flags().contains(PageTableFlags::HUGE_PAGE)
+                                {
+                                    let pt_addr =
+                                        crate::mem::phys_to_virt(entry.addr().as_u64() as usize);
+                                    let pt = unsafe {
+                                        &*VirtAddr::new(pt_addr as u64).as_ptr::<PageTable>()
+                                    };
 
                                     for (l, entry) in pt.iter().enumerate() {
-                                        if !entry.is_unused() && entry.flags().contains(PageTableFlags::PRESENT) {
+                                        if !entry.is_unused()
+                                            && entry.flags().contains(PageTableFlags::PRESENT)
+                                        {
                                             let page_addr = crate::mem::address_space::virt_addr_from_page_table_indices(
                                                 [i as u16, j as u16, k as u16, l as u16], 0
                                             );
@@ -351,34 +368,58 @@ impl AddressSpaceMapper {
             use crate::arch::aarch64::paging::PageTableEntry;
 
             // L0 table (512 entries)
-            let l0_table = unsafe { core::slice::from_raw_parts(self.level0_vaddr.as_ptr::<PageTableEntry>(), 512) };
+            let l0_table = unsafe {
+                core::slice::from_raw_parts(self.level0_vaddr.as_ptr::<PageTableEntry>(), 512)
+            };
 
             for (i, entry) in l0_table.iter().enumerate() {
                 if entry.is_valid() && entry.is_table() {
                     let l1_phys = entry.addr();
                     let l1_virt = crate::mem::phys_to_virt(l1_phys);
-                    let l1_table = unsafe { core::slice::from_raw_parts(VirtAddr::new(l1_virt as u64).as_ptr::<PageTableEntry>(), 512) };
+                    let l1_table = unsafe {
+                        core::slice::from_raw_parts(
+                            VirtAddr::new(l1_virt as u64).as_ptr::<PageTableEntry>(),
+                            512,
+                        )
+                    };
 
                     for (j, entry) in l1_table.iter().enumerate() {
                         if entry.is_valid() && entry.is_table() {
                             let l2_phys = entry.addr();
                             let l2_virt = crate::mem::phys_to_virt(l2_phys);
-                            let l2_table = unsafe { core::slice::from_raw_parts(VirtAddr::new(l2_virt as u64).as_ptr::<PageTableEntry>(), 512) };
+                            let l2_table = unsafe {
+                                core::slice::from_raw_parts(
+                                    VirtAddr::new(l2_virt as u64).as_ptr::<PageTableEntry>(),
+                                    512,
+                                )
+                            };
 
                             for (k, entry) in l2_table.iter().enumerate() {
                                 if entry.is_valid() && entry.is_table() {
                                     let l3_phys = entry.addr();
                                     let l3_virt = crate::mem::phys_to_virt(l3_phys);
-                                    let l3_table = unsafe { core::slice::from_raw_parts(VirtAddr::new(l3_virt as u64).as_ptr::<PageTableEntry>(), 512) };
+                                    let l3_table = unsafe {
+                                        core::slice::from_raw_parts(
+                                            VirtAddr::new(l3_virt as u64)
+                                                .as_ptr::<PageTableEntry>(),
+                                            512,
+                                        )
+                                    };
 
                                     for (l, entry) in l3_table.iter().enumerate() {
                                         if entry.is_valid() {
                                             // Calculate virtual address
                                             // 48-bit address: 9 bits per level + 12 bits offset
                                             // L0: 47..39, L1: 38..30, L2: 29..21, L3: 20..12
-                                            let virt = ((i as u64) << 39) | ((j as u64) << 30) | ((k as u64) << 21) | ((l as u64) << 12);
-                                            let page = Page::containing_address(VirtAddr::new(virt));
-                                            let frame = PhysFrame::containing_address(PhysAddr::new(entry.addr() as u64));
+                                            let virt = ((i as u64) << 39)
+                                                | ((j as u64) << 30)
+                                                | ((k as u64) << 21)
+                                                | ((l as u64) << 12);
+                                            let page =
+                                                Page::containing_address(VirtAddr::new(virt));
+                                            let frame = PhysFrame::containing_address(
+                                                PhysAddr::new(entry.addr() as u64),
+                                            );
                                             let flags = PageTableFlags::from_pte_bits(entry.raw());
                                             callback(page, frame, flags);
                                         }

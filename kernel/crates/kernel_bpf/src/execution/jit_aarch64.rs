@@ -1422,7 +1422,7 @@ mod tests {
         // 1. TO_LE (SourceType::Imm) on LE machine = truncation/zero-extension
         let program_le = ProgramBuilder::<ActiveProfile>::new(BpfProgType::SocketFilter)
             .insn(BpfInsn::mov64_imm(0, 0x12345678)) // r0 = 0x12345678
-            .insn(BpfInsn::new(0xd4, 0, 0, 0, 16))   // r0 = to_le16(r0) -> 0x5678
+            .insn(BpfInsn::new(0xd4, 0, 0, 0, 16)) // r0 = to_le16(r0) -> 0x5678
             .exit()
             .build()
             .expect("valid program");
@@ -1438,7 +1438,7 @@ mod tests {
         // Source bit is 0x08. So 0xdc is correct for TO_BE.
         let program_be = ProgramBuilder::<ActiveProfile>::new(BpfProgType::SocketFilter)
             .insn(BpfInsn::mov64_imm(0, 0x12345678))
-            .insn(BpfInsn::new(0xdc, 0, 0, 0, 32))   // r0 = to_be32(r0) -> 0x78563412
+            .insn(BpfInsn::new(0xdc, 0, 0, 0, 32)) // r0 = to_be32(r0) -> 0x78563412
             .exit()
             .build()
             .expect("valid program");

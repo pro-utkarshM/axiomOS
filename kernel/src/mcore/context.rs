@@ -1,8 +1,8 @@
 use alloc::sync::Arc;
-#[cfg(target_arch = "x86_64")]
-use spin::Mutex;
 use core::cell::UnsafeCell;
 
+#[cfg(target_arch = "x86_64")]
+use spin::Mutex;
 #[cfg(target_arch = "x86_64")]
 use x86_64::registers::model_specific::KernelGsBase;
 #[cfg(target_arch = "x86_64")]
@@ -196,11 +196,13 @@ impl ExecutionContext {
 
     #[cfg(target_arch = "aarch64")]
     pub fn set_need_reschedule(&self) {
-        self.need_reschedule.store(true, core::sync::atomic::Ordering::Relaxed);
+        self.need_reschedule
+            .store(true, core::sync::atomic::Ordering::Relaxed);
     }
 
     #[cfg(target_arch = "aarch64")]
     pub fn check_and_clear_reschedule(&self) -> bool {
-        self.need_reschedule.swap(false, core::sync::atomic::Ordering::Relaxed)
+        self.need_reschedule
+            .swap(false, core::sync::atomic::Ordering::Relaxed)
     }
 }

@@ -13,6 +13,12 @@ pub struct Pipe {
     // TODO: Use CondVar or Waker for blocking
 }
 
+impl Default for Pipe {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Pipe {
     pub fn new() -> Self {
         Self {
@@ -44,6 +50,12 @@ impl Pipe {
 pub struct PipeFs {
     pipes: BTreeMap<u64, Arc<Pipe>>,
     next_inode: u64,
+}
+
+impl Default for PipeFs {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl PipeFs {
@@ -99,11 +111,16 @@ impl FileSystem for PipeFs {
         Ok(())
     }
 
-    fn read(&mut self, handle: FsHandle, buf: &mut [u8], _offset: usize) -> Result<usize, ReadError> {
+    fn read(
+        &mut self,
+        handle: FsHandle,
+        buf: &mut [u8],
+        _offset: usize,
+    ) -> Result<usize, ReadError> {
         let inode: u64 = handle.into();
         if let Some(pipe) = self.pipes.get(&inode) {
             let n = pipe.read(buf);
-            if n == 0 && buf.len() > 0 {
+            if n == 0 && !buf.is_empty() {
                 // Should block? For now return 0 (EOF) or EAGAIN?
                 // Returning 0 usually means EOF.
                 // If the write end is open but buffer empty, we should block.
@@ -130,7 +147,7 @@ impl FileSystem for PipeFs {
 
     fn stat(&mut self, _handle: FsHandle, stat: &mut Stat) -> Result<(), StatError> {
         stat.size = 0; // Unknown size
-        // TODO: Set S_IFIFO
+                       // TODO: Set S_IFIFO
         Ok(())
     }
 

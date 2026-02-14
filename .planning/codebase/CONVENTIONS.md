@@ -1,157 +1,154 @@
 # Coding Conventions
 
-**Analysis Date:** 2026-01-27
+**Analysis Date:** 2026-02-13
 
 ## Naming Patterns
 
 **Files:**
-- `snake_case.rs` for all Rust files
-- `mod.rs` for module entry points
-- `lib.rs` for crate roots
-- `*.test.rs` pattern not used (tests in same file)
+- `snake_case.rs` for all Rust source files
+- `mod.rs` for module directories
+- `error.rs` for per-module error types alongside `mod.rs`
+- `*.S` (uppercase) for assembly files
 
 **Functions:**
 - `snake_case` for all functions
-- Constructor pattern: `new()`, `from_*()`
-- Getters: Simple method names without prefix (`chip()`, `line()`, `edge()`)
-- Predicates: `is_*()` pattern (`is_rising()`, `is_falling()`, `is_writable()`)
+- `init()` for subsystem initialization
+- `dispatch_*` for routing functions
+- `sys_*` for syscall handlers — `kernel/src/syscall/`
 
 **Variables:**
-- `snake_case` for all variables
-- Register variables: `dst`, `src`, `regs`, `value`
-- Counters: `next_id`, `index`
-- Constants: `SCREAMING_SNAKE_CASE` (`KERNEL_BINARY`, `BOOTABLE_ISO`)
+- `snake_case` for variables
+- `UPPER_SNAKE_CASE` for constants and statics
+- `ATTACH_TYPE_*` for BPF attach type constants — `kernel/src/bpf/mod.rs`
 
 **Types:**
-- `PascalCase` for structs: `BpfInsn`, `RegisterFile`, `BpfProgram`
-- `PascalCase` for enums: `OpcodeClass`, `SourceType`, `AluOp`
-- `PascalCase` for traits: `PhysicalProfile`, `AttachPoint`, `BpfExecutor`
-- No `I` prefix for interfaces/traits
+- `PascalCase` for structs, enums, traits
+- No prefix conventions (no `I` for interfaces)
+- Error enums: `{Module}Error` (e.g., `LoadError`, `VerifyError`, `AttachError`)
+- Result aliases: `{Module}Result<T>` pairing with error type
+
+**Crates:**
+- `kernel_` prefix for all kernel subsystem crates
+- Underscore-separated: `kernel_bpf`, `kernel_vfs`, `kernel_syscall`
 
 ## Code Style
 
 **Formatting:**
-- Rustfmt with `.rustfmt.toml`
-- `imports_granularity = "Module"`
-- `group_imports = "StdExternalCrate"`
-- 4-space indentation (Rust standard)
+- rustfmt with `rustfmt.toml` configuration
+- `imports_granularity = "Module"` — groups imports by module
+- `group_imports = "StdExternalCrate"` — separates std, external, crate imports
+- Standard 4-space indentation
 
 **Linting:**
 - Clippy with all warnings as errors: `-D clippy::all`
-- Run: `cargo clippy --workspace --lib -- -D clippy::all`
-- CI enforces: Format check mandatory
+- Run: `cargo clippy -- -D clippy::all`
+- Enforced in CI — `.github/workflows/build.yml`
 
-**Attributes:**
-- `#[repr(C)]` for FFI structs
-- `#[inline]` on hot-path functions
-- `#[must_use]` on constructors returning values
-- `#[allow(dead_code)]` for intentional unused code
+**Rust Edition:**
+- 2021 for kernel binary — `kernel/Cargo.toml`
+- 2024 for workspace member crates — `Cargo.toml` workspace section
 
 ## Import Organization
 
-**Order:**
-1. `extern crate` declarations
-2. Standard library (`core::`, `alloc::`)
-3. External crates
-4. Internal modules (`super::`, `crate::`)
+**Order (enforced by rustfmt):**
+1. Standard library / core / alloc (`use core::`, `use alloc::`)
+2. External crates (`use spin::`, `use bitflags::`)
+3. Workspace crates (`use kernel_bpf::`, `use kernel_abi::`)
+4. Crate-internal (`use crate::`, `use super::`)
 
 **Grouping:**
-- Blank line between groups
-- `use` statements at top of file
-- Re-exports via `pub use`
-
-**Path Aliases:**
-- None defined (use relative paths)
+- Blank line between groups (rustfmt enforced)
+- Module-level granularity (not item-level)
 
 ## Error Handling
 
 **Patterns:**
-- `Result<T, E>` for fallible operations
-- `expect()` for initialization failures (acceptable kernel panic)
-- Error codes returned to userspace
+- Custom enum-based errors with structured variants
+- `Display` impl for human-readable messages
+- Result<T, ErrorType> aliases per module
+- `thiserror` crate used where available — `Cargo.toml`
 
-**Error Types:**
-- Custom error enums per module (`VerifyError`, `AttachError`, `OpenError`)
-- `thiserror` for error derivation in some crates
+**Error Types (BPF example):**
+```rust
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LoadError {
+    ElfTooSmall,
+    InvalidMagic,
+    UnsupportedMapType(u32),  // context in variant payload
+}
+```
 
-**Unsafe:**
-- Required `// SAFETY:` comment for all unsafe blocks (not consistently followed)
-- Prefer safe Rust; justify all unsafe blocks
+**Panic Behavior:**
+- `panic = "abort"` in both dev and release profiles
+- `expect()` with descriptive messages for boot-critical operations
+- Panics acceptable only for unrecoverable kernel errors
 
-## Logging
+## Unsafe Code
 
-**Framework:**
-- `log` crate abstraction - `kernel/src/log.rs`
-- Serial console output
+**Safety Documentation:**
+- All unsafe blocks MUST have `// SAFETY:` comments explaining soundness
+- Pattern: Comment immediately preceding the unsafe block
 
-**Patterns:**
-- `log::info!`, `log::debug!`, `log::error!` macros
-- Debug output to serial console
+**Example:**
+```rust
+// SAFETY: We export "kernel_main" as the symbol name for the bootloader to find.
+// This symbol name is unique and required by the Limine protocol.
+#[unsafe(export_name = "kernel_main")]
+unsafe extern "C" fn main() -> ! {
+```
 
-## Comments
+**Common Unsafe Patterns:**
+- FFI bindings to C-convention functions (BPF helpers)
+- Export of Rust functions with C calling convention
+- Direct pointer manipulation with bounds checking
+- Inline assembly for CPU-specific operations (wfi, hlt)
+- Volatile MMIO access
 
-**When to Comment:**
-- Module-level `//!` documentation
-- Public API `///` documentation
-- Explain why, not what
-- Safety comments for unsafe blocks
+**Test Stubs:**
+- External C functions stubbed in tests with `#[unsafe(no_mangle)]`
+- Safety comments on test stubs too
 
-**JSDoc/TSDoc:**
-- Not applicable (Rust uses `///` doc comments)
+## Documentation
 
-**TODO Comments:**
-- Format: `// TODO: description`
-- Also: `// FIXME: description`
-- 51 TODOs found in codebase
+**Module-Level (//!):**
+- Full module overview with purpose and design rationale
+- Markdown tables for comparisons (cloud vs embedded profiles)
+- ASCII diagrams for memory layouts
+- Example from `kernel/crates/kernel_bpf/src/lib.rs`
 
-## Function Design
+**Item-Level (///):**
+- Brief one-liner summary
+- Detailed explanation with context
+- `# Profile Differences` sections where applicable
 
-**Size:**
-- Keep functions focused
-- Extract helpers for complex logic
+**Inline Comments:**
+- Minimal; code is self-documenting
+- Phase markers for complex algorithms: `// Phase 1: Basic checks`
+- `// SAFETY:` for unsafe blocks
+- `// TODO:` / `// FIXME:` for known gaps
 
-**Parameters:**
-- Generic bounds: `<P: PhysicalProfile>`
-- Reference parameters preferred
-- Use `AsRef<T>` for path-like parameters
+## Compile-Time Profiles
 
-**Return Values:**
-- `Result<T, E>` for fallible operations
-- `Option<T>` for nullable returns
-- Return early for guard clauses
+**BPF Profile System:**
+- Mutually exclusive features: `cloud-profile` vs `embedded-profile`
+- Enforced via `compile_error!` macro — `kernel/crates/kernel_bpf/src/lib.rs`
+- Sealed trait pattern prevents external implementations
+- `ActiveProfile` type alias resolves to selected profile
+- Code erasure: `#[cfg(feature = "cloud-profile")]` removes embedded-only code and vice versa
 
 ## Module Design
 
 **Exports:**
-- Named exports preferred
-- Re-export public API from `mod.rs`
-- `pub use` for submodule re-exports
+- `pub mod` declarations in `lib.rs` for crate-level modules
+- `mod.rs` files for re-exporting submodule contents
+- Public API through crate root
 
-**Visibility:**
-- `pub` for public API
-- `pub(crate)` for crate-internal
-- Private by default
-
-**Crate Organization:**
-- `kernel_` prefix for subsystem crates
-- Each crate independently testable
-- Workspace dependencies via `workspace = true`
-
-## Test Patterns
-
-**Location:**
-- Co-located `#[cfg(test)] mod tests { ... }` at end of file
-
-**Naming:**
-- `snake_case` test function names
-- Descriptive names: `create_gpio_attach`, `invalid_function_name`
-
-**Assertions:**
-- `assert_eq!()` for equality
-- `assert!()` for boolean
-- `assert!(matches!())` for pattern matching
+**Patterns:**
+- Large modules use `mod.rs` + companion files (`error.rs`, individual types)
+- Related error types colocated in `error.rs`
+- Trait definitions in module root, implementations in separate files
 
 ---
 
-*Convention analysis: 2026-01-27*
+*Convention analysis: 2026-02-13*
 *Update when patterns change*

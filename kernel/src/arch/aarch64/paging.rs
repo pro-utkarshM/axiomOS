@@ -3,11 +3,13 @@
 //! Implements 4-level page tables for ARM64 with 4KB granule and 48-bit VA.
 //! Supports both kernel (TTBR1) and user (TTBR0) address spaces.
 
-use bitflags::bitflags;
 use core::ptr;
 
+use bitflags::bitflags;
+
 use super::mem::{
-    ENTRIES_PER_TABLE, L0_SHIFT, L1_SHIFT, L2_SHIFT, L3_SHIFT, PAGE_SIZE, mair, pte_flags, phys_to_virt,
+    mair, phys_to_virt, pte_flags, ENTRIES_PER_TABLE, L0_SHIFT, L1_SHIFT, L2_SHIFT, L3_SHIFT,
+    PAGE_SIZE,
 };
 use super::phys::{self};
 
@@ -228,7 +230,11 @@ impl PageTableWalker {
         let l3 = unsafe { &mut *l3_ptr };
         let entry = l3.entry_mut(indices[3]);
         if entry.is_valid() {
-            log::error!("Page already mapped: virt={:#x}, existing entry={:#x}", virt, entry.raw());
+            log::error!(
+                "Page already mapped: virt={:#x}, existing entry={:#x}",
+                virt,
+                entry.raw()
+            );
             return Err("Page already mapped");
         }
 
@@ -266,9 +272,15 @@ impl PageTableWalker {
         let indices = va_to_indices(virt);
 
         let l0 = unsafe { &mut *self.root };
-        let l1 = self.get_table(l0, indices[0]).ok_or("L1 table not present")?;
-        let l2 = self.get_table(l1, indices[1]).ok_or("L2 table not present")?;
-        let l3 = self.get_table(l2, indices[2]).ok_or("L3 table not present")?;
+        let l1 = self
+            .get_table(l0, indices[0])
+            .ok_or("L1 table not present")?;
+        let l2 = self
+            .get_table(l1, indices[1])
+            .ok_or("L2 table not present")?;
+        let l3 = self
+            .get_table(l2, indices[2])
+            .ok_or("L3 table not present")?;
 
         let entry = l3.entry_mut(indices[3]);
         if !entry.is_valid() {
@@ -341,15 +353,23 @@ impl PageTableWalker {
 
         if entry.is_valid() {
             if !entry.is_table() {
-                log::error!("Entry at index {} is block, not table: {:#x}", index, entry.raw());
+                log::error!(
+                    "Entry at index {} is block, not table: {:#x}",
+                    index,
+                    entry.raw()
+                );
                 return Err("Entry is block, not table");
             }
             Ok(phys_to_virt(entry.addr()) as *mut PageTable)
         } else {
-            let frame = phys::allocate_frame::<crate::arch::types::Size4KiB>().ok_or_else(|| {
-                log::error!("Failed to allocate physical frame for page table at index {}", index);
-                "Out of memory for page table"
-            })?;
+            let frame =
+                phys::allocate_frame::<crate::arch::types::Size4KiB>().ok_or_else(|| {
+                    log::error!(
+                        "Failed to allocate physical frame for page table at index {}",
+                        index
+                    );
+                    "Out of memory for page table"
+                })?;
             let phys_addr = frame.addr() as usize;
             let virt_addr = phys_to_virt(phys_addr);
             let table_ptr = virt_addr as *mut PageTable;

@@ -2,7 +2,7 @@
 
 ## Overview
 
-Axiom is building a runtime-programmable kernel for robotics where behavior is defined by verified BPF programs. This roadmap moves from the current state (a library of BPF components and a basic kernel) to a fully integrated system running on Raspberry Pi 5 hardware, demonstrating real-world robotics use cases like safety interlocks and motor control observation.
+Take a kernel with a complete BPF subsystem and wire it into real hardware. Start with proving BPF end-to-end in QEMU, then bring it to RPi5 with progressive hardware demos (GPIO→LED, motor tracing, safety interlock). Benchmark against Linux and package for academic/investor audiences.
 
 ## Domain Expertise
 
@@ -10,44 +10,59 @@ None
 
 ## Phases
 
-**Phase Numbering:**
-- Integer phases (1, 2, 3): Planned milestone work
-- Decimal phases (2.1, 2.2): Urgent insertions (marked with INSERTED)
-
-Decimal phases appear between their surrounding integers in numeric order.
-
-- [ ] **Phase 1: BPF Integration** - Wire BPF subsystem, syscalls, and timer attach point
-- [ ] **Phase 2: Hardware Attach** - GPIO and PWM attach points for RPi5
-- [ ] **Phase 3: Validation** - IMU integration and safety interlock demo
-- [ ] **Phase 4: Ecosystem** - Documentation and example library
+- [ ] **Phase 1: BPF End-to-End** - Prove the full userspace→kernel→execute→output pipeline in QEMU
+- [ ] **Phase 2: RPi5 Hardware Demos** - Wire BPF to real GPIO/PWM on RPi5 with progressive demos
+- [ ] **Phase 3: Benchmarks & Validation** - Performance benchmarks and comparison vs Linux
+- [ ] **Phase 4: Docs & Ecosystem** - Example programs, documentation, academic positioning
 
 ## Phase Details
 
-### Phase 1: BPF Integration
-**Goal**: Wire BPF subsystem into running kernel (currently library-only), implement `bpf()` syscall, and demonstrate end-to-end execution.
-**Depends on**: Nothing (Foundation)
-**Research**: Unlikely (components exist, integration work)
-**Plans**: TBD
+### Phase 1: BPF End-to-End
+**Goal**: Load a BPF ELF from userspace via bpf_loader, attach to a kernel event, execute, and see output on serial console. Proves the full pipeline works before touching hardware.
+**Depends on**: Nothing (first phase)
+**Research**: Unlikely (all components exist, this is internal wiring)
+**Plans**: 3 plans
 
-### Phase 2: Hardware Attach
-**Goal**: Implement GPIO and PWM attach points for Raspberry Pi 5 to enable hardware interaction.
+**Key risks:**
+- AArch64 userspace boot may need fixing
+- Ringbuf kernel→userspace delivery not yet plumbed
+
+Plans:
+- [x] 01-01: BPF trace via timer — bpf_loader loads program, trace_printk fires on every tick
+- [x] 01-02: Ringbuf userspace delivery — BPF_RINGBUF_POLL syscall + deadlock fix + demo
+- [x] 01-03: End-to-end demo — array map counter + ringbuf events + 3 helpers, proven on QEMU
+
+### Phase 2: RPi5 Hardware Demos
+**Goal**: Three progressive demos on real RPi5 hardware: GPIO→BPF→LED, PWM motor tracing, safety interlock (interrupt→BPF→hardware, zero userspace dependency).
 **Depends on**: Phase 1
-**Research**: Likely (RPi5 hardware registers)
-**Research topics**: RPi5 GPIO/PWM register maps, interrupt routing for BPF
-**Plans**: TBD
+**Research**: Unlikely (GPIO/PWM drivers exist in kernel, connecting existing pieces to BPF attach points)
+**Plans**: 3 plans
 
-### Phase 3: Validation
-**Goal**: Demonstrate real-world value with IMU integration and kernel-level safety interlocks.
+Plans:
+- [x] 02-01: Fix deadlock in all hook handlers + GPIO demo built for RPi5
+- [x] 02-02: PWM tracing with nanosecond timestamps via ringbuf — observer + controller pattern
+- [x] 02-03: Safety interlock — GPIO interrupt → BPF → motor E-Stop, survives userspace exit
+
+### Phase 3: Benchmarks & Validation
+**Goal**: Quantitative validation — boot time, memory footprint, BPF load time, interrupt latency. Comparison against minimal Linux. IIO sensor filtering demo.
 **Depends on**: Phase 2
-**Research**: Likely (IMU driver specifics)
-**Research topics**: IMU sensor communication protocols (I2C/SPI), safety logic patterns
-**Plans**: TBD
+**Research**: Likely (need fair comparison methodology against Linux)
+**Research topics**: Minimal Linux benchmark methodology for embedded, interrupt latency measurement techniques, fair kernel-to-kernel comparison criteria, IIO subsystem patterns
+**Plans**: 2 plans
 
-### Phase 4: Ecosystem
-**Goal**: Make the system usable by others with documentation and a library of example programs.
+Plans:
+- [x] 03-01: IIO sensor filtering demo — BPF filters simulated accel data, ringbuf output
+- [x] 03-02: Benchmark harness + Linux comparison methodology in docs/benchmarks.md
+
+### Phase 4: Docs & Ecosystem
+**Goal**: Package everything for external consumption — example BPF programs, getting-started guide, academic positioning for AgenticOS2026/ASPLOS.
 **Depends on**: Phase 3
-**Research**: Unlikely
-**Plans**: TBD
+**Research**: Unlikely (documenting existing work)
+**Plans**: 2 plans
+
+Plans:
+- [ ] 04-01: Example BPF programs library (10+ programs covering all attach types)
+- [ ] 04-02: Documentation, getting-started guide, and academic paper outline
 
 ## Progress
 
@@ -55,8 +70,8 @@ Decimal phases appear between their surrounding integers in numeric order.
 Phases execute in numeric order: 1 → 2 → 3 → 4
 
 | Phase | Plans Complete | Status | Completed |
-|-------|----------------|--------|-----------|
-| 1. BPF Integration | 0/0 | Not started | - |
-| 2. Hardware Attach | 0/0 | Not started | - |
-| 3. Validation | 0/0 | Not started | - |
-| 4. Ecosystem | 0/0 | Not started | - |
+|-------|---------------|--------|-----------|
+| 1. BPF End-to-End | 3/3 | Complete | 2026-02-13 |
+| 2. RPi5 Hardware Demos | 3/3 | Complete | 2026-02-13 |
+| 3. Benchmarks & Validation | 2/2 | Complete | 2026-02-13 |
+| 4. Docs & Ecosystem | 0/2 | Not started | - |

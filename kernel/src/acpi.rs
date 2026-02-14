@@ -6,11 +6,10 @@ use kernel_virtual_memory::Segment;
 use spin::Mutex;
 
 use crate::arch::types::{Page, PageSize, PageTableFlags, PhysAddr, PhysFrame, Size4KiB, VirtAddr};
-
-use crate::U64Ext;
 use crate::limine::RSDP_REQUEST;
 use crate::mem::address_space::AddressSpace;
 use crate::mem::virt::{VirtualMemoryAllocator, VirtualMemoryHigherHalf};
+use crate::U64Ext;
 
 static ACPI_TABLES: OnceCell<Mutex<AcpiTables<AcpiHandlerImpl>>> = OnceCell::uninit();
 

@@ -7,19 +7,21 @@ use core::sync::atomic::Ordering::Relaxed;
 
 use kernel_memapi::{Guarded, Location, MemoryApi, UserAccessible};
 use log::{error, warn};
-use x86_64::PrivilegeLevel;
 use x86_64::instructions::{hlt, interrupts};
 use x86_64::registers::control::Cr2;
 use x86_64::registers::debug::{Dr6, Dr7};
-use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, InterruptStackFrameValue, PageFaultErrorCode};
+use x86_64::structures::idt::{
+    InterruptDescriptorTable, InterruptStackFrame, InterruptStackFrameValue, PageFaultErrorCode,
+};
+use x86_64::PrivilegeLevel;
 
-use crate::UsizeExt;
 use crate::arch::gdt;
 use crate::mcore::context::ExecutionContext;
 use crate::mcore::mtask::process::mem::MemoryRegion;
 use crate::mcore::mtask::task::FxArea;
 use crate::mem::memapi::LowerHalfMemoryApi;
 use crate::syscall::dispatch_syscall;
+use crate::UsizeExt;
 
 #[derive(Debug, Clone, Copy)]
 #[repr(u8)]
@@ -226,7 +228,6 @@ pub unsafe extern "sysv64" fn restore_user_context(ctx: *const UserContext) -> !
         // RIP (offset 120 + 0)
         "mov rax, [rdi + 120]",
         "push rax",
-
         // 2. Restore General Purpose Registers
         // Offsets match GPRegisters struct definition
         "mov rax, [rdi + 112]",
@@ -244,10 +245,8 @@ pub unsafe extern "sysv64" fn restore_user_context(ctx: *const UserContext) -> !
         "mov r13, [rdi + 16]",
         "mov r14, [rdi + 8]",
         "mov r15, [rdi + 0]",
-
         // Restore rdi last
         "mov rdi, [rdi + 72]",
-
         // 3. Return to userspace
         "iretq"
     );
@@ -262,11 +261,21 @@ extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFr
     }
 
     // 2. Run BPF hooks (AttachType::Timer = 1)
+    //
+    // We clone programs and release the lock BEFORE execution so that BPF
+    // helpers (e.g. bpf_ringbuf_output) can re-acquire the lock for map
+    // operations without deadlocking.
     if let Some(manager) = crate::BPF_MANAGER.get() {
-        // We use an empty context for timer for now, or could pass time?
+        let programs = manager.lock().get_hook_programs(1);
         let ctx = kernel_bpf::execution::BpfContext::empty();
-        // unsafe { crate::serial_print!("."); }
-        manager.lock().execute_hooks(1, &ctx);
+        for (prog_id, program) in &programs {
+            match crate::bpf::BpfManager::execute_program(program, &ctx) {
+                Ok(res) => {
+                    let _ = res;
+                }
+                Err(e) => log::error!("BPF Timer Hook [id={}] failed: {:?}", prog_id, e),
+            }
+        }
     }
 
     // 3. Schedule next task

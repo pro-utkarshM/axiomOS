@@ -2,10 +2,10 @@
 #![no_main]
 
 use kernel_abi::BpfAttr;
-use minilib::{bpf, exit, write};
+use minilib::{bpf, exit, msleep, write};
 
 // BPF Helper IDs
-// const HELPER_TRACE_PRINTK: i32 = 2;
+const HELPER_RINGBUF_OUTPUT: i32 = 6;
 
 #[repr(C)]
 struct BpfInsn {
@@ -18,87 +18,146 @@ struct BpfInsn {
 // ATTACH_TYPE_IIO = 4
 const ATTACH_TYPE_IIO: u32 = 4;
 
+// IioEvent struct layout (must match kernel/crates/kernel_bpf/src/attach/iio.rs)
+// timestamp: u64 at offset 0
+// device_id: u32 at offset 8
+// channel: u32 at offset 12
+// value: i32 at offset 16
+// scale: u32 at offset 20
+// offset: i32 at offset 24
+// Total size: 28 bytes
+
+const IIOVENT_VALUE_OFFSET: i16 = 16;
+const IIOVENT_SIZE: u32 = 28;
+
+// Filter range: accept values between 100 and 900 (out of 0-999)
+const MIN_VALUE: i32 = 100;
+const MAX_VALUE: i32 = 900;
+
 // SAFETY: Entry point for the IIO demo. Called by the startup code.
 #[unsafe(no_mangle)]
 pub extern "C" fn _start() -> ! {
-    print("=== IIO Sensor Integration Demo ===\n");
-    print("Setting up BPF program to monitor simulated accelerometer...\n");
+    print("=== IIO Sensor Filtering Demo ===\n");
+    print("Demonstrating kernel-level sensor data filtering via BPF\n\n");
 
-    // 1. Define BPF Program
-    // Logic:
-    //   - Read event context (R1 = IioEvent*)
-    //   - Load 'value' field (offset 16)
-    //   - We want to print it. Since we don't have a sophisticated formatter in BPF yet,
-    //     we'll use a fixed string and the interpreter will log it.
-    //     Actually, bpf_trace_printk in this kernel just takes a string and logs it.
-    //     It doesn't support format strings with arguments yet (it just uses CStr::from_ptr).
+    // 1. Create ringbuf map for valid sensor events
+    print("Creating ringbuf map...\n");
 
-    // For now, let's just make it call bpf_trace_printk with a static message
-    // to prove the hook is firing.
+    let map_attr = BpfAttr {
+        prog_type: 27, // map_type = RingBuf
+        insn_cnt: 4,   // key_size = 4 bytes (unused for ringbuf)
+        // Pack value_size and max_entries (buffer size must be power of 2)
+        insns: 4096 | (4096u64 << 32), // value_size=4096, max_entries=4096
+        ..Default::default()
+    };
 
-    // Since we need to pass a string pointer, and we are in userspace,
-    // the kernel interpreter will try to read this pointer.
-    // However, the interpreter currently assumes the pointer is valid in the kernel.
-    // Wait, the interpreter's bpf_trace_printk implementation:
-    /*
-    pub extern "C" fn bpf_trace_printk(fmt: *const u8, _size: u32) -> i32 {
-        unsafe {
-            let s = core::ffi::CStr::from_ptr(fmt as *const core::ffi::c_char);
-            if let Ok(msg) = s.to_str() {
-                log::info!("[BPF] {}", msg);
-                return 0;
-            }
-        }
-        -1
+    let ringbuf_id = bpf(
+        1, // BPF_MAP_CREATE
+        &map_attr as *const BpfAttr as *const u8,
+        core::mem::size_of::<BpfAttr>() as i32,
+    );
+
+    if ringbuf_id < 0 {
+        print("Error: Failed to create ringbuf map\n");
+        exit(1);
     }
-    */
-    // This is problematic because the BPF program is running in the kernel,
-    // but the string is in userspace.
-    // Actually, in this architecture, the BPF instructions are loaded into the kernel.
-    // If I put the string in the BPF program's read-only data, it should work if the loader handles it.
-    // But our `load_raw_program` doesn't handle data sections.
 
-    // Let's use a trick: use a helper that doesn't need a pointer,
-    // or just rely on the fact that the simulation is running.
+    print("Ringbuf map created. ID: ");
+    print_num(ringbuf_id as u64);
+    print("\n");
 
-    // Actually, I can use `bpf_gpio_write` to an unused pin as a way to "output" data
-    // if I really wanted to, but let's stick to the plan.
-
-    // Let's see if I can find a way to get a string into the kernel.
-    // The `init` function in `kernel/src/lib.rs` has a test BPF program:
-    /*
-        static HELLO: &[u8] = b"Hello from BPF!\0";
-        let ptr = HELLO.as_ptr() as u64;
-        let wide = WideInsn::ld_dw_imm(1, ptr);
-    */
-    // That works because it's compiled INTO the kernel.
-
-    // For userspace-loaded BPF, we need to be careful.
-    // If I just pass a pointer to a string in this userspace process,
-    // the kernel might be able to read it if it's in the same address space
-    // (which it is when the hook fires in the context of a process, but IIO fires in a kernel task).
-
-    // Since the IIO simulation task is a KERNEL task, it runs in the kernel address space.
-    // It won't see userspace memory.
-
-    // So `bpf_trace_printk` with a userspace pointer will fail or cause a crash in the kernel.
-
-    // However, for this demo, the goal is to show the end-to-end flow.
-    // I will use `bpf_gpio_write` with the sensor value as the "value" argument
-    // just to see it happen in the logs (since bpf_gpio_write logs on RPi5).
-    // Or I can just return the value and have nothing happen.
-
-    // Wait! I implemented the simulation task in `kernel/src/driver/iio.rs`.
-    // It calls `dispatch_event`.
-
-    // Let's just make the BPF program return the value.
+    // 2. Construct BPF program to filter sensor data
+    // The program:
+    //   - Reads IioEvent.value from context (R1 + offset 16)
+    //   - Checks if value is within valid range (100-900)
+    //   - If OUT of range: return 0 (filtered/dropped)
+    //   - If IN range: write entire IioEvent to ringbuf, return 1 (accepted)
+    print("Building BPF filter program...\n");
 
     let insns = [
-        // R0 = *(u32 *)(R1 + 16)  // Load 'value' from IioEvent
+        // R6 = R1 (save event pointer)
         BpfInsn {
-            code: 0x61,    // LDXW
-            dst_src: 0x10, // dst=0 (R0), src=1 (R1) -> 0x10
-            off: 16,       // offset of 'value' in IioEvent
+            code: 0xbf,    // MOV64
+            dst_src: 0x61, // dst=R6, src=R1
+            off: 0,
+            imm: 0,
+        },
+        // R0 = *(i32 *)(R1 + 16)  // Load 'value' from IioEvent
+        BpfInsn {
+            code: 0x61,    // LDXW (load word)
+            dst_src: 0x10, // dst=R0, src=R1
+            off: IIOVENT_VALUE_OFFSET,
+            imm: 0,
+        },
+        // if R0 < 100, goto reject (offset +8)
+        BpfInsn {
+            code: 0x35,    // JSLT (signed <)
+            dst_src: 0x00, // dst=R0, src=imm
+            off: 8,        // skip to reject
+            imm: MIN_VALUE,
+        },
+        // if R0 > 900, goto reject (offset +7)
+        BpfInsn {
+            code: 0x25,    // JGT (signed >)
+            dst_src: 0x00, // dst=R0, src=imm
+            off: 7,        // skip to reject
+            imm: MAX_VALUE,
+        },
+        // Value is in range - output to ringbuf
+        // R1 = ringbuf_id
+        BpfInsn {
+            code: 0xb7,    // MOV64_IMM
+            dst_src: 0x01, // dst=R1
+            off: 0,
+            imm: ringbuf_id,
+        },
+        // R2 = R6 (event pointer)
+        BpfInsn {
+            code: 0xbf,    // MOV64
+            dst_src: 0x62, // dst=R2, src=R6
+            off: 0,
+            imm: 0,
+        },
+        // R3 = IioEvent size (28 bytes)
+        BpfInsn {
+            code: 0xb7,    // MOV64_IMM
+            dst_src: 0x03, // dst=R3
+            off: 0,
+            imm: IIOVENT_SIZE as i32,
+        },
+        // R4 = 0 (flags)
+        BpfInsn {
+            code: 0xb7,    // MOV64_IMM
+            dst_src: 0x04, // dst=R4
+            off: 0,
+            imm: 0,
+        },
+        // call bpf_ringbuf_output(ringbuf_id, event_ptr, size, flags)
+        BpfInsn {
+            code: 0x85, // CALL
+            dst_src: 0x00,
+            off: 0,
+            imm: HELPER_RINGBUF_OUTPUT,
+        },
+        // R0 = 1 (accepted)
+        BpfInsn {
+            code: 0xb7,    // MOV64_IMM
+            dst_src: 0x00, // dst=R0
+            off: 0,
+            imm: 1,
+        },
+        // EXIT
+        BpfInsn {
+            code: 0x95,
+            dst_src: 0x00,
+            off: 0,
+            imm: 0,
+        },
+        // reject: R0 = 0 (filtered)
+        BpfInsn {
+            code: 0xb7,    // MOV64_IMM
+            dst_src: 0x00, // dst=R0
+            off: 0,
             imm: 0,
         },
         // EXIT
@@ -133,7 +192,7 @@ pub extern "C" fn _start() -> ! {
     print_num(prog_id as u64);
     print("\n");
 
-    // 2. Attach Program to IIO Event
+    // 3. Attach Program to IIO Event
     print("Attaching to IIO device 0...\n");
 
     let attach_attr = BpfAttr {
@@ -154,14 +213,78 @@ pub extern "C" fn _start() -> ! {
         exit(1);
     }
 
-    print("Success! BPF program attached to IIO.\n");
-    print("The kernel will now log sensor data in the background.\n");
-    print("Running indefinitely... (Press Ctrl-C to exit)\n");
+    print("Success! BPF filter program attached to IIO.\n");
+    print("Filter range: ");
+    print_num(MIN_VALUE as u64);
+    print(" - ");
+    print_num(MAX_VALUE as u64);
+    print(" (out of 0-999)\n\n");
+
+    // 4. Poll ringbuf for valid events
+    print("Polling for filtered sensor events...\n\n");
+
+    let mut accepted_events = 0u64;
+    let max_events = 50u64;
 
     loop {
-        // Sleep to save CPU while kernel handles sensor events
-        minilib::sleep(1);
+        // Poll ringbuf for next event
+        let poll_attr = BpfAttr {
+            map_fd: ringbuf_id as u32,
+            ..Default::default()
+        };
+
+        let poll_res = bpf(
+            37, // BPF_RINGBUF_POLL
+            &poll_attr as *const BpfAttr as *const u8,
+            core::mem::size_of::<BpfAttr>() as i32,
+        );
+
+        if poll_res > 0 {
+            // Event received - it was accepted by the filter
+            // The kernel already incremented total_events internally
+            // We only see accepted events here
+            accepted_events += 1;
+
+            // In a real implementation, we would parse the event data
+            // For now, just show that we received it
+            print("Sensor value accepted (event #");
+            print_num(accepted_events);
+            print(")\n");
+
+            if accepted_events >= max_events {
+                break;
+            }
+        }
+
+        // Small delay to avoid busy-waiting
+        msleep(10);
     }
+
+    // 5. Print summary statistics
+    // Note: We can't get the exact total_events count from kernel without additional infrastructure
+    // For the demo, we estimate based on the acceptance rate (80% in range: 100-900 out of 0-999)
+    // Expected acceptance rate = (900-100+1) / 1000 = 80.1%
+    let total_events = (accepted_events * 1000) / 801; // Approximate total
+
+    print("\n=== Filter Statistics ===\n");
+    print("Accepted events: ");
+    print_num(accepted_events);
+    print("\n");
+    print("Estimated total: ");
+    print_num(total_events);
+    print("\n");
+    let filtered = total_events - accepted_events;
+    print("Filtered events: ");
+    print_num(filtered);
+    print("\n");
+    let percent_filtered = (filtered * 100) / total_events;
+    print("Filter rate: ~");
+    print_num(percent_filtered);
+    print("%\n\n");
+
+    print("Demo complete! Kernel-level filtering reduces userspace processing load.\n");
+
+    exit(0);
 }
 
 fn print(s: &str) {

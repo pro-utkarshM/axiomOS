@@ -1,8 +1,8 @@
 use jiff::Timestamp;
 
-use crate::BOOT_TIME_SECONDS;
 #[cfg(target_arch = "x86_64")]
 use crate::hpet::hpet;
+use crate::BOOT_TIME_SECONDS;
 
 pub trait TimestampExt {
     fn now() -> Self;

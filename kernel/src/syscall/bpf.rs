@@ -2,8 +2,8 @@ use alloc::vec::Vec;
 use core::mem::size_of;
 
 use kernel_abi::{
-    BPF_MAP_CREATE, BPF_MAP_DELETE_ELEM, BPF_MAP_LOOKUP_ELEM, BPF_MAP_UPDATE_ELEM, BPF_PROG_ATTACH,
-    BPF_PROG_DETACH, BPF_PROG_LOAD, BPF_PROG_LOAD_ELF, BpfAttr,
+    BpfAttr, BPF_MAP_CREATE, BPF_MAP_DELETE_ELEM, BPF_MAP_LOOKUP_ELEM, BPF_MAP_UPDATE_ELEM,
+    BPF_PROG_ATTACH, BPF_PROG_DETACH, BPF_PROG_LOAD, BPF_PROG_LOAD_ELF, BPF_RINGBUF_POLL,
 };
 use kernel_bpf::bytecode::insn::BpfInsn;
 
@@ -191,8 +191,12 @@ pub fn sys_bpf(cmd: usize, attr_ptr: usize, size: usize) -> isize {
                 Err(_) => return -1,
             };
 
-            log::info!("sys_bpf: PROG_ATTACH attr: attach_btf_id={}, attach_prog_fd={}, map_fd={}",
-                attr.attach_btf_id, attr.attach_prog_fd, attr.map_fd);
+            log::info!(
+                "sys_bpf: PROG_ATTACH attr: attach_btf_id={}, attach_prog_fd={}, map_fd={}",
+                attr.attach_btf_id,
+                attr.attach_prog_fd,
+                attr.map_fd
+            );
 
             let attach_type = attr.attach_btf_id;
             let prog_id = attr.attach_prog_fd;
@@ -285,13 +289,24 @@ pub fn sys_bpf(cmd: usize, attr_ptr: usize, size: usize) -> isize {
                                 // But for *observation*, we might just need to ensure the driver knows we are watching.
                                 // The driver triggers hooks in set_duty_cycle/etc.
 
-                                log::info!("sys_bpf: attached BPF to PWM chip={} channel={}", chip_id, channel);
+                                log::info!(
+                                    "sys_bpf: attached BPF to PWM chip={} channel={}",
+                                    chip_id,
+                                    channel
+                                );
                             } else {
-                                log::warn!("sys_bpf: invalid PWM chip={} or channel={}", chip_id, channel);
+                                log::warn!(
+                                    "sys_bpf: invalid PWM chip={} or channel={}",
+                                    chip_id,
+                                    channel
+                                );
                             }
                         }
                         if attach_type == crate::bpf::ATTACH_TYPE_IIO {
-                            log::info!("sys_bpf: attached BPF program {} to IIO sensor event", prog_id);
+                            log::info!(
+                                "sys_bpf: attached BPF program {} to IIO sensor event",
+                                prog_id
+                            );
                             // In a full implementation, we would use attr.key and attr.value
                             // to identify the specific sensor device and channel to enable.
                         }
@@ -320,7 +335,11 @@ pub fn sys_bpf(cmd: usize, attr_ptr: usize, size: usize) -> isize {
             if let Some(manager) = BPF_MANAGER.get() {
                 match manager.lock().detach(attach_type, prog_id) {
                     Ok(_) => {
-                        log::info!("sys_bpf: detached prog {} from type {}", prog_id, attach_type);
+                        log::info!(
+                            "sys_bpf: detached prog {} from type {}",
+                            prog_id,
+                            attach_type
+                        );
 
                         // For GPIO, we might want to disable hardware interrupt if no more
                         // programs are attached, but BpfManager doesn't track per-pin
@@ -436,6 +455,48 @@ pub fn sys_bpf(cmd: usize, attr_ptr: usize, size: usize) -> isize {
                 }
             } else {
                 log::error!("sys_bpf: BPF_MANAGER not initialized");
+                -1
+            }
+        }
+        BPF_RINGBUF_POLL => {
+            log::debug!("sys_bpf: RINGBUF_POLL");
+            let attr = match copy_from_userspace::<BpfAttr>(attr_ptr) {
+                Ok(a) => a,
+                Err(_) => return -1,
+            };
+
+            // For RINGBUF_POLL:
+            //   map_fd  -> map_id (which ringbuf to poll)
+            //   key     -> buf_ptr (userspace buffer to write event data into)
+            //   value   -> buf_size (capacity of the userspace buffer)
+            let map_id = attr.map_fd;
+            let buf_ptr = attr.key as usize;
+            let buf_size = attr.value as usize;
+
+            if buf_ptr == 0 || buf_size == 0 {
+                return -1; // EINVAL
+            }
+
+            if let Some(manager) = BPF_MANAGER.get() {
+                let mgr = manager.lock();
+                match mgr.ringbuf_poll(map_id) {
+                    Some(data) => {
+                        if data.len() > buf_size {
+                            log::warn!(
+                                "sys_bpf: RINGBUF_POLL buffer too small ({} < {})",
+                                buf_size,
+                                data.len()
+                            );
+                            return -28; // ENOSPC
+                        }
+                        if copy_to_userspace(buf_ptr, &data).is_err() {
+                            return -1; // EFAULT
+                        }
+                        data.len() as isize
+                    }
+                    None => 0, // No event available
+                }
+            } else {
                 -1
             }
         }

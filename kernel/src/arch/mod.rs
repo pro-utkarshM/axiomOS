@@ -42,11 +42,10 @@ pub struct UserContext {
     pub sp: u64,
 }
 
-#[cfg(target_arch = "aarch64")]
-pub use crate::arch::aarch64::context::restore_user_context;
-
 // Re-export the current architecture
 #[cfg(target_arch = "aarch64")]
 pub use self::aarch64::*;
 #[cfg(target_arch = "riscv64")]
 pub use self::riscv64::*;
+#[cfg(target_arch = "aarch64")]
+pub use crate::arch::aarch64::context::restore_user_context;

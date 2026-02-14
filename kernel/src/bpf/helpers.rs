@@ -29,7 +29,11 @@ pub extern "C" fn bpf_gpio_read(pin: u32) -> i64 {
         // SAFETY: Creating a temporary GPIO interface to access hardware registers.
         // Safe because we are on RPi5 (checked by feature) and access is stateless/exclusive.
         let gpio = unsafe { crate::arch::aarch64::platform::rpi5::gpio::Rp1Gpio::new() };
-        if gpio.read(pin as u8) { 1 } else { 0 }
+        if gpio.read(pin as u8) {
+            1
+        } else {
+            0
+        }
     }
     #[cfg(not(all(target_arch = "aarch64", feature = "rpi5")))]
     {
@@ -94,7 +98,11 @@ pub extern "C" fn bpf_gpio_toggle(pin: u32) -> i64 {
         let gpio = unsafe { crate::arch::aarch64::platform::rpi5::gpio::Rp1Gpio::new() };
         gpio.toggle(pin as u8);
         // Return new value
-        if gpio.read(pin as u8) { 1 } else { 0 }
+        if gpio.read(pin as u8) {
+            1
+        } else {
+            0
+        }
     }
     #[cfg(not(all(target_arch = "aarch64", feature = "rpi5")))]
     {

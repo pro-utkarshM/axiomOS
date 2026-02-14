@@ -4,14 +4,26 @@
 use kernel_abi::BpfAttr;
 use minilib::{bpf, exit, write};
 
-// Hardcoded for RPi5
-const BUTTON_PIN: u32 = 17; // GPIO 17 is our "E-Stop" button
+// === Configuration ===
+// Limit switch pin (GPIO 22 — configurable for different wiring)
+const LIMIT_SWITCH_PIN: u32 = 22;
+// PWM configuration for simulated motor
 const PWM_CHIP: u32 = 0;
 const PWM_CHANNEL: u32 = 1;
+const MOTOR_DUTY: i32 = 50; // 50% duty cycle simulates running motor
 
-// BPF Helper IDs
+// === BPF Helper IDs (from interpreter/JIT dispatch tables) ===
+const HELPER_TRACE_PRINTK: i32 = 2;
 const HELPER_MOTOR_STOP: i32 = 1000;
 const HELPER_PWM_WRITE: i32 = 1005;
+
+// === BPF commands ===
+const BPF_PROG_LOAD: i32 = 5;
+const BPF_PROG_ATTACH: i32 = 8;
+
+// === Attach types ===
+const ATTACH_TYPE_TIMER: u32 = 1;
+const ATTACH_TYPE_GPIO: u32 = 2;
 
 #[repr(C)]
 struct BpfInsn {
@@ -21,73 +33,199 @@ struct BpfInsn {
     imm: i32,
 }
 
-#[unsafe(no_mangle)]
-pub extern "C" fn _start() -> ! {
-    print("=== Safety Interlock Demo ===\n");
-    print("1. Starting Motor (PWM0 Ch1) at 50% duty cycle...\n");
-
-    // ---------------------------------------------------------
-    // 1. Start "Motor" (Set PWM) via BPF (oneshot)
-    // ---------------------------------------------------------
-    // We'll run a small BPF program once to set the PWM
-    let start_insns = [
-        // R1 = PWM_CHIP
-        BpfInsn { code: 0xb7, dst_src: 0x01, off: 0, imm: PWM_CHIP as i32 },
-        // R2 = PWM_CHANNEL
-        BpfInsn { code: 0xb7, dst_src: 0x02, off: 0, imm: PWM_CHANNEL as i32 },
-        // R3 = 50 (Duty Cycle %)
-        BpfInsn { code: 0xb7, dst_src: 0x03, off: 0, imm: 50 },
-        // Call bpf_pwm_write
-        BpfInsn { code: 0x85, dst_src: 0x00, off: 0, imm: HELPER_PWM_WRITE },
-        // Exit
-        BpfInsn { code: 0x95, dst_src: 0x00, off: 0, imm: 0 },
-    ];
-
-    let load_attr = BpfAttr {
-        prog_type: 1,
-        insn_cnt: start_insns.len() as u32,
-        insns: start_insns.as_ptr() as u64,
-        ..Default::default()
-    };
-
-    let prog_id = bpf(5, &load_attr as *const _ as *const u8, core::mem::size_of::<BpfAttr>() as i32);
-    if prog_id < 0 {
-        print("Error: Failed to load start program\n");
-        exit(1);
+#[allow(dead_code)]
+impl BpfInsn {
+    const fn mov64_imm(dst: u8, imm: i32) -> Self {
+        Self {
+            code: 0xb7,
+            dst_src: dst,
+            off: 0,
+            imm,
+        }
     }
 
-    // Run it using BPF_PROG_TEST_RUN (cmd 10)
-    let _test_attr = BpfAttr {
-        attach_prog_fd: prog_id as u32,
+    const fn mov64_reg(dst: u8, src: u8) -> Self {
+        Self {
+            code: 0xbf,
+            dst_src: (src << 4) | dst,
+            off: 0,
+            imm: 0,
+        }
+    }
+
+    const fn add64_imm(dst: u8, imm: i32) -> Self {
+        Self {
+            code: 0x07,
+            dst_src: dst,
+            off: 0,
+            imm,
+        }
+    }
+
+    /// Store 8-bit immediate to memory: *(u8*)(dst + off) = imm
+    const fn st_b(dst: u8, off: i16, imm: i32) -> Self {
+        Self {
+            code: 0x72,
+            dst_src: dst,
+            off,
+            imm,
+        }
+    }
+
+    const fn call(imm: i32) -> Self {
+        Self {
+            code: 0x85,
+            dst_src: 0,
+            off: 0,
+            imm,
+        }
+    }
+
+    const fn exit() -> Self {
+        Self {
+            code: 0x95,
+            dst_src: 0,
+            off: 0,
+            imm: 0,
+        }
+    }
+}
+
+// SAFETY: Entry point for the safety interlock demo. Called by the startup code.
+#[unsafe(no_mangle)]
+pub extern "C" fn _start() -> ! {
+    print("\n");
+    print("========================================\n");
+    print("  Axiom Safety Interlock Demo\n");
+    print("========================================\n");
+    print("\n");
+    print("This demo proves: kernel-level BPF safety interlocks\n");
+    print("survive userspace exit. The interrupt -> BPF -> hardware\n");
+    print("path has ZERO userspace dependency.\n");
+    print("\n");
+
+    // ---------------------------------------------------------
+    // Step 1: Start Motor — load a BPF program on the timer hook
+    //         that sets PWM0 channel 1 to 50% duty cycle.
+    //
+    // On each timer tick this program writes 50% to the PWM,
+    // simulating a running motor.
+    // ---------------------------------------------------------
+    print("[1/4] Starting motor (PWM0 Ch1 @ 50% duty)...\n");
+
+    let motor_insns = [
+        // R1 = PWM_CHIP (0)
+        BpfInsn::mov64_imm(1, PWM_CHIP as i32),
+        // R2 = PWM_CHANNEL (1)
+        BpfInsn::mov64_imm(2, PWM_CHANNEL as i32),
+        // R3 = duty (50%)
+        BpfInsn::mov64_imm(3, MOTOR_DUTY),
+        // call bpf_pwm_write(chip, channel, duty)
+        BpfInsn::call(HELPER_PWM_WRITE),
+        // R0 = 0 (success)
+        BpfInsn::mov64_imm(0, 0),
+        BpfInsn::exit(),
+    ];
+
+    let load_motor = BpfAttr {
+        prog_type: 1,
+        insn_cnt: motor_insns.len() as u32,
+        insns: motor_insns.as_ptr() as u64,
         ..Default::default()
     };
-    // Note: TestRun not implemented in our simple kernel yet, so we attach to timer once or just assume userspace can set PWM via syscall (not implemented yet).
-    // Actually, let's just attach to timer, wait a sec, then detach.
-    // Or better: The demo assumes the motor is running.
-    // Let's attach to timer, run for 1 tick, then detach.
 
-    // Simpler: Just rely on the "E-Stop" program. The user can imagine the motor is running.
-    // Or we use the helper logic in the E-Stop program to PROVE it works by having it running first?
-    // We can use the previously created pwm_demo to start the motor if needed.
+    let motor_id = bpf(
+        BPF_PROG_LOAD,
+        &load_motor as *const _ as *const u8,
+        core::mem::size_of::<BpfAttr>() as i32,
+    );
+    if motor_id < 0 {
+        print("  ERROR: Failed to load motor program\n");
+        exit(1);
+    }
+    print("  Motor program loaded (ID: ");
+    print_num(motor_id as u64);
+    print(")\n");
 
-    // Let's just proceed to setup the E-Stop.
+    // Attach motor program to timer so it runs on each tick
+    let attach_motor = BpfAttr {
+        attach_btf_id: ATTACH_TYPE_TIMER,
+        attach_prog_fd: motor_id as u32,
+        ..Default::default()
+    };
 
-    print("Motor assumed running. Setting up E-Stop on GPIO 17...\n");
+    let res = bpf(
+        BPF_PROG_ATTACH,
+        &attach_motor as *const _ as *const u8,
+        core::mem::size_of::<BpfAttr>() as i32,
+    );
+    if res < 0 {
+        print("  ERROR: Failed to attach motor to timer\n");
+        exit(1);
+    }
+    print("  Motor running on timer hook. PWM active.\n\n");
 
     // ---------------------------------------------------------
-    // 2. Define E-Stop BPF Program
+    // Step 2: Create E-Stop BPF program for GPIO interrupt
+    //
+    // When the limit switch fires (rising edge on LIMIT_SWITCH_PIN):
+    //   1. Call bpf_motor_emergency_stop(reason=1)
+    //   2. Call bpf_trace_printk("SAFETY: Motor stopped by limit switch!")
+    //   3. Return 0
+    //
+    // The trace_printk message will appear in kernel log, proving
+    // the BPF program executed in kernel interrupt context.
     // ---------------------------------------------------------
-    // Logic:
-    //   - Call bpf_motor_emergency_stop(reason=1)
-    //   - Exit
+    print("[2/4] Loading E-Stop BPF program...\n");
+
+    // Build the trace message on the BPF stack.
+    // Message: "SAFETY: Motor stopped!\0" (22 bytes including NUL)
+    // We store it byte-by-byte using ST_B (store immediate byte).
+    // Stack layout: R10-32 .. R10-11 = message (22 bytes)
+    //
+    // "SAFETY: Motor stopped!\0"
+    // S=83 A=65 F=70 E=69 T=84 Y=89 :=58  =32
+    // M=77 o=111 t=116 o=111 r=114  =32
+    // s=115 t=116 o=111 p=112 p=112 e=101 d=100 !=33 \0=0
 
     let estop_insns = [
-        // R1 = 1 (Reason: Button Pressed)
-        BpfInsn { code: 0xb7, dst_src: 0x01, off: 0, imm: 1 },
-        // Call bpf_motor_emergency_stop
-        BpfInsn { code: 0x85, dst_src: 0x00, off: 0, imm: HELPER_MOTOR_STOP },
-        // Exit
-        BpfInsn { code: 0x95, dst_src: 0x00, off: 0, imm: 0 },
+        // --- 1. Call bpf_motor_emergency_stop(reason=1) ---
+        // R1 = 1 (reason: limit switch triggered)
+        BpfInsn::mov64_imm(1, 1),
+        // call bpf_motor_emergency_stop
+        BpfInsn::call(HELPER_MOTOR_STOP),
+        // --- 2. Build trace message on stack and call bpf_trace_printk ---
+        // Store "SAFETY: Motor stopped!\0" at R10-24
+        BpfInsn::st_b(10, -24, b'S' as i32),
+        BpfInsn::st_b(10, -23, b'A' as i32),
+        BpfInsn::st_b(10, -22, b'F' as i32),
+        BpfInsn::st_b(10, -21, b'E' as i32),
+        BpfInsn::st_b(10, -20, b'T' as i32),
+        BpfInsn::st_b(10, -19, b'Y' as i32),
+        BpfInsn::st_b(10, -18, b':' as i32),
+        BpfInsn::st_b(10, -17, b' ' as i32),
+        BpfInsn::st_b(10, -16, b'M' as i32),
+        BpfInsn::st_b(10, -15, b'o' as i32),
+        BpfInsn::st_b(10, -14, b't' as i32),
+        BpfInsn::st_b(10, -13, b'o' as i32),
+        BpfInsn::st_b(10, -12, b'r' as i32),
+        BpfInsn::st_b(10, -11, b' ' as i32),
+        BpfInsn::st_b(10, -10, b's' as i32),
+        BpfInsn::st_b(10, -9, b't' as i32),
+        BpfInsn::st_b(10, -8, b'o' as i32),
+        BpfInsn::st_b(10, -7, b'p' as i32),
+        BpfInsn::st_b(10, -6, b'!' as i32),
+        BpfInsn::st_b(10, -5, 0), // NUL terminator
+        // R1 = pointer to string (R10 - 24)
+        BpfInsn::mov64_reg(1, 10),
+        BpfInsn::add64_imm(1, -24),
+        // R2 = size (20 = length of "SAFETY: Motor stop!" + NUL)
+        BpfInsn::mov64_imm(2, 20),
+        // call bpf_trace_printk
+        BpfInsn::call(HELPER_TRACE_PRINTK),
+        // --- 3. Return 0 ---
+        BpfInsn::mov64_imm(0, 0),
+        BpfInsn::exit(),
     ];
 
     let load_estop = BpfAttr {
@@ -97,39 +235,85 @@ pub extern "C" fn _start() -> ! {
         ..Default::default()
     };
 
-    let estop_id = bpf(5, &load_estop as *const _ as *const u8, core::mem::size_of::<BpfAttr>() as i32);
+    let estop_id = bpf(
+        BPF_PROG_LOAD,
+        &load_estop as *const _ as *const u8,
+        core::mem::size_of::<BpfAttr>() as i32,
+    );
     if estop_id < 0 {
-        print("Error: Failed to load E-Stop program\n");
+        print("  ERROR: Failed to load E-Stop program\n");
         exit(1);
     }
-    print("E-Stop program loaded. ID: ");
+    print("  E-Stop program loaded (ID: ");
     print_num(estop_id as u64);
-    print("\n");
+    print(")\n");
+    print("  Actions: bpf_motor_emergency_stop + bpf_trace_printk\n\n");
 
     // ---------------------------------------------------------
-    // 3. Attach E-Stop to GPIO 17 (Rising Edge)
+    // Step 3: Attach E-Stop to GPIO (limit switch pin, rising edge)
+    //
+    // The kernel's BPF_PROG_ATTACH handler for GPIO type will:
+    //   - Configure the pin as input
+    //   - Enable rising edge interrupt on the pin
+    //   - Register the BPF program for GPIO hook execution
     // ---------------------------------------------------------
-    let attach_attr = BpfAttr {
-        attach_btf_id: 2, // ATTACH_TYPE_GPIO
+    print("[3/4] Attaching E-Stop to GPIO ");
+    print_num(LIMIT_SWITCH_PIN as u64);
+    print(" (rising edge)...\n");
+
+    let attach_estop = BpfAttr {
+        attach_btf_id: ATTACH_TYPE_GPIO,
         attach_prog_fd: estop_id as u32,
-        key: BUTTON_PIN as u64, // Pin 17
-        value: 1,               // Rising Edge
+        key: LIMIT_SWITCH_PIN as u64, // Pin number
+        value: 1,                     // 1 = Rising Edge
         ..Default::default()
     };
 
-    let res = bpf(8, &attach_attr as *const _ as *const u8, core::mem::size_of::<BpfAttr>() as i32);
+    let res = bpf(
+        BPF_PROG_ATTACH,
+        &attach_estop as *const _ as *const u8,
+        core::mem::size_of::<BpfAttr>() as i32,
+    );
     if res < 0 {
-        print("Error: Failed to attach E-Stop\n");
+        print("  ERROR: Failed to attach E-Stop to GPIO\n");
         exit(1);
     }
+    print("  E-Stop attached. GPIO interrupt armed.\n\n");
 
-    print("Safety Interlock Active!\n");
-    print("Press Button on GPIO 17 to TRIGGER EMERGENCY STOP.\n");
-    print("Kernel logs will show 'EMERGENCY STOP TRIGGERED' and PWM will go to 0.\n");
+    // ---------------------------------------------------------
+    // Step 4: EXIT — proving the safety thesis
+    //
+    // The BPF programs are now in the kernel:
+    //   - Motor program: timer hook -> PWM at 50%
+    //   - E-Stop program: GPIO interrupt -> motor emergency stop
+    //
+    // After this process exits:
+    //   - Programs PERSIST in the kernel's BpfManager
+    //   - GPIO interrupt -> BPF execute -> bpf_motor_emergency_stop
+    //   - This entire path is in kernel interrupt context
+    //   - ZERO userspace dependency
+    //
+    // Trigger the limit switch on GPIO 22 to verify.
+    // ---------------------------------------------------------
+    print("[4/4] Safety interlock ARMED.\n");
+    print("\n");
+    print("  Motor:     PWM0 Ch1 @ 50% (via timer BPF hook)\n");
+    print("  E-Stop:    GPIO ");
+    print_num(LIMIT_SWITCH_PIN as u64);
+    print(" rising edge -> bpf_motor_emergency_stop\n");
+    print("  Trace:     Kernel log will show 'SAFETY: Motor stop!'\n");
+    print("\n");
+    print("  >> Userspace will now EXIT. <<\n");
+    print("  >> Safety interlock remains active in the kernel. <<\n");
+    print("  >> Trigger limit switch on GPIO ");
+    print_num(LIMIT_SWITCH_PIN as u64);
+    print(" to stop motor. <<\n");
+    print("\n");
+    print("========================================\n");
+    print("  Exiting userspace. BPF persists.\n");
+    print("========================================\n");
 
-    loop {
-        minilib::sleep(1);
-    }
+    exit(0);
 }
 
 fn print(s: &str) {

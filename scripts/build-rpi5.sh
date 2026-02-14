@@ -27,10 +27,10 @@ fi
 # Build the kernel
 echo "Building kernel..."
 if [ "$PROFILE" = "release" ]; then
-    cargo build --target "$TARGET" --features rpi5 --release -p kernel
+    cargo build --target "$TARGET" --features embedded-rpi5 --release -p kernel
     BUILD_DIR="target/$TARGET/release"
 else
-    cargo build --target "$TARGET" --features rpi5 -p kernel
+    cargo build --target "$TARGET" --features embedded-rpi5 -p kernel
     BUILD_DIR="target/$TARGET/debug"
 fi
 
