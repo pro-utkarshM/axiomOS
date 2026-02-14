@@ -20,7 +20,7 @@ use kernel::mcore;
 use kernel::mcore::mtask::process::Process;
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 use kernel::{
-    driver::{KernelDeviceId, block::BlockDevices},
+    driver::{block::BlockDevices, KernelDeviceId},
     file::{ext2::VirtualExt2Fs, vfs},
 };
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
@@ -114,8 +114,7 @@ unsafe extern "C" fn main() -> ! {
         // For now we assume the VirtIO block device is device 0.
         // In a real system we might need to search for the correct device.
         // On QEMU virt, the first virtio-blk device usually ends up as device 0 if it's the only one.
-        let root_block_device =
-            BlockDevices::by_id(0).expect("should have block device with id 0");
+        let root_block_device = BlockDevices::by_id(0).expect("should have block device with id 0");
         let root_block_device = ArcLockedBlockDevice(root_block_device);
         vfs()
             .write()

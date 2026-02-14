@@ -5,18 +5,18 @@ use core::mem::ManuallyDrop;
 use core::ops::Deref;
 
 use conquer_once::spin::OnceCell;
-use kernel_virtual_memory::{AlreadyReserved, Segment, VirtualMemoryManager, VirtAddr};
-use crate::arch::types::{PageSize, Size4KiB};
+use kernel_virtual_memory::{AlreadyReserved, Segment, VirtAddr, VirtualMemoryManager};
 #[cfg(target_arch = "x86_64")]
 use limine::memory_map::EntryType;
 use spin::RwLock;
 
-#[cfg(target_arch = "x86_64")]
-use crate::UsizeExt;
+use crate::arch::types::{PageSize, Size4KiB};
 #[cfg(target_arch = "x86_64")]
 use crate::limine::{HHDM_REQUEST, KERNEL_ADDRESS_REQUEST, MEMORY_MAP_REQUEST};
 #[cfg(target_arch = "x86_64")]
-use crate::mem::address_space::{RECURSIVE_INDEX, sign_extend_vaddr};
+use crate::mem::address_space::{sign_extend_vaddr, RECURSIVE_INDEX};
+#[cfg(target_arch = "x86_64")]
+use crate::UsizeExt;
 
 static VMM: OnceCell<RwLock<VirtualMemoryManager>> = OnceCell::uninit();
 
@@ -37,10 +37,7 @@ pub fn init() {
         #[cfg(target_arch = "aarch64")]
         let size = 0x0000_1000_0000_0000;
 
-        RwLock::new(VirtualMemoryManager::new(
-            start,
-            size,
-        ))
+        RwLock::new(VirtualMemoryManager::new(start, size))
     });
 
     // recursive mapping
@@ -114,7 +111,7 @@ pub fn init() {
                 .contains(&e.entry_type)
             })
             .for_each(|e| {
-            let segment = Segment::new(VirtAddr::new(e.base + hhdm_offset), e.length);
+                let segment = Segment::new(VirtAddr::new(e.base + hhdm_offset), e.length);
                 let _ = VirtualMemoryHigherHalf
                     .mark_as_reserved(segment)
                     .expect("segment should not be reserved yet")
@@ -127,7 +124,10 @@ pub fn init() {
     {
         use crate::mem::heap::Heap;
         let _ = VirtualMemoryHigherHalf
-            .mark_as_reserved(Segment::new(VirtAddr::new(Heap::bottom().as_u64()), Heap::size() as u64))
+            .mark_as_reserved(Segment::new(
+                VirtAddr::new(Heap::bottom().as_u64()),
+                Heap::size() as u64,
+            ))
             .expect("heap should not be reserved yet")
             .leak();
     }

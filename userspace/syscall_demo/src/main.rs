@@ -2,7 +2,8 @@
 #![no_main]
 
 use core::panic::PanicInfo;
-use minilib::{malloc, free, writev, iovec, exit, abort, write, pipe, read, close, dup, dup2};
+
+use minilib::{abort, close, dup, dup2, exit, free, iovec, malloc, pipe, read, write, writev};
 
 #[no_mangle]
 pub extern "C" fn _start() -> ! {
@@ -32,16 +33,28 @@ pub extern "C" fn _start() -> ! {
     let part3 = "scatter/gather write.\n";
 
     let iov = [
-        iovec { iov_base: part1.as_ptr(), iov_len: part1.len() },
-        iovec { iov_base: part2.as_ptr(), iov_len: part2.len() },
-        iovec { iov_base: part3.as_ptr(), iov_len: part3.len() },
-        iovec { iov_base: ptr, iov_len: message.len() }, // Print from heap
+        iovec {
+            iov_base: part1.as_ptr(),
+            iov_len: part1.len(),
+        },
+        iovec {
+            iov_base: part2.as_ptr(),
+            iov_len: part2.len(),
+        },
+        iovec {
+            iov_base: part3.as_ptr(),
+            iov_len: part3.len(),
+        },
+        iovec {
+            iov_base: ptr,
+            iov_len: message.len(),
+        }, // Print from heap
     ];
 
     let written = writev(1, &iov);
 
     if written < 0 {
-         let msg = "Writev failed\n";
+        let msg = "Writev failed\n";
         write(1, msg.as_bytes());
         exit(1);
     }

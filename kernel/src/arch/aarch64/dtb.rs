@@ -50,7 +50,10 @@ static mut DTB_INFO: DeviceTreeInfo = DeviceTreeInfo::empty();
 pub unsafe fn parse(dtb_addr: usize) -> Result<(), &'static str> {
     let res = unsafe { parse_internal(dtb_addr) };
     if res.is_err() {
-        log::warn!("DTB parsing failed: {:?}. Using fallback for 'virt' machine.", res.err());
+        log::warn!(
+            "DTB parsing failed: {:?}. Using fallback for 'virt' machine.",
+            res.err()
+        );
         unsafe {
             DTB_INFO.memory_regions[0] = Some(MemoryRegion {
                 base: 0x4000_0000,

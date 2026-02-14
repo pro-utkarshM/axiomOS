@@ -8,16 +8,16 @@ use core::ptr::NonNull;
 use core::sync::atomic::AtomicBool;
 use core::sync::atomic::Ordering::Relaxed;
 
-use cordyceps::Linked;
 use cordyceps::mpsc_queue::Links;
+use cordyceps::Linked;
 use log::trace;
 use spin::RwLock;
 
-use crate::U64Ext;
 use crate::arch::UserContext;
 use crate::mcore::context::ExecutionContext;
 use crate::mcore::mtask::process::Process;
 use crate::mem::memapi::{LowerHalfAllocation, Writable};
+use crate::U64Ext;
 
 mod id;
 pub use id::*;

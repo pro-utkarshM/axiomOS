@@ -137,9 +137,9 @@ pub extern "C" fn _start() -> ! {
 
     // map_type=27 (RINGBUF), key_size=0, value_size=0, max_entries=4096 (buffer size)
     let map_attr = BpfAttr {
-        prog_type: MAP_TYPE_RINGBUF,      // map_type
-        insn_cnt: 0,                       // key_size (unused for ringbuf)
-        insns: 0 | (4096u64 << 32),        // value_size=0, max_entries=4096
+        prog_type: MAP_TYPE_RINGBUF, // map_type
+        insn_cnt: 0,                 // key_size (unused for ringbuf)
+        insns: 4096u64 << 32,        // value_size=0, max_entries=4096
         ..Default::default()
     };
 
@@ -182,27 +182,22 @@ pub extern "C" fn _start() -> ! {
     let observer_insns = [
         // R6 = R1 (save context pointer)
         BpfInsn::mov64_reg(6, 1),
-
         // Load timestamp from context: R7 = *(u64*)(R6 + 0)
         BpfInsn::ldx_dw(7, 6, 0),
         // Store timestamp to stack: *(u64*)(R10 - 24) = R7
         BpfInsn::stx_dw(10, 7, -24),
-
         // Load channel from context: R7 = *(u32*)(R6 + 12)
         BpfInsn::ldx_w(7, 6, 12),
         // Store channel to stack: *(u32*)(R10 - 16) = R7
         BpfInsn::stx_w(10, 7, -16),
-
         // Load duty_ns from context: R7 = *(u32*)(R6 + 20)
         BpfInsn::ldx_w(7, 6, 20),
         // Store duty_ns to stack: *(u32*)(R10 - 12) = R7
         BpfInsn::stx_w(10, 7, -12),
-
         // Load period_ns from context: R7 = *(u32*)(R6 + 16)
         BpfInsn::ldx_w(7, 6, 16),
         // Store period_ns to stack: *(u32*)(R10 - 8) = R7
         BpfInsn::stx_w(10, 7, -8),
-
         // Call bpf_ringbuf_output(map_id, data_ptr, data_size, flags)
         // R1 = map_id
         BpfInsn::mov64_imm(1, map_id),
@@ -215,7 +210,6 @@ pub extern "C" fn _start() -> ! {
         BpfInsn::mov64_imm(4, 0),
         // call bpf_ringbuf_output
         BpfInsn::call(HELPER_RINGBUF_OUTPUT),
-
         // Return 0
         BpfInsn::mov64_imm(0, 0),
         BpfInsn::exit(),
@@ -249,7 +243,7 @@ pub extern "C" fn _start() -> ! {
         attach_btf_id: ATTACH_TYPE_PWM,
         attach_prog_fd: obs_id as u32,
         key: 0,   // Chip 0
-        value: 1,  // Channel 1
+        value: 1, // Channel 1
         ..Default::default()
     };
     let res = bpf(
@@ -273,30 +267,37 @@ pub extern "C" fn _start() -> ! {
     let ctrl_insns = [
         // R0 = bpf_ktime_get_ns()
         BpfInsn::call(HELPER_KTIME_GET_NS),
-
         // R1 = R0
         BpfInsn::mov64_reg(1, 0),
-
         // R1 = R1 & 127 (mask to 0-127 range)
-        BpfInsn { code: 0x47, dst_src: 0x01, off: 0, imm: 127 }, // AND64 R1, 127
-
+        BpfInsn {
+            code: 0x47,
+            dst_src: 0x01,
+            off: 0,
+            imm: 127,
+        }, // AND64 R1, 127
         // If R1 > 100, R1 = 100
-        BpfInsn { code: 0x25, dst_src: 0x01, off: 1, imm: 100 }, // JGT R1, 100, +1
-        BpfInsn { code: 0x05, dst_src: 0, off: 1, imm: 0 },      // JA +1
+        BpfInsn {
+            code: 0x25,
+            dst_src: 0x01,
+            off: 1,
+            imm: 100,
+        }, // JGT R1, 100, +1
+        BpfInsn {
+            code: 0x05,
+            dst_src: 0,
+            off: 1,
+            imm: 0,
+        }, // JA +1
         BpfInsn::mov64_imm(1, 100),
-
         // R3 = R1 (duty %)
         BpfInsn::mov64_reg(3, 1),
-
         // R1 = 0 (PWM Chip)
         BpfInsn::mov64_imm(1, 0),
-
         // R2 = 1 (Channel)
         BpfInsn::mov64_imm(2, 1),
-
         // Call bpf_pwm_write(0, 1, duty)
         BpfInsn::call(HELPER_PWM_WRITE),
-
         BpfInsn::mov64_imm(0, 0),
         BpfInsn::exit(),
     ];
@@ -369,18 +370,21 @@ pub extern "C" fn _start() -> ! {
         if n >= TRACE_EVENT_SIZE as i32 {
             // Parse the event: timestamp(u64), channel(u32), duty_ns(u32), period_ns(u32)
             let timestamp = u64::from_le_bytes([
-                event_buf[0], event_buf[1], event_buf[2], event_buf[3],
-                event_buf[4], event_buf[5], event_buf[6], event_buf[7],
+                event_buf[0],
+                event_buf[1],
+                event_buf[2],
+                event_buf[3],
+                event_buf[4],
+                event_buf[5],
+                event_buf[6],
+                event_buf[7],
             ]);
-            let channel = u32::from_le_bytes([
-                event_buf[8], event_buf[9], event_buf[10], event_buf[11],
-            ]);
-            let duty_ns = u32::from_le_bytes([
-                event_buf[12], event_buf[13], event_buf[14], event_buf[15],
-            ]);
-            let period_ns = u32::from_le_bytes([
-                event_buf[16], event_buf[17], event_buf[18], event_buf[19],
-            ]);
+            let channel =
+                u32::from_le_bytes([event_buf[8], event_buf[9], event_buf[10], event_buf[11]]);
+            let duty_ns =
+                u32::from_le_bytes([event_buf[12], event_buf[13], event_buf[14], event_buf[15]]);
+            let period_ns =
+                u32::from_le_bytes([event_buf[16], event_buf[17], event_buf[18], event_buf[19]]);
 
             // Calculate duty percentage
             let duty_pct = if period_ns > 0 {

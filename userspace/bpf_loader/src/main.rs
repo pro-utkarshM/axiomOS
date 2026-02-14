@@ -45,9 +45,9 @@ pub extern "C" fn _start() -> ! {
     write(1, b"[1/5] Creating array map (counter)... ");
 
     let array_attr = BpfAttr {
-        prog_type: 2,                   // map_type = BPF_MAP_TYPE_ARRAY
-        insn_cnt: 4,                    // key_size = 4 bytes (u32 index)
-        insns: 8 | (1u64 << 32),        // value_size=8 (u64), max_entries=1
+        prog_type: 2,            // map_type = BPF_MAP_TYPE_ARRAY
+        insn_cnt: 4,             // key_size = 4 bytes (u32 index)
+        insns: 8 | (1u64 << 32), // value_size=8 (u64), max_entries=1
         ..Default::default()
     };
 
@@ -77,9 +77,9 @@ pub extern "C" fn _start() -> ! {
     write(1, b"[2/5] Creating ringbuf map (events)... ");
 
     let ringbuf_attr = BpfAttr {
-        prog_type: 27,                  // map_type = BPF_MAP_TYPE_RINGBUF
-        insn_cnt: 0,                    // key_size = 0 for ringbuf
-        insns: (4096u64) << 32,          // value_size=0, max_entries=4096
+        prog_type: 27,          // map_type = BPF_MAP_TYPE_RINGBUF
+        insn_cnt: 0,            // key_size = 0 for ringbuf
+        insns: (4096u64) << 32, // value_size=0, max_entries=4096
         ..Default::default()
     };
 
@@ -133,74 +133,202 @@ pub extern "C" fn _start() -> ! {
     let insns = [
         // --- Store key=0 on stack at r10-4 ---
         // Insn 0: r1 = 0
-        BpfInsn { code: 0xb7, dst_src: regs(1, 0), off: 0, imm: 0 },
+        BpfInsn {
+            code: 0xb7,
+            dst_src: regs(1, 0),
+            off: 0,
+            imm: 0,
+        },
         // Insn 1: *(u32*)(r10 - 4) = r1
-        BpfInsn { code: 0x63, dst_src: regs(10, 1), off: -4, imm: 0 },
-
+        BpfInsn {
+            code: 0x63,
+            dst_src: regs(10, 1),
+            off: -4,
+            imm: 0,
+        },
         // --- Call bpf_map_lookup_elem(array_map_id, &key) ---
         // Insn 2: r1 = array_map_id
-        BpfInsn { code: 0xb7, dst_src: regs(1, 0), off: 0, imm: array_map_id },
+        BpfInsn {
+            code: 0xb7,
+            dst_src: regs(1, 0),
+            off: 0,
+            imm: array_map_id,
+        },
         // Insn 3: r2 = r10
-        BpfInsn { code: 0xbf, dst_src: regs(2, 10), off: 0, imm: 0 },
+        BpfInsn {
+            code: 0xbf,
+            dst_src: regs(2, 10),
+            off: 0,
+            imm: 0,
+        },
         // Insn 4: r2 += -4  (point to key on stack)
-        BpfInsn { code: 0x07, dst_src: regs(2, 0), off: 0, imm: -4 },
+        BpfInsn {
+            code: 0x07,
+            dst_src: regs(2, 0),
+            off: 0,
+            imm: -4,
+        },
         // Insn 5: call bpf_map_lookup_elem (helper 3)
-        BpfInsn { code: 0x85, dst_src: 0x00, off: 0, imm: 3 },
-
+        BpfInsn {
+            code: 0x85,
+            dst_src: 0x00,
+            off: 0,
+            imm: 3,
+        },
         // --- Check if lookup returned NULL; skip map+ringbuf if so ---
         // Insn 6: if r0 == 0 goto +11 -> target = insn 18 (trace_printk)
         //         Jump formula: target = pc + 1 + off = 6 + 1 + 11 = 18
-        BpfInsn { code: 0x15, dst_src: regs(0, 0), off: 11, imm: 0 },
-
+        BpfInsn {
+            code: 0x15,
+            dst_src: regs(0, 0),
+            off: 11,
+            imm: 0,
+        },
         // --- Increment counter in-place via direct pointer ---
         // Insn 7: r6 = r0  (save map value pointer in callee-saved r6)
-        BpfInsn { code: 0xbf, dst_src: regs(6, 0), off: 0, imm: 0 },
+        BpfInsn {
+            code: 0xbf,
+            dst_src: regs(6, 0),
+            off: 0,
+            imm: 0,
+        },
         // Insn 8: r1 = *(u64*)(r6 + 0)  (load current counter value)
-        BpfInsn { code: 0x79, dst_src: regs(1, 6), off: 0, imm: 0 },
+        BpfInsn {
+            code: 0x79,
+            dst_src: regs(1, 6),
+            off: 0,
+            imm: 0,
+        },
         // Insn 9: r1 += 1  (increment)
-        BpfInsn { code: 0x07, dst_src: regs(1, 0), off: 0, imm: 1 },
+        BpfInsn {
+            code: 0x07,
+            dst_src: regs(1, 0),
+            off: 0,
+            imm: 1,
+        },
         // Insn 10: *(u64*)(r6 + 0) = r1  (store incremented value back)
-        BpfInsn { code: 0x7b, dst_src: regs(6, 1), off: 0, imm: 0 },
-
+        BpfInsn {
+            code: 0x7b,
+            dst_src: regs(6, 1),
+            off: 0,
+            imm: 0,
+        },
         // --- Store counter on stack for ringbuf event data ---
         // Insn 11: *(u64*)(r10 - 16) = r1
-        BpfInsn { code: 0x7b, dst_src: regs(10, 1), off: -16, imm: 0 },
-
+        BpfInsn {
+            code: 0x7b,
+            dst_src: regs(10, 1),
+            off: -16,
+            imm: 0,
+        },
         // --- Call bpf_ringbuf_output(ringbuf_map_id, &counter, 8, 0) ---
         // Insn 12: r1 = ringbuf_map_id
-        BpfInsn { code: 0xb7, dst_src: regs(1, 0), off: 0, imm: ringbuf_map_id },
+        BpfInsn {
+            code: 0xb7,
+            dst_src: regs(1, 0),
+            off: 0,
+            imm: ringbuf_map_id,
+        },
         // Insn 13: r2 = r10
-        BpfInsn { code: 0xbf, dst_src: regs(2, 10), off: 0, imm: 0 },
+        BpfInsn {
+            code: 0xbf,
+            dst_src: regs(2, 10),
+            off: 0,
+            imm: 0,
+        },
         // Insn 14: r2 += -16  (point to counter on stack)
-        BpfInsn { code: 0x07, dst_src: regs(2, 0), off: 0, imm: -16 },
+        BpfInsn {
+            code: 0x07,
+            dst_src: regs(2, 0),
+            off: 0,
+            imm: -16,
+        },
         // Insn 15: r3 = 8  (data size = sizeof(u64))
-        BpfInsn { code: 0xb7, dst_src: regs(3, 0), off: 0, imm: 8 },
+        BpfInsn {
+            code: 0xb7,
+            dst_src: regs(3, 0),
+            off: 0,
+            imm: 8,
+        },
         // Insn 16: r4 = 0  (flags)
-        BpfInsn { code: 0xb7, dst_src: regs(4, 0), off: 0, imm: 0 },
+        BpfInsn {
+            code: 0xb7,
+            dst_src: regs(4, 0),
+            off: 0,
+            imm: 0,
+        },
         // Insn 17: call bpf_ringbuf_output (helper 6)
-        BpfInsn { code: 0x85, dst_src: 0x00, off: 0, imm: 6 },
-
+        BpfInsn {
+            code: 0x85,
+            dst_src: 0x00,
+            off: 0,
+            imm: 6,
+        },
         // --- Call bpf_trace_printk("Tick!", 6) for serial visibility ---
         // Insn 18: LD_DW_IMM r1, "Tick!\0" (occupies 2 instruction slots)
-        BpfInsn { code: 0x18, dst_src: regs(1, 0), off: 0, imm: tick_lo },
+        BpfInsn {
+            code: 0x18,
+            dst_src: regs(1, 0),
+            off: 0,
+            imm: tick_lo,
+        },
         // Insn 19: (continuation of LD_DW_IMM)
-        BpfInsn { code: 0x00, dst_src: 0x00, off: 0, imm: tick_hi },
+        BpfInsn {
+            code: 0x00,
+            dst_src: 0x00,
+            off: 0,
+            imm: tick_hi,
+        },
         // Insn 20: *(u64*)(r10 - 24) = r1  (store string on stack)
-        BpfInsn { code: 0x7b, dst_src: regs(10, 1), off: -24, imm: 0 },
+        BpfInsn {
+            code: 0x7b,
+            dst_src: regs(10, 1),
+            off: -24,
+            imm: 0,
+        },
         // Insn 21: r1 = r10
-        BpfInsn { code: 0xbf, dst_src: regs(1, 10), off: 0, imm: 0 },
+        BpfInsn {
+            code: 0xbf,
+            dst_src: regs(1, 10),
+            off: 0,
+            imm: 0,
+        },
         // Insn 22: r1 += -24  (pointer to string on stack)
-        BpfInsn { code: 0x07, dst_src: regs(1, 0), off: 0, imm: -24 },
+        BpfInsn {
+            code: 0x07,
+            dst_src: regs(1, 0),
+            off: 0,
+            imm: -24,
+        },
         // Insn 23: r2 = 6  (string length including NUL)
-        BpfInsn { code: 0xb7, dst_src: regs(2, 0), off: 0, imm: 6 },
+        BpfInsn {
+            code: 0xb7,
+            dst_src: regs(2, 0),
+            off: 0,
+            imm: 6,
+        },
         // Insn 24: call bpf_trace_printk (helper 2)
-        BpfInsn { code: 0x85, dst_src: 0x00, off: 0, imm: 2 },
-
+        BpfInsn {
+            code: 0x85,
+            dst_src: 0x00,
+            off: 0,
+            imm: 2,
+        },
         // --- Return 0 ---
         // Insn 25: r0 = 0
-        BpfInsn { code: 0xb7, dst_src: regs(0, 0), off: 0, imm: 0 },
+        BpfInsn {
+            code: 0xb7,
+            dst_src: regs(0, 0),
+            off: 0,
+            imm: 0,
+        },
         // Insn 26: exit
-        BpfInsn { code: 0x95, dst_src: 0x00, off: 0, imm: 0 },
+        BpfInsn {
+            code: 0x95,
+            dst_src: 0x00,
+            off: 0,
+            imm: 0,
+        },
     ];
 
     // ------------------------------------------------------------------
@@ -294,8 +422,7 @@ pub extern "C" fn _start() -> ! {
             // Parse counter from 8-byte ringbuf event
             let counter = if poll_res >= 8 {
                 u64::from_ne_bytes([
-                    buf[0], buf[1], buf[2], buf[3],
-                    buf[4], buf[5], buf[6], buf[7],
+                    buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7],
                 ])
             } else {
                 0
@@ -344,11 +471,7 @@ pub extern "C" fn _start() -> ! {
                     value: &mut map_value as *mut u64 as u64,
                     ..Default::default()
                 };
-                let _ = bpf(
-                    1,
-                    &final_attr as *const BpfAttr as *const u8,
-                    attr_size,
-                );
+                let _ = bpf(1, &final_attr as *const BpfAttr as *const u8, attr_size);
                 print_num(map_value);
                 write(1, b"\n");
 

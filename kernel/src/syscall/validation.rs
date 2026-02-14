@@ -2,7 +2,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use core::mem::{align_of, size_of};
 
-use kernel_abi::{EFAULT, EINVAL, Errno};
+use kernel_abi::{Errno, EFAULT, EINVAL};
 use kernel_syscall::UserspacePtr;
 
 /// Copy a struct from userspace to kernel.
@@ -74,7 +74,7 @@ pub fn read_userspace_string(ptr: usize, max_len: usize) -> Result<String, Errno
         let b = unsafe { *uptr.as_ptr() };
 
         if b == 0 {
-             return String::from_utf8(bytes).map_err(|_| EINVAL);
+            return String::from_utf8(bytes).map_err(|_| EINVAL);
         }
 
         bytes.push(b);
@@ -85,7 +85,11 @@ pub fn read_userspace_string(ptr: usize, max_len: usize) -> Result<String, Errno
 }
 
 /// Read a null-terminated array of pointers to strings (argv/envp).
-pub fn read_userspace_string_array(ptr: usize, max_count: usize, max_string_len: usize) -> Result<Vec<String>, Errno> {
+pub fn read_userspace_string_array(
+    ptr: usize,
+    max_count: usize,
+    max_string_len: usize,
+) -> Result<Vec<String>, Errno> {
     if ptr == 0 {
         return Ok(Vec::new());
     }

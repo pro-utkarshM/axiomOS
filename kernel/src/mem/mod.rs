@@ -75,15 +75,17 @@ pub fn init() {
 #[cfg(target_arch = "aarch64")]
 #[allow(clippy::missing_panics_doc)]
 pub fn init() {
-    use crate::arch::aarch64::mm;
-    use crate::arch::aarch64::phys;
+    use crate::arch::aarch64::{mm, phys};
 
     info!("Starting memory initialization...");
     mm::init();
 
     // Stage 1 phys alloc already initialized in mm::init()
     let usable_physical_memory = phys::total_memory();
-    info!("Usable physical memory: {} MB", usable_physical_memory / 1024 / 1024);
+    info!(
+        "Usable physical memory: {} MB",
+        usable_physical_memory / 1024 / 1024
+    );
 
     address_space::init();
     info!("Address space initialized");

@@ -9,8 +9,8 @@ use spin::Mutex;
 
 use super::memory_map::{RP1_PWM0_BASE, RP1_PWM1_BASE};
 use super::mmio::MmioReg;
-use crate::BPF_MANAGER;
 use crate::bpf::ATTACH_TYPE_PWM;
+use crate::BPF_MANAGER;
 
 /// Global PWM0 instance
 // SAFETY: We initialize the PWM0 driver with the correct base address for RPi5.

@@ -1,8 +1,8 @@
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 
-use spin::RwLock;
 use kernel_physical_memory::PhysFrameRangeInclusive;
+use spin::RwLock;
 
 use crate::{Device, DeviceId, RegisterDeviceError};
 

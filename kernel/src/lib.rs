@@ -164,7 +164,11 @@ fn print_benchmark_metrics() {
         let heap_used = Heap::used();
         let heap_free = Heap::free();
 
-        info!("Heap total:          {} KB ({} MB)", heap_size / 1024, heap_size / 1024 / 1024);
+        info!(
+            "Heap total:          {} KB ({} MB)",
+            heap_size / 1024,
+            heap_size / 1024 / 1024
+        );
         info!("Heap used:           {} KB", heap_used / 1024);
         info!("Heap free:           {} KB", heap_free / 1024);
 

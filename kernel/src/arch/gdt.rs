@@ -38,7 +38,11 @@ pub struct Selectors {
     pub user_data: SegmentSelector,
 }
 
-pub fn create_gdt_and_tss() -> (GlobalDescriptorTable, Selectors, &'static mut TaskStateSegment) {
+pub fn create_gdt_and_tss() -> (
+    GlobalDescriptorTable,
+    Selectors,
+    &'static mut TaskStateSegment,
+) {
     let mut gdt = GlobalDescriptorTable::new();
     let kernel_code = gdt.append(Descriptor::kernel_code_segment());
     let kernel_data = gdt.append(Descriptor::kernel_data_segment());

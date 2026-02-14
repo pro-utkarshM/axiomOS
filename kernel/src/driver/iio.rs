@@ -6,22 +6,23 @@
 //! In the future, this will interface with actual I2C/SPI drivers.
 //! For now, it provides the mechanism to inject sensor events and trigger BPF hooks.
 
-use alloc::vec::Vec;
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 use alloc::boxed::Box;
+use alloc::vec::Vec;
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 use core::ffi::c_void;
-use spin::Mutex;
-use conquer_once::spin::OnceCell;
 
+use conquer_once::spin::OnceCell;
 use kernel_bpf::attach::{IioChannel, IioEvent};
 use kernel_bpf::execution::BpfContext;
-#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
-use crate::mcore::mtask::task::Task;
+use spin::Mutex;
+
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 use crate::mcore::mtask::process::Process;
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 use crate::mcore::mtask::scheduler::global::GlobalTaskQueue;
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+use crate::mcore::mtask::task::Task;
 
 /// Global IIO manager instance
 pub static IIO_MANAGER: OnceCell<Mutex<IioManager>> = OnceCell::uninit();
@@ -35,6 +36,12 @@ pub fn init() {
 pub struct IioManager {
     /// Simulated devices for now
     devices: Vec<IioDevice>,
+}
+
+impl Default for IioManager {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl IioManager {
@@ -69,7 +76,9 @@ impl IioManager {
         // Clone programs and release lock BEFORE execution so that BPF
         // helpers can re-acquire the lock without deadlocking.
         if let Some(manager) = crate::BPF_MANAGER.get() {
-            let programs = manager.lock().get_hook_programs(crate::bpf::ATTACH_TYPE_IIO);
+            let programs = manager
+                .lock()
+                .get_hook_programs(crate::bpf::ATTACH_TYPE_IIO);
             for (prog_id, program) in &programs {
                 match crate::bpf::BpfManager::execute_program(program, &ctx) {
                     Ok(res) => log::info!("IIO BPF Hook [id={}] returned: {}", prog_id, res),
@@ -127,9 +136,13 @@ extern "C" fn iio_simulation_task(_arg: *mut c_void) {
         // Simple delay - wait for a few interrupts
         for _ in 0..100 {
             #[cfg(target_arch = "x86_64")]
-            unsafe { core::arch::asm!("hlt") };
+            unsafe {
+                core::arch::asm!("hlt")
+            };
             #[cfg(target_arch = "aarch64")]
-            unsafe { core::arch::asm!("wfi") };
+            unsafe {
+                core::arch::asm!("wfi")
+            };
         }
     }
 }
@@ -151,8 +164,9 @@ pub fn init_simulated_device() {
         // Spawn simulation task
         #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
         {
-            let task = Task::create_new(Process::root(), iio_simulation_task, core::ptr::null_mut())
-                .expect("failed to create IIO simulation task");
+            let task =
+                Task::create_new(Process::root(), iio_simulation_task, core::ptr::null_mut())
+                    .expect("failed to create IIO simulation task");
             GlobalTaskQueue::enqueue(Box::pin(task));
 
             ::log::info!("Started IIO simulation background task");

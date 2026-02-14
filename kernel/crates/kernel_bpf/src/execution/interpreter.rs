@@ -335,9 +335,7 @@ impl<P: PhysicalProfile> Interpreter<P> {
             // stack[stack.len() + offset]. Offset is negative for valid accesses.
             let stack_idx_signed = stack.len() as i64 + offset;
 
-            if stack_idx_signed < 0
-                || stack_idx_signed as usize + size.size_bytes() > stack.len()
-            {
+            if stack_idx_signed < 0 || stack_idx_signed as usize + size.size_bytes() > stack.len() {
                 return Err(BpfError::OutOfBounds);
             }
 
@@ -461,9 +459,7 @@ impl<P: PhysicalProfile> Interpreter<P> {
             // stack[stack.len() + offset]. Offset is negative for valid accesses.
             let stack_idx_signed = stack.len() as i64 + offset;
 
-            if stack_idx_signed < 0
-                || stack_idx_signed as usize + size.size_bytes() > stack.len()
-            {
+            if stack_idx_signed < 0 || stack_idx_signed as usize + size.size_bytes() > stack.len() {
                 return Err(BpfError::OutOfBounds);
             }
 

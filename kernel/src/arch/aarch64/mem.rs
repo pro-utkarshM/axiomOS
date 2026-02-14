@@ -82,7 +82,7 @@ pub mod mair {
     pub const NORMAL_NC: u8 = 3;
 
     /// MAIR_EL1 value encoding all memory types
-    pub const MAIR_VALUE: u64 = 0x00_44_FF_04_00; 
+    pub const MAIR_VALUE: u64 = 0x00_44_FF_04_00;
     // Index 0: Device-nGnRnE (0x00)
     // Index 1: Device-nGnRE (0x04)
     // Index 2: Normal WB (0xFF = outer WB, inner WB)

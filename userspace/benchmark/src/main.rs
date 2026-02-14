@@ -2,7 +2,8 @@
 #![no_main]
 
 use core::panic::PanicInfo;
-use minilib::{bpf, exit, write, clock_gettime, msleep, timespec};
+
+use minilib::{bpf, clock_gettime, exit, msleep, timespec, write};
 
 #[panic_handler]
 fn panic(_info: &PanicInfo) -> ! {
@@ -42,8 +43,18 @@ pub extern "C" fn _start() -> ! {
 
     // Simple test program: just returns 42
     let test_insns = [
-        BpfInsn { code: 0xb7, dst_src: regs(0, 0), off: 0, imm: 42 }, // r0 = 42
-        BpfInsn { code: 0x95, dst_src: 0x00, off: 0, imm: 0 },        // exit
+        BpfInsn {
+            code: 0xb7,
+            dst_src: regs(0, 0),
+            off: 0,
+            imm: 42,
+        }, // r0 = 42
+        BpfInsn {
+            code: 0x95,
+            dst_src: 0x00,
+            off: 0,
+            imm: 0,
+        }, // exit
     ];
 
     let mut load_times_us = [0u64; 10];
@@ -51,8 +62,11 @@ pub extern "C" fn _start() -> ! {
     let mut max_us = 0u64;
     let mut total_us = 0u64;
 
-    for i in 0..10 {
-        let mut start = timespec { tv_sec: 0, tv_nsec: 0 };
+    for (i, time) in load_times_us.iter_mut().enumerate() {
+        let mut start = timespec {
+            tv_sec: 0,
+            tv_nsec: 0,
+        };
         clock_gettime(0, &mut start as *mut timespec); // CLOCK_MONOTONIC = 0
 
         let load_attr = kernel_abi::BpfAttr {
@@ -68,7 +82,10 @@ pub extern "C" fn _start() -> ! {
             attr_size,
         );
 
-        let mut end = timespec { tv_sec: 0, tv_nsec: 0 };
+        let mut end = timespec {
+            tv_sec: 0,
+            tv_nsec: 0,
+        };
         clock_gettime(0, &mut end as *mut timespec);
 
         if prog_id < 0 {
@@ -77,12 +94,17 @@ pub extern "C" fn _start() -> ! {
         }
 
         // Calculate elapsed time in microseconds
-        let elapsed_ns = (end.tv_sec - start.tv_sec) * 1_000_000_000 + (end.tv_nsec - start.tv_nsec);
+        let elapsed_ns =
+            (end.tv_sec - start.tv_sec) * 1_000_000_000 + (end.tv_nsec - start.tv_nsec);
         let elapsed_us = (elapsed_ns / 1000) as u64;
 
-        load_times_us[i] = elapsed_us;
-        if elapsed_us < min_us { min_us = elapsed_us; }
-        if elapsed_us > max_us { max_us = elapsed_us; }
+        *time = elapsed_us;
+        if elapsed_us < min_us {
+            min_us = elapsed_us;
+        }
+        if elapsed_us > max_us {
+            max_us = elapsed_us;
+        }
         total_us += elapsed_us;
 
         write(1, b"  Run ");
@@ -114,7 +136,7 @@ pub extern "C" fn _start() -> ! {
 
     // Create ringbuf for timestamp events
     let ringbuf_attr = kernel_abi::BpfAttr {
-        prog_type: 27,  // BPF_MAP_TYPE_RINGBUF
+        prog_type: 27, // BPF_MAP_TYPE_RINGBUF
         insn_cnt: 0,
         insns: (4096u64) << 32,
         ..Default::default()
@@ -130,19 +152,69 @@ pub extern "C" fn _start() -> ! {
     // Uses bpf_ktime_get_ns (helper 1) and bpf_ringbuf_output (helper 6)
     let timer_insns = [
         // Call bpf_ktime_get_ns
-        BpfInsn { code: 0x85, dst_src: 0x00, off: 0, imm: 1 }, // call helper 1
+        BpfInsn {
+            code: 0x85,
+            dst_src: 0x00,
+            off: 0,
+            imm: 1,
+        }, // call helper 1
         // r0 now contains timestamp
         // Store timestamp on stack
-        BpfInsn { code: 0x7b, dst_src: regs(10, 0), off: -8, imm: 0 }, // *(u64*)(r10-8) = r0
+        BpfInsn {
+            code: 0x7b,
+            dst_src: regs(10, 0),
+            off: -8,
+            imm: 0,
+        }, // *(u64*)(r10-8) = r0
         // Call bpf_ringbuf_output(map_id, &timestamp, 8, 0)
-        BpfInsn { code: 0xb7, dst_src: regs(1, 0), off: 0, imm: ringbuf_map_id }, // r1 = map_id
-        BpfInsn { code: 0xbf, dst_src: regs(2, 10), off: 0, imm: 0 }, // r2 = r10
-        BpfInsn { code: 0x07, dst_src: regs(2, 0), off: 0, imm: -8 }, // r2 += -8
-        BpfInsn { code: 0xb7, dst_src: regs(3, 0), off: 0, imm: 8 },  // r3 = 8
-        BpfInsn { code: 0xb7, dst_src: regs(4, 0), off: 0, imm: 0 },  // r4 = 0
-        BpfInsn { code: 0x85, dst_src: 0x00, off: 0, imm: 6 }, // call bpf_ringbuf_output
-        BpfInsn { code: 0xb7, dst_src: regs(0, 0), off: 0, imm: 0 }, // r0 = 0
-        BpfInsn { code: 0x95, dst_src: 0x00, off: 0, imm: 0 }, // exit
+        BpfInsn {
+            code: 0xb7,
+            dst_src: regs(1, 0),
+            off: 0,
+            imm: ringbuf_map_id,
+        }, // r1 = map_id
+        BpfInsn {
+            code: 0xbf,
+            dst_src: regs(2, 10),
+            off: 0,
+            imm: 0,
+        }, // r2 = r10
+        BpfInsn {
+            code: 0x07,
+            dst_src: regs(2, 0),
+            off: 0,
+            imm: -8,
+        }, // r2 += -8
+        BpfInsn {
+            code: 0xb7,
+            dst_src: regs(3, 0),
+            off: 0,
+            imm: 8,
+        }, // r3 = 8
+        BpfInsn {
+            code: 0xb7,
+            dst_src: regs(4, 0),
+            off: 0,
+            imm: 0,
+        }, // r4 = 0
+        BpfInsn {
+            code: 0x85,
+            dst_src: 0x00,
+            off: 0,
+            imm: 6,
+        }, // call bpf_ringbuf_output
+        BpfInsn {
+            code: 0xb7,
+            dst_src: regs(0, 0),
+            off: 0,
+            imm: 0,
+        }, // r0 = 0
+        BpfInsn {
+            code: 0x95,
+            dst_src: 0x00,
+            off: 0,
+            imm: 0,
+        }, // exit
     ];
 
     let timer_load_attr = kernel_abi::BpfAttr {
@@ -160,7 +232,7 @@ pub extern "C" fn _start() -> ! {
 
     // Attach to timer
     let attach_attr = kernel_abi::BpfAttr {
-        attach_btf_id: 1,  // ATTACH_TYPE_TIMER
+        attach_btf_id: 1, // ATTACH_TYPE_TIMER
         attach_prog_fd: timer_prog_id as u32,
         ..Default::default()
     };
@@ -191,8 +263,7 @@ pub extern "C" fn _start() -> ! {
         if poll_res >= 8 {
             // Parse timestamp
             let ts = u64::from_ne_bytes([
-                buf[0], buf[1], buf[2], buf[3],
-                buf[4], buf[5], buf[6], buf[7],
+                buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7],
             ]);
             timestamps[collected] = ts;
             collected += 1;
@@ -211,8 +282,12 @@ pub extern "C" fn _start() -> ! {
         let interval_ns = timestamps[i + 1].saturating_sub(timestamps[i]);
         let interval_us = interval_ns / 1000;
         intervals_us[i] = interval_us;
-        if interval_us < min_interval_us { min_interval_us = interval_us; }
-        if interval_us > max_interval_us { max_interval_us = interval_us; }
+        if interval_us < min_interval_us {
+            min_interval_us = interval_us;
+        }
+        if interval_us > max_interval_us {
+            max_interval_us = interval_us;
+        }
         total_interval_us += interval_us;
     }
 

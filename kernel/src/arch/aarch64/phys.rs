@@ -2,13 +2,15 @@
 //!
 //! Re-exports the common physical memory allocator with ARM64-specific initialization.
 
+use kernel_physical_memory::{PhysicalFrameAllocator, PhysicalMemoryManager};
+
 use crate::arch::aarch64::dtb;
-pub use crate::mem::phys::*;
 pub use crate::arch::types::{PageSize, PhysFrame, PhysFrameRange, PhysFrameRangeInclusive};
-use kernel_physical_memory::{PhysicalMemoryManager, PhysicalFrameAllocator};
+pub use crate::mem::phys::*;
 
 /// Static storage for memory regions to avoid allocation during early boot.
-static mut BOOT_REGIONS: [crate::mem::phys::MemoryRegion; 8] = [crate::mem::phys::MemoryRegion { base: 0, length: 0 }; 8];
+static mut BOOT_REGIONS: [crate::mem::phys::MemoryRegion; 8] =
+    [crate::mem::phys::MemoryRegion { base: 0, length: 0 }; 8];
 
 /// Initialize stage 1 (bump allocator)
 pub fn init_stage1() {
@@ -17,13 +19,13 @@ pub fn init_stage1() {
     // Register reserved regions BEFORE starting any allocations
     // Register DTB as reserved
     crate::mem::phys::register_reserved_region(info.dtb_start as u64, info.dtb_size as u64);
-    
+
     // Register kernel image as reserved
     extern "C" {
         static __text_start: u8;
         static __bss_end: u8;
     }
-    
+
     let kernel_start = &raw const __text_start as u64;
     let kernel_end = &raw const __bss_end as u64;
     crate::mem::phys::register_reserved_region(kernel_start, kernel_end - kernel_start);
@@ -52,8 +54,16 @@ pub fn init_stage1() {
         "Physical memory stage 1 initialized: {} MB available",
         info.total_memory / (1024 * 1024)
     );
-    log::info!("Reserved DTB region: {:#x} - {:#x}", info.dtb_start, info.dtb_start + info.dtb_size);
-    log::info!("Reserved kernel region: {:#x} - {:#x}", kernel_start, kernel_end);
+    log::info!(
+        "Reserved DTB region: {:#x} - {:#x}",
+        info.dtb_start,
+        info.dtb_start + info.dtb_size
+    );
+    log::info!(
+        "Reserved kernel region: {:#x} - {:#x}",
+        kernel_start,
+        kernel_end
+    );
 }
 
 /// Initialize stage 2 (bitmap allocator)

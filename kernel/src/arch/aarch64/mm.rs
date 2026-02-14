@@ -114,9 +114,7 @@ unsafe fn setup_kernel_page_tables(total_memory: usize) {
         let phys_addr = i << 30; // 1GB per entry
 
         // L1 block descriptor for 1GB mapping
-        let mut block_flags = pte_flags::VALID
-            | pte_flags::AF
-            | pte_flags::SH_INNER;
+        let mut block_flags = pte_flags::VALID | pte_flags::AF | pte_flags::SH_INNER;
 
         // QEMU virt memory map:
         // 0x0000_0000 - 0x3FFF_FFFF: Devices (Flash, GIC, UART, etc.)
@@ -140,10 +138,7 @@ unsafe fn setup_kernel_page_tables(total_memory: usize) {
         }
     }
 
-    log::info!(
-        "Bootstrap page tables configured, mapped {}GB",
-        gb_to_map
-    );
+    log::info!("Bootstrap page tables configured, mapped {}GB", gb_to_map);
 }
 
 /// Get the kernel page table root physical address
@@ -179,7 +174,9 @@ pub fn create_user_address_space() -> Option<usize> {
         ptr::write_bytes(l1_ptr, 0, 1);
 
         // Link L1 to L0
-        (*l0_ptr).entry_mut(0).set(paging::PageTableEntry::table(l1_phys).raw());
+        (*l0_ptr)
+            .entry_mut(0)
+            .set(paging::PageTableEntry::table(l1_phys).raw());
 
         // 2. Copy the Kernel RAM mapping (Index 1 of L1: 1GB-2GB)
         // This covers 0x40000000 - 0x7FFFFFFF, where the kernel code/data resides.
@@ -188,7 +185,12 @@ pub fn create_user_address_space() -> Option<usize> {
         let kernel_entry = *boot_tables.l1_low.entry(1);
         *(*l1_ptr).entry_mut(1) = kernel_entry;
 
-        log::info!("create_user_address_space: L0={:#x}, L1={:#x}, KernelEntry[1]={:#x}", l0_phys, l1_phys, kernel_entry.raw());
+        log::info!(
+            "create_user_address_space: L0={:#x}, L1={:#x}, KernelEntry[1]={:#x}",
+            l0_phys,
+            l1_phys,
+            kernel_entry.raw()
+        );
 
         // 3. Map necessary devices in the first 1GB (Index 0 of L1)
         // We use PageTableWalker to map specific ranges instead of a 1GB block.
@@ -203,7 +205,12 @@ pub fn create_user_address_space() -> Option<usize> {
 
         // GICv2 at 0x0800_0000
         // Distributor: 0x0800_0000, CPU Interface: 0x0801_0000
-        let _ = walker.map_range(0x0800_0000, 0x0800_0000, 0x20000, device_flags.to_pte_bits());
+        let _ = walker.map_range(
+            0x0800_0000,
+            0x0800_0000,
+            0x20000,
+            device_flags.to_pte_bits(),
+        );
 
         // VirtIO MMIO at 0x0a00_0000 (32 devices * 512 bytes = 16KB)
         let _ = walker.map_range(0x0a00_0000, 0x0a00_0000, 0x4000, device_flags.to_pte_bits());

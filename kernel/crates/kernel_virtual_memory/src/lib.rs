@@ -4,23 +4,21 @@ extern crate alloc;
 
 use alloc::collections::BTreeSet;
 
+#[cfg(not(target_arch = "x86_64"))]
+pub use addr::{Page, PageRangeInclusive, VirtAddr};
 use log::debug;
 pub use segment::*;
 use thiserror::Error;
-
 #[cfg(target_arch = "x86_64")]
 pub use x86_64::VirtAddr;
 #[cfg(target_arch = "x86_64")]
-pub use x86_64::structures::paging::page::PageRangeInclusive;
-#[cfg(target_arch = "x86_64")]
 pub use x86_64::structures::paging::Page;
+#[cfg(target_arch = "x86_64")]
+pub use x86_64::structures::paging::page::PageRangeInclusive;
 
-#[cfg(not(target_arch = "x86_64"))]
-pub use addr::{Page, PageRangeInclusive, VirtAddr};
-
-mod segment;
 #[cfg(not(target_arch = "x86_64"))]
 mod addr;
+mod segment;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Error)]
 #[error("segment already reserved")]

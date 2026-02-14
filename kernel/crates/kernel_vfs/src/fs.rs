@@ -1,5 +1,7 @@
 use crate::path::AbsolutePath;
-use crate::{CloseError, MkdirError, OpenError, ReadError, RmdirError, Stat, StatError, WriteError};
+use crate::{
+    CloseError, MkdirError, OpenError, ReadError, RmdirError, Stat, StatError, WriteError,
+};
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub struct FsHandle(u64);

@@ -1,8 +1,6 @@
 use alloc::vec::Vec;
 
-use crate::{PageSize, Size4KiB};
-
-use crate::FrameState;
+use crate::{FrameState, PageSize, Size4KiB};
 
 /// Represents a contiguous region of usable physical memory.
 #[derive(Debug, Clone)]
@@ -78,9 +76,8 @@ impl MemoryRegion {
 
 #[cfg(test)]
 mod tests {
-    use crate::PageSize;
-
     use super::*;
+    use crate::PageSize;
 
     #[test]
     fn test_new_region() {

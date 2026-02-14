@@ -7,8 +7,8 @@ use core::slice::{from_raw_parts, from_raw_parts_mut};
 
 use kernel_memapi::{Allocation, Guarded, Location, MemoryApi, UserAccessible, WritableAllocation};
 use kernel_virtual_memory::Segment;
-use crate::arch::types::{VirtAddr, PageSize, Size4KiB, PageTableFlags};
 
+use crate::arch::types::{PageSize, PageTableFlags, Size4KiB, VirtAddr};
 use crate::mcore::mtask::process::Process;
 use crate::mem::phys::PhysicalMemory;
 use crate::mem::virt::{OwnedSegment, VirtualMemoryAllocator};
@@ -88,18 +88,20 @@ impl MemoryApi for LowerHalfMemoryApi {
         };
 
         self.process
-            .with_address_space(|as_| as_.map_range::<Size4KiB>(
-                &mapped_segment,
-                PhysicalMemory::allocate_frames_non_contiguous(),
-                PageTableFlags::PRESENT
-                    | PageTableFlags::WRITABLE
-                    | PageTableFlags::NO_EXECUTE
-                    | if user_accessible == UserAccessible::Yes {
-                        PageTableFlags::USER_ACCESSIBLE
-                    } else {
-                        PageTableFlags::empty()
-                    },
-            ))
+            .with_address_space(|as_| {
+                as_.map_range::<Size4KiB>(
+                    &mapped_segment,
+                    PhysicalMemory::allocate_frames_non_contiguous(),
+                    PageTableFlags::PRESENT
+                        | PageTableFlags::WRITABLE
+                        | PageTableFlags::NO_EXECUTE
+                        | if user_accessible == UserAccessible::Yes {
+                            PageTableFlags::USER_ACCESSIBLE
+                        } else {
+                            PageTableFlags::empty()
+                        },
+                )
+            })
             .ok()?;
 
         let start = start.unwrap_or(mapped_segment.start);
@@ -128,14 +130,13 @@ impl MemoryApi for LowerHalfMemoryApi {
             aarch64_jit_sync_cache(allocation.start().as_u64() as usize, allocation.len());
         }
 
-        let res = self.process.with_address_space(|as_| as_.remap_range::<Size4KiB, _>(
-            &*allocation.segment,
-            |mut flags: PageTableFlags| {
+        let res = self.process.with_address_space(|as_| {
+            as_.remap_range::<Size4KiB, _>(&*allocation.segment, |mut flags: PageTableFlags| {
                 flags.remove(PageTableFlags::WRITABLE);
                 flags.remove(PageTableFlags::NO_EXECUTE);
                 flags
-            },
-        ));
+            })
+        });
         if res.is_err() {
             return Err(allocation);
         }
@@ -152,14 +153,13 @@ impl MemoryApi for LowerHalfMemoryApi {
         &mut self,
         allocation: Self::ExecutableAllocation,
     ) -> Result<Self::WritableAllocation, Self::ExecutableAllocation> {
-        let res = self.process.with_address_space(|as_| as_.remap_range::<Size4KiB, _>(
-            &*allocation.segment,
-            |mut flags: PageTableFlags| {
+        let res = self.process.with_address_space(|as_| {
+            as_.remap_range::<Size4KiB, _>(&*allocation.segment, |mut flags: PageTableFlags| {
                 flags.insert(PageTableFlags::WRITABLE);
                 flags.insert(PageTableFlags::NO_EXECUTE);
                 flags
-            },
-        ));
+            })
+        });
         if res.is_err() {
             return Err(allocation);
         }
@@ -176,14 +176,13 @@ impl MemoryApi for LowerHalfMemoryApi {
         &mut self,
         allocation: Self::WritableAllocation,
     ) -> Result<Self::ReadonlyAllocation, Self::WritableAllocation> {
-        let res = self.process.with_address_space(|as_| as_.remap_range::<Size4KiB, _>(
-            &*allocation.segment,
-            |mut flags: PageTableFlags| {
+        let res = self.process.with_address_space(|as_| {
+            as_.remap_range::<Size4KiB, _>(&*allocation.segment, |mut flags: PageTableFlags| {
                 flags.remove(PageTableFlags::WRITABLE);
                 flags.insert(PageTableFlags::NO_EXECUTE);
                 flags
-            },
-        ));
+            })
+        });
         if res.is_err() {
             return Err(allocation);
         }
@@ -244,14 +243,14 @@ impl<T: AllocationType> LowerHalfAllocation<T> {
         // We need to construct a new Segment with the same range.
         let new_segment_inner = kernel_virtual_memory::Segment::new(
             self.inner.mapped_segment.start,
-            self.inner.mapped_segment.len
+            self.inner.mapped_segment.len,
         );
 
         let new_segment = new_process.vmm().mark_as_reserved(new_segment_inner).ok()?;
 
         // 2. Allocate new physical frames
         // We need to know how many pages.
-        let page_count = (self.inner.mapped_segment.len / Size4KiB::SIZE as u64) as usize;
+        let page_count = (self.inner.mapped_segment.len / Size4KiB::SIZE) as usize;
 
         // Use non-contiguous allocation to be safe against fragmentation,
         // though `allocate` uses `allocate_frames_non_contiguous`.
@@ -333,7 +332,9 @@ impl<T: AllocationType> LowerHalfAllocation<T> {
         // We need to map them as Executable in the new AS if T is Executable.
 
         // Getting flags from current page table:
-        let _sample_page = crate::arch::types::Page::<Size4KiB>::containing_address(self.inner.mapped_segment.start);
+        let _sample_page = crate::arch::types::Page::<Size4KiB>::containing_address(
+            self.inner.mapped_segment.start,
+        );
         // We can use `process.address_space().translate()` but that gives PhysAddr.
         // We need flags. `visit_user_pages` gives flags but iterates everything.
         // Let's add `get_flags(page)` to AddressSpace?
@@ -366,11 +367,11 @@ impl<T: AllocationType> LowerHalfAllocation<T> {
         // Let's add a helper trait `AllocationFlags` implemented for `Writable`, `Executable`, `Readonly`.
         let flags = T::flags() | PageTableFlags::PRESENT | PageTableFlags::USER_ACCESSIBLE;
 
-        new_process.with_address_space(|as_| as_.map_range(
-            &self.inner.mapped_segment,
-            new_frames.into_iter(),
-            flags
-        )).ok()?;
+        new_process
+            .with_address_space(|as_| {
+                as_.map_range(&self.inner.mapped_segment, new_frames.into_iter(), flags)
+            })
+            .ok()?;
 
         Some(LowerHalfAllocation {
             start: self.start,
@@ -459,7 +460,8 @@ impl WritableAllocation for LowerHalfAllocation<Writable> {}
 
 impl Drop for Inner {
     fn drop(&mut self) {
-        self.process
-            .with_address_space(|as_| as_.unmap_range::<Size4KiB>(&self.mapped_segment, PhysicalMemory::deallocate_frame));
+        self.process.with_address_space(|as_| {
+            as_.unmap_range::<Size4KiB>(&self.mapped_segment, PhysicalMemory::deallocate_frame)
+        });
     }
 }

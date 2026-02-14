@@ -5,8 +5,8 @@ use core::sync::atomic::AtomicU64;
 use core::sync::atomic::Ordering::Relaxed;
 
 use kernel_devfs::BlockDeviceFile;
-use kernel_device::RegisterDeviceError;
 use kernel_device::block::BlockDevice;
+use kernel_device::RegisterDeviceError;
 use kernel_vfs::path::AbsoluteOwnedPath;
 use spin::RwLock;
 

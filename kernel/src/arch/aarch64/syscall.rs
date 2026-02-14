@@ -22,12 +22,10 @@ pub fn handle_syscall(ctx: &mut ExceptionContext) {
     // SP_EL0 is saved in the exception frame by save_context
     let sp = ctx.sp_el0;
 
-    let mut user_ctx = crate::arch::UserContext {
-        inner: *ctx,
-        sp,
-    };
+    let mut user_ctx = crate::arch::UserContext { inner: *ctx, sp };
 
-    let result = crate::syscall::dispatch_syscall(&mut user_ctx, n, arg1, arg2, arg3, arg4, arg5, arg6);
+    let result =
+        crate::syscall::dispatch_syscall(&mut user_ctx, n, arg1, arg2, arg3, arg4, arg5, arg6);
 
     // Copy back potentially modified context (important for execve)
     *ctx = user_ctx.inner;

@@ -38,8 +38,8 @@ mod aarch64_impl {
 
         #[cfg(feature = "rpi5")]
         {
-            use crate::arch::aarch64::Aarch64;
             use crate::arch::aarch64::platform::rpi5::UART;
+            use crate::arch::aarch64::Aarch64;
             use crate::arch::traits::Architecture;
 
             // Disable interrupts while printing to avoid deadlock
@@ -57,8 +57,8 @@ mod aarch64_impl {
 
         #[cfg(feature = "virt")]
         {
-            use crate::arch::aarch64::Aarch64;
             use crate::arch::aarch64::platform::virt::SERIAL_CONSOLE;
+            use crate::arch::aarch64::Aarch64;
             use crate::arch::traits::Architecture;
 
             // Disable interrupts while printing to avoid deadlock

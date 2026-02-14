@@ -194,7 +194,6 @@ pub extern "C" fn _start() -> ! {
         BpfInsn::mov64_imm(1, 1),
         // call bpf_motor_emergency_stop
         BpfInsn::call(HELPER_MOTOR_STOP),
-
         // --- 2. Build trace message on stack and call bpf_trace_printk ---
         // Store "SAFETY: Motor stopped!\0" at R10-24
         BpfInsn::st_b(10, -24, b'S' as i32),
@@ -217,7 +216,6 @@ pub extern "C" fn _start() -> ! {
         BpfInsn::st_b(10, -7, b'p' as i32),
         BpfInsn::st_b(10, -6, b'!' as i32),
         BpfInsn::st_b(10, -5, 0), // NUL terminator
-
         // R1 = pointer to string (R10 - 24)
         BpfInsn::mov64_reg(1, 10),
         BpfInsn::add64_imm(1, -24),
@@ -225,7 +223,6 @@ pub extern "C" fn _start() -> ! {
         BpfInsn::mov64_imm(2, 20),
         // call bpf_trace_printk
         BpfInsn::call(HELPER_TRACE_PRINTK),
-
         // --- 3. Return 0 ---
         BpfInsn::mov64_imm(0, 0),
         BpfInsn::exit(),
@@ -268,7 +265,7 @@ pub extern "C" fn _start() -> ! {
         attach_btf_id: ATTACH_TYPE_GPIO,
         attach_prog_fd: estop_id as u32,
         key: LIMIT_SWITCH_PIN as u64, // Pin number
-        value: 1,                      // 1 = Rising Edge
+        value: 1,                     // 1 = Rising Edge
         ..Default::default()
     };
 

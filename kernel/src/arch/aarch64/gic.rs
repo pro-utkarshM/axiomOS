@@ -9,7 +9,6 @@
 
 #[cfg(feature = "rpi5")]
 use super::platform::rpi5::memory_map as platform_map;
-
 #[cfg(all(feature = "virt", not(feature = "rpi5")))]
 use super::platform::virt::mmio as platform_map;
 

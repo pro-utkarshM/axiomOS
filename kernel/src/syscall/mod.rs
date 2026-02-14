@@ -4,24 +4,28 @@ use core::slice::{from_raw_parts, from_raw_parts_mut};
 
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 use access::KernelAccess;
-use kernel_abi::{EINVAL, Errno, syscall_name};
+use kernel_abi::{syscall_name, Errno, EINVAL};
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 use kernel_syscall::{
-    UserspaceMutPtr, UserspacePtr,
     access::FileAccess,
     fcntl::sys_open,
     mman::sys_mmap,
     stat::sys_fstat,
-    unistd::{sys_close, sys_dup, sys_dup2, sys_getcwd, sys_lseek, sys_pipe, sys_read, sys_write, sys_writev},
+    unistd::{
+        sys_close, sys_dup, sys_dup2, sys_getcwd, sys_lseek, sys_pipe, sys_read, sys_write,
+        sys_writev,
+    },
+    UserspaceMutPtr, UserspacePtr,
 };
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 use kernel_vfs::path::AbsolutePath;
-#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
-#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
-use crate::mcore::mtask::process::Process;
 use log::{error, info, trace};
 #[cfg(target_arch = "x86_64")]
 use x86_64::instructions::hlt;
+
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+use crate::mcore::mtask::process::Process;
 
 #[cfg(not(target_arch = "x86_64"))]
 fn hlt() {
@@ -43,9 +47,9 @@ fn hlt() {
 
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 mod access;
+pub mod bpf;
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 mod process;
-pub mod bpf;
 #[cfg(all(target_arch = "aarch64", feature = "rpi5"))]
 pub mod pwm;
 mod validation;
@@ -53,6 +57,7 @@ mod validation;
 use crate::arch::UserContext;
 
 #[must_use]
+#[allow(clippy::too_many_arguments)]
 pub fn dispatch_syscall(
     ctx: &mut UserContext,
     n: usize,
@@ -96,7 +101,9 @@ pub fn dispatch_syscall(
 
         // Lock-free pattern: clone programs and release lock BEFORE execution
         // so that BPF helpers can re-acquire the lock without deadlocking.
-        let programs = manager.lock().get_hook_programs(crate::bpf::ATTACH_TYPE_SYSCALL);
+        let programs = manager
+            .lock()
+            .get_hook_programs(crate::bpf::ATTACH_TYPE_SYSCALL);
         for (prog_id, program) in &programs {
             match crate::bpf::BpfManager::execute_program(program, &ctx) {
                 Ok(res) => {
@@ -121,7 +128,9 @@ pub fn dispatch_syscall(
             // SAFETY: Interrupts are disabled during syscall handling (PSTATE.DAIF masked on
             // exception entry). reschedule() context-switches away; since should_terminate is
             // set, this task will be cleaned up and never re-enqueued.
-            unsafe { ctx.scheduler_mut().reschedule(); }
+            unsafe {
+                ctx.scheduler_mut().reschedule();
+            }
             loop {
                 hlt();
             }
@@ -154,7 +163,9 @@ pub fn dispatch_syscall(
             let process = task.process();
             *process.exit_code().write() = Some(status);
             task.set_should_terminate(true);
-            unsafe { ctx.scheduler_mut().reschedule(); }
+            unsafe {
+                ctx.scheduler_mut().reschedule();
+            }
             loop {
                 hlt();
             }
@@ -650,7 +661,12 @@ fn dispatch_sys_fork(ctx: &UserContext) -> Result<usize, Errno> {
 }
 
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
-fn dispatch_sys_execve(ctx: &mut UserContext, path: usize, argv: usize, envp: usize) -> Result<usize, Errno> {
+fn dispatch_sys_execve(
+    ctx: &mut UserContext,
+    path: usize,
+    argv: usize,
+    envp: usize,
+) -> Result<usize, Errno> {
     process::sys_execve(ctx, path, argv, envp)
 }
 
@@ -665,7 +681,12 @@ fn dispatch_sys_fork(_ctx: &UserContext) -> Result<usize, Errno> {
 }
 
 #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
-fn dispatch_sys_execve(_ctx: &mut UserContext, _path: usize, _argv: usize, _envp: usize) -> Result<usize, Errno> {
+fn dispatch_sys_execve(
+    _ctx: &mut UserContext,
+    _path: usize,
+    _argv: usize,
+    _envp: usize,
+) -> Result<usize, Errno> {
     Err(EINVAL)
 }
 

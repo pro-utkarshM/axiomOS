@@ -387,7 +387,9 @@ pub fn handle_interrupt() {
             // helpers (e.g. bpf_gpio_write, bpf_ringbuf_output) can
             // re-acquire the lock for map/GPIO operations without deadlocking.
             if let Some(manager) = crate::BPF_MANAGER.get() {
-                let programs = manager.lock().get_hook_programs(crate::bpf::ATTACH_TYPE_GPIO);
+                let programs = manager
+                    .lock()
+                    .get_hook_programs(crate::bpf::ATTACH_TYPE_GPIO);
                 for (prog_id, program) in &programs {
                     match crate::bpf::BpfManager::execute_program(program, &ctx) {
                         Ok(_res) => {
