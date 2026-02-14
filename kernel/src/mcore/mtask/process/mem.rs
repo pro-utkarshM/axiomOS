@@ -209,9 +209,7 @@ impl MappedMemoryRegion {
             | PageTableFlags::NO_EXECUTE;
 
         new_process
-            .with_address_space(|as_| {
-                as_.map_range(&*new_segment, new_frames.into_iter(), flags)
-            })
+            .with_address_space(|as_| as_.map_range(&*new_segment, new_frames.into_iter(), flags))
             .map_err(|_| "Failed to map memory in new process")?;
 
         Ok(MappedMemoryRegion {

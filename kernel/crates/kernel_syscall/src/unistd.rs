@@ -229,7 +229,7 @@ mod tests {
     use alloc::borrow::ToOwned;
     use alloc::vec;
 
-    use kernel_abi::{Errno, EINVAL, ERANGE};
+    use kernel_abi::{EINVAL, ERANGE, Errno};
     use kernel_vfs::path::{AbsoluteOwnedPath, AbsolutePath};
     use spin::rwlock::RwLock;
 

@@ -52,7 +52,7 @@ mod tests {
     use alloc::sync::Arc;
     use alloc::vec;
 
-    use kernel_abi::{Errno, ENOENT};
+    use kernel_abi::{ENOENT, Errno};
     use kernel_vfs::path::{AbsoluteOwnedPath, AbsolutePath, ROOT};
     use spin::mutex::Mutex;
     use spin::rwlock::RwLock;

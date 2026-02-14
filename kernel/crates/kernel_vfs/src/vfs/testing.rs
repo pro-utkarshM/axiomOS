@@ -9,8 +9,7 @@ use spin::RwLock;
 use crate::fs::{FileSystem, FsHandle};
 use crate::path::{AbsoluteOwnedPath, AbsolutePath};
 use crate::{
-    CloseError, FsError, MkdirError, OpenError, ReadError, RmdirError, Stat, StatError,
-    WriteError,
+    CloseError, FsError, MkdirError, OpenError, ReadError, RmdirError, Stat, StatError, WriteError,
 };
 
 #[derive(Default)]
