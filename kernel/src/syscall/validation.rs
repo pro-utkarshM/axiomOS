@@ -61,9 +61,10 @@ pub fn read_userspace_string(ptr: usize, max_len: usize) -> Result<String, Errno
     }
 
     let mut bytes = Vec::new();
-    let mut current_addr = ptr;
 
-    for _ in 0..max_len {
+    for offset in 0..max_len {
+        let current_addr = ptr.checked_add(offset).ok_or(EINVAL)?;
+
         // Validate address
         // SAFETY: We are checking the address before reading.
         // We use try_from_usize to ensure it's in userspace range.
@@ -78,7 +79,6 @@ pub fn read_userspace_string(ptr: usize, max_len: usize) -> Result<String, Errno
         }
 
         bytes.push(b);
-        current_addr += 1;
     }
 
     Err(EINVAL) // String too long or no null terminator found

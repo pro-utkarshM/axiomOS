@@ -640,7 +640,7 @@ extern "C" fn trampoline(_arg: *mut c_void) {
     log::info!(
         "Trampoline: ustack_rsp={:#x}, entry_point={:#x}",
         ustack_rsp.as_u64(),
-        code_ptr as usize
+        code_ptr
     );
     {
         let mut ustack_guard = current_task.ustack().write();
