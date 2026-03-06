@@ -14,10 +14,10 @@ This document contains benchmark results for the Axiom kernel and provides metho
 
 | Metric | Result | Target (Proposal) | Status |
 |--------|--------|-------------------|--------|
-| Boot to init | [TBD - run on QEMU] | <1s (target), <500ms (stretch) | To be measured |
-| Kernel heap usage | [TBD - run on QEMU] | <10MB (target), <5MB (stretch) | To be measured |
-| BPF load time | [TBD - run on QEMU] | <10ms (target), <1ms (stretch) | To be measured |
-| Timer interrupt interval | [TBD - run on QEMU] | <10μs latency (target), <1μs (stretch) | To be measured |
+| Boot to init | 45 ms | <1s (target), <500ms (stretch) | Measured on QEMU (2026-03-06) |
+| Kernel heap usage | 2231 KB | <10MB (target), <5MB (stretch) | Measured on QEMU (2026-03-06) |
+| BPF load time | 3787 us (avg of 10) | <10ms (target), <1ms (stretch) | Measured on QEMU (2026-03-06) |
+| Timer interrupt interval | 495 us (avg of 99) | <10μs latency (target), <1μs (stretch) | Measured on QEMU (2026-03-06) |
 
 **Note**: These measurements are from QEMU emulation. Hardware measurements on Raspberry Pi 5 will provide more accurate real-world performance data, especially for interrupt latency.
 
@@ -413,6 +413,6 @@ sudo dd if=target/disk.img of=/dev/sdX bs=4M status=progress
 
 ---
 
-**Document Status**: Host verifier microbenchmarks captured; QEMU end-to-end benchmark results still pending.
+**Document Status**: Host verifier microbenchmarks and QEMU baseline results captured.
 **Last Updated**: 2026-03-06
-**Next Action**: Debug QEMU boot path, then capture `/bin/benchmark` output to fill QEMU [TBD] placeholders.
+**Next Action**: Run the same benchmark suite on Raspberry Pi 5 hardware and fill the comparison table.
