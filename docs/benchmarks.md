@@ -21,6 +21,35 @@ This document contains benchmark results for the Axiom kernel and provides metho
 
 **Note**: These measurements are from QEMU emulation. Hardware measurements on Raspberry Pi 5 will provide more accurate real-world performance data, especially for interrupt latency.
 
+## Host Microbenchmarks (Criterion, embedded-profile)
+
+These are host-side microbenchmarks for the verifier crate. They are useful for relative verifier performance tracking, but they are not a replacement for end-to-end QEMU or hardware system benchmarks.
+
+### Test Environment
+- **Date**: 2026-03-06
+- **Host**: x86_64 Linux (development machine)
+- **Command**: `cargo bench -p kernel_bpf --bench verifier --features embedded-profile`
+- **Tool**: Criterion.rs (100 samples, default warmup)
+
+### Results
+
+| Benchmark | Time (95% CI) |
+|-----------|---------------|
+| `verifier/small/minimal` | 218.95 ns - 220.90 ns |
+| `verifier/small/arithmetic` | 265.75 ns - 268.11 ns |
+| `verifier/scaling/instructions/10` | 273.17 ns - 274.08 ns |
+| `verifier/scaling/instructions/50` | 474.30 ns - 476.65 ns |
+| `verifier/scaling/instructions/100` | 747.51 ns - 753.09 ns |
+| `verifier/scaling/instructions/500` | 2.6965 us - 2.7316 us |
+| `verifier/scaling/instructions/1000` | 5.1134 us - 5.1256 us |
+| `verifier/control_flow/linear` | 232.01 ns - 233.60 ns |
+| `verifier/control_flow/single_branch` | 906.26 ns - 909.60 ns |
+| `verifier/control_flow/multi_branch` | 974.67 ns - 976.70 ns |
+
+### Known Limitation (Deferred)
+- Running `cargo bench -p kernel_bpf --benches --features embedded-profile` currently fails at `bench "interpreter"` because kernel helper symbols are unresolved in host linkage (`bpf_ktime_get_ns`, `bpf_map_lookup_elem`, `bpf_ringbuf_output`, etc.).
+- This does not block verifier microbench collection and is intentionally deferred.
+
 ### Detailed Metrics
 
 #### Boot Time
@@ -337,6 +366,11 @@ cargo build --release
 cargo build --release --no-default-features --features aarch64_deps
 ```
 
+**Run host verifier microbenchmarks (embedded profile)**:
+```bash
+cargo bench -p kernel_bpf --bench verifier --features embedded-profile
+```
+
 **Run on QEMU (x86_64)**:
 ```bash
 # Configure init to run benchmark instead of default init
@@ -379,6 +413,6 @@ sudo dd if=target/disk.img of=/dev/sdX bs=4M status=progress
 
 ---
 
-**Document Status**: Template created. Awaiting QEMU benchmark results.
-**Last Updated**: 2026-02-14
-**Next Action**: Run Axiom kernel on QEMU and capture benchmark results to fill in [TBD] placeholders.
+**Document Status**: Host verifier microbenchmarks captured; QEMU end-to-end benchmark results still pending.
+**Last Updated**: 2026-03-06
+**Next Action**: Debug QEMU boot path, then capture `/bin/benchmark` output to fill QEMU [TBD] placeholders.
