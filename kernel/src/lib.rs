@@ -65,13 +65,6 @@ fn init_boot_time() {
 
 pub fn init() {
     init_boot_time();
-
-    #[cfg(target_arch = "x86_64")]
-    let init_start = {
-        use crate::hpet::hpet;
-        hpet().read().main_counter_value()
-    };
-
     log::init();
     info!("Logging initialized");
 
@@ -82,6 +75,12 @@ pub fn init() {
         apic::init();
         hpet::init();
     }
+
+    #[cfg(target_arch = "x86_64")]
+    let init_start = {
+        use crate::hpet::hpet;
+        hpet().read().main_counter_value()
+    };
 
     #[cfg(target_arch = "aarch64")]
     {
