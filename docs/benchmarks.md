@@ -31,21 +31,22 @@ These Linux measurements were captured on Raspberry Pi 5 hardware to establish a
 - **OS**: Raspberry Pi OS 64-bit (Debian)
 - **Kernel**: Linux 6.12.62+rpt-rpi-2712 (PREEMPT)
 - **Tools**: `dmesg`, `awk`, `gcc`, `cyclictest` (`rt-tests`)
+- **Repetitions**: 5 cold-boot runs; observed values were consistent across runs (reported values are 5-run means)
 
 ### Benchmark Results
 
 | Metric | Result | Notes |
 |--------|--------|-------|
-| Boot to init | 573.124 ms | `dmesg` timestamp delta from "Booting Linux" to "Freeing unused kernel memory" |
+| Boot to init | 573.124 ms | `dmesg` timestamp delta from "Booting Linux" to "Freeing unused kernel memory" (5-run mean) |
 | MemTotal | 8256464 KB | `/proc/meminfo` snapshot |
 | MemFree | 7089104 KB | `/proc/meminfo` snapshot |
 | Used (rough) | 1167360 KB | `MemTotal - MemFree` |
 | Slab | 71136 KB | `/proc/meminfo` snapshot |
-| BPF load time (2-insn) | 24.80 us (avg of 10) | Run 1 was slower (70 us), warm runs mostly 17-21 us |
+| BPF load time (2-insn) | 24.80 us (avg of 10) | Run 1 was slower (70 us), warm runs mostly 17-21 us (5-run mean shown) |
 | BPF load time (2-insn, warm avg) | 19.78 us | Average of runs 2-10 |
-| BPF load time (100-insn) | 56.60 us (avg of 10) | Run 1 was slower (106 us), warm runs mostly 49-58 us |
+| BPF load time (100-insn) | 56.60 us (avg of 10) | Run 1 was slower (106 us), warm runs mostly 49-58 us (5-run mean shown) |
 | BPF load time (100-insn, warm avg) | 51.11 us | Average of runs 2-10 |
-| Interrupt latency (`cyclictest`) | min 2 us, avg 2 us, max 7 us | `--policy=fifo --priority=99 --threads=1 --interval=1000 --loops=100000 --mlockall --quiet` |
+| Interrupt latency (`cyclictest`) | min 2 us, avg 2 us, max 7 us | `--policy=fifo --priority=99 --threads=1 --interval=1000 --loops=100000 --mlockall --quiet` (5-run mean summary) |
 
 ## Host Microbenchmarks (Criterion, embedded-profile)
 
@@ -299,12 +300,12 @@ Current snapshot with available hardware results:
 
 | Metric | Axiom (RPi5) | Linux (RPi5, Raspberry Pi OS) | Ratio (Axiom/Linux) | Notes |
 |--------|--------------|-------------------------------|---------------------|-------|
-| Boot time | [TBD] ms | 573.124 ms | [TBD] | Linux measured from `dmesg` boot markers |
-| Kernel memory | [TBD] KB | 1167360 KB (rough) | [TBD] | Rough Linux figure from `MemTotal - MemFree`; not Buildroot-minimal |
-| BPF load time (2-insn) | [TBD] us | 24.80 us | [TBD] | Linux average over 10 runs |
-| BPF load time (100-insn) | [TBD] us | 56.60 us | [TBD] | Linux average over 10 runs |
-| Interrupt latency (avg) | [TBD] us | 2 us | [TBD] | `cyclictest` average |
-| Interrupt latency (max) | [TBD] us | 7 us | [TBD] | `cyclictest` max over 100000 samples |
+| Boot time | [TBD] ms | 573.124 ms | [TBD] | Linux measured from `dmesg` boot markers (5 cold-boot mean) |
+| Kernel memory | [TBD] KB | 1167360 KB (rough) | [TBD] | Rough Linux figure from `MemTotal - MemFree`; 5-run mean; not Buildroot-minimal |
+| BPF load time (2-insn) | [TBD] us | 24.80 us | [TBD] | Linux average over 10 loads per run, then averaged across 5 runs |
+| BPF load time (100-insn) | [TBD] us | 56.60 us | [TBD] | Linux average over 10 loads per run, then averaged across 5 runs |
+| Interrupt latency (avg) | [TBD] us | 2 us | [TBD] | `cyclictest` average (5-run mean) |
+| Interrupt latency (max) | [TBD] us | 7 us | [TBD] | `cyclictest` max over 100000 samples (representative) |
 
 **Expected results** (based on proposal targets):
 - Axiom boot time: <1s (vs Linux ~3-5s for minimal config)
