@@ -21,6 +21,30 @@ This document contains benchmark results for the Axiom kernel and provides metho
 
 **Note**: These measurements are from QEMU emulation. Hardware measurements on Raspberry Pi 5 will provide more accurate real-world performance data, especially for interrupt latency.
 
+## Linux Baseline Results (RPi5, Raspberry Pi OS 64-bit)
+
+These Linux measurements were captured on Raspberry Pi 5 hardware to establish a real-device baseline before running Axiom on the same platform.
+
+### Test Environment
+- **Date**: 2026-03-09
+- **Platform**: Raspberry Pi 5 Model B Rev 1.0 (8GB)
+- **OS**: Raspberry Pi OS 64-bit (Debian)
+- **Kernel**: Linux 6.12.62+rpt-rpi-2712 (PREEMPT)
+- **Tools**: `dmesg`, `awk`, `gcc`, `cyclictest` (`rt-tests`)
+
+### Benchmark Results
+
+| Metric | Result | Notes |
+|--------|--------|-------|
+| Boot to init | 573.124 ms | `dmesg` timestamp delta from "Booting Linux" to "Freeing unused kernel memory" |
+| MemTotal | 8256464 KB | `/proc/meminfo` snapshot |
+| MemFree | 7089104 KB | `/proc/meminfo` snapshot |
+| Used (rough) | 1167360 KB | `MemTotal - MemFree` |
+| Slab | 71136 KB | `/proc/meminfo` snapshot |
+| BPF load time (2-insn) | 24.80 us (avg of 10) | Run 1 was slower (70 us), warm runs mostly 17-21 us |
+| BPF load time (2-insn, warm avg) | 19.78 us | Average of runs 2-10 |
+| Interrupt latency (`cyclictest`) | min 2 us, avg 2 us, max 7 us | `--policy=fifo --priority=99 --threads=1 --interval=1000 --loops=100000 --mlockall --quiet` |
+
 ## Host Microbenchmarks (Criterion, embedded-profile)
 
 These are host-side microbenchmarks for the verifier crate. They are useful for relative verifier performance tracking, but they are not a replacement for end-to-end QEMU or hardware system benchmarks.
@@ -267,18 +291,18 @@ cyclictest -p 99 -t 1 -n -m -l 100000
 
 ---
 
-## Comparison Table Template
+## Comparison Table (Current Data)
 
-Once measurements are collected on Raspberry Pi 5 hardware, fill in this table:
+Current snapshot with available hardware results:
 
-| Metric | Axiom (RPi5) | Linux (Minimal, RPi5) | Ratio (Axiom/Linux) | Notes |
-|--------|--------------|----------------------|---------------------|-------|
-| Boot time | [user measures] ms | [user measures] ms | [calculated] | Cold boot to first userspace process |
-| Kernel memory | [user measures] KB | [user measures] KB | [calculated] | After boot, minimal userspace |
-| BPF load time (2-insn) | [user measures] μs | [user measures] μs | [calculated] | Averaged over 10 runs |
-| BPF load time (100-insn) | [user measures] μs | [user measures] μs | [calculated] | More complex program |
-| Interrupt latency (avg) | [user measures] μs | [user measures] μs | [calculated] | cyclictest or equivalent |
-| Interrupt latency (max) | [user measures] μs | [user measures] μs | [calculated] | Worst-case latency |
+| Metric | Axiom (RPi5) | Linux (RPi5, Raspberry Pi OS) | Ratio (Axiom/Linux) | Notes |
+|--------|--------------|-------------------------------|---------------------|-------|
+| Boot time | [TBD] ms | 573.124 ms | [TBD] | Linux measured from `dmesg` boot markers |
+| Kernel memory | [TBD] KB | 1167360 KB (rough) | [TBD] | Rough Linux figure from `MemTotal - MemFree`; not Buildroot-minimal |
+| BPF load time (2-insn) | [TBD] us | 24.80 us | [TBD] | Linux average over 10 runs |
+| BPF load time (100-insn) | [TBD] us | [TBD] us | [TBD] | More complex program |
+| Interrupt latency (avg) | [TBD] us | 2 us | [TBD] | `cyclictest` average |
+| Interrupt latency (max) | [TBD] us | 7 us | [TBD] | `cyclictest` max over 100000 samples |
 
 **Expected results** (based on proposal targets):
 - Axiom boot time: <1s (vs Linux ~3-5s for minimal config)
@@ -413,6 +437,6 @@ sudo dd if=target/disk.img of=/dev/sdX bs=4M status=progress
 
 ---
 
-**Document Status**: Host verifier microbenchmarks and QEMU baseline results captured.
-**Last Updated**: 2026-03-06
-**Next Action**: Run the same benchmark suite on Raspberry Pi 5 hardware and fill the comparison table.
+**Document Status**: Host verifier microbenchmarks, QEMU baseline, and Linux RPi5 baseline captured.
+**Last Updated**: 2026-03-09
+**Next Action**: Run Axiom benchmark suite on Raspberry Pi 5 hardware, then compute Axiom/Linux ratios from matched runs (preferably 5 cold-boot averages).
