@@ -43,6 +43,8 @@ These Linux measurements were captured on Raspberry Pi 5 hardware to establish a
 | Slab | 71136 KB | `/proc/meminfo` snapshot |
 | BPF load time (2-insn) | 24.80 us (avg of 10) | Run 1 was slower (70 us), warm runs mostly 17-21 us |
 | BPF load time (2-insn, warm avg) | 19.78 us | Average of runs 2-10 |
+| BPF load time (100-insn) | 56.60 us (avg of 10) | Run 1 was slower (106 us), warm runs mostly 49-58 us |
+| BPF load time (100-insn, warm avg) | 51.11 us | Average of runs 2-10 |
 | Interrupt latency (`cyclictest`) | min 2 us, avg 2 us, max 7 us | `--policy=fifo --priority=99 --threads=1 --interval=1000 --loops=100000 --mlockall --quiet` |
 
 ## Host Microbenchmarks (Criterion, embedded-profile)
@@ -300,7 +302,7 @@ Current snapshot with available hardware results:
 | Boot time | [TBD] ms | 573.124 ms | [TBD] | Linux measured from `dmesg` boot markers |
 | Kernel memory | [TBD] KB | 1167360 KB (rough) | [TBD] | Rough Linux figure from `MemTotal - MemFree`; not Buildroot-minimal |
 | BPF load time (2-insn) | [TBD] us | 24.80 us | [TBD] | Linux average over 10 runs |
-| BPF load time (100-insn) | [TBD] us | [TBD] us | [TBD] | More complex program |
+| BPF load time (100-insn) | [TBD] us | 56.60 us | [TBD] | Linux average over 10 runs |
 | Interrupt latency (avg) | [TBD] us | 2 us | [TBD] | `cyclictest` average |
 | Interrupt latency (max) | [TBD] us | 7 us | [TBD] | `cyclictest` max over 100000 samples |
 
