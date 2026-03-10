@@ -10,7 +10,13 @@
 ///
 /// The RP1's internal address space (starting at 0x4000_0000) is mapped
 /// to this CPU physical address by the PCIe controller.
-pub const RP1_PERIPHERAL_BASE: usize = 0x1F00_0000_0000;
+pub const RP1_PERIPHERAL_BASE: usize = 0x1F_0000_0000;
+
+/// BCM2712 primary/debug UART (PL011, uart10)
+///
+/// This is the console UART exposed on the Pi 5 debug connector
+/// and selected as the primary UART in upstream device trees.
+pub const BCM2712_UART10_BASE: usize = 0x10_7D00_1000;
 
 /// RP1 internal offset for UART0
 pub const RP1_UART0_OFFSET: usize = 0x0003_0000;

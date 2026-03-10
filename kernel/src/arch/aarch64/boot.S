@@ -18,11 +18,17 @@
 .section .text.boot
 .global _start_asm
 
-_start_asm:
-    // DEBUG: Write 'Z' to 0x09000000 (UART DR)
-    mov     x9, #0x09000000
-    mov     w10, #0x5a      // 'Z'
+.macro dbg_putc ch
+    // UART10 base: 0x10_7D00_1000 (Pi5 debug connector PL011)
+    mov     x9, #0x1000
+    movk    x9, #0x7d00, lsl #16
+    movk    x9, #0x10, lsl #32
+    mov     w10, #\ch
     str     w10, [x9]
+.endm
+
+_start_asm:
+    dbg_putc 0x7b               // '{'
 
     // Save DTB address (passed in x0 from firmware)
     mov     x19, x0
@@ -44,6 +50,14 @@ _start_asm:
     orr     x0, x0, #(1 << 1)   // SWIO hardwired on
     msr     hcr_el2, x0
 
+    // Disable traps from EL1 to EL2 for FP/SIMD/system access.
+    msr     cptr_el2, xzr
+
+    // Allow EL1 access to physical timer/counter.
+    mov     x0, #0x3            // EL1PCTEN|EL1PCEN
+    msr     cnthctl_el2, x0
+    msr     cntvoff_el2, xzr
+
     // Set up SPSR for EL1h (SP_EL1, all interrupts masked)
     mov     x0, #0x3C5          // D=1, A=1, I=1, F=1, M=EL1h
     msr     spsr_el2, x0
@@ -56,6 +70,8 @@ _start_asm:
     eret
 
 .Lat_el1:
+    dbg_putc 0x7c               // '|'
+
     // Now running at EL1
     // Set up stack pointer (stack grows downward)
     ldr     x0, =__stack_top
@@ -82,12 +98,8 @@ _start_asm:
     msr     vbar_el1, x0
     isb
 
-    // DEBUG: Write 'Y' to UART
-    mov     x9, #0x09000000
-    mov     w10, #0x59      // 'Y'
-    str     w10, [x9]
-
     // Call Rust entry point with DTB address
+    dbg_putc 0x7d               // '}'
     mov     x0, x19             // Restore DTB address
     bl      _start              // Call Rust _start(dtb_addr)
 

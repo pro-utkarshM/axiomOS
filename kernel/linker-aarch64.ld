@@ -16,10 +16,9 @@ PHDRS
 
 SECTIONS
 {
-    /* Raspberry Pi 5 loads kernel at 0x80000 physical address */
-    /* We start without MMU enabled, so use physical addresses */
-    /* QEMU virt loads kernel at 0x40080000 */
-    . = 0x40080000;
+    /* Raspberry Pi 5 firmware loads kernel8.img at 0x0008_0000 physical. */
+    /* Use linker-virt.ld for QEMU virt (0x4008_0000). */
+    . = 0x00080000;
 
     /* Boot code must come first */
     .text : {

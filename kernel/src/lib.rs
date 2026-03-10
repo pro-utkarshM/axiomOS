@@ -56,16 +56,31 @@ pub mod time;
 static BOOT_TIME_SECONDS: OnceCell<u64> = OnceCell::uninit();
 pub static BPF_MANAGER: OnceCell<Mutex<bpf::BpfManager>> = OnceCell::uninit();
 
+#[inline(always)]
+fn dbg_mark(ch: u32) {
+    #[cfg(feature = "rpi5")]
+    // SAFETY: Early debug marker write to Pi 5 debug UART10 data register.
+    unsafe {
+        (0x10_7D00_1000 as *mut u32).write_volatile(ch);
+    }
+}
+
 fn init_boot_time() {
     #[cfg(target_arch = "x86_64")]
     BOOT_TIME_SECONDS.init_once(|| BOOT_TIME.get_response().unwrap().timestamp().as_secs());
     #[cfg(not(target_arch = "x86_64"))]
-    BOOT_TIME_SECONDS.init_once(|| 0);
+    {
+        // AArch64/RISC-V currently run without a platform RTC source here.
+        // Keep boot time at epoch 0 and avoid early OnceCell initialization.
+    }
 }
 
 pub fn init() {
+    dbg_mark(0x61); // 'a'
     init_boot_time();
+    dbg_mark(0x62); // 'b'
     log::init();
+    dbg_mark(0x63); // 'c'
     info!("Logging initialized");
 
     #[cfg(target_arch = "x86_64")]
@@ -85,35 +100,44 @@ pub fn init() {
     #[cfg(target_arch = "aarch64")]
     {
         use arch::traits::Architecture;
+        dbg_mark(0x64); // 'd'
         info!("Initializing architecture...");
         arch::aarch64::Aarch64::early_init();
+        dbg_mark(0x65); // 'e'
         arch::aarch64::Aarch64::init();
+        dbg_mark(0x66); // 'f'
         info!("Architecture initialized");
     }
 
+    dbg_mark(0x67); // 'g'
     info!("Initializing BPF subsystem...");
     BPF_MANAGER.init_once(|| {
         let manager = bpf::BpfManager::new();
         Mutex::new(manager)
     });
+    dbg_mark(0x68); // 'h'
     info!("BPF subsystem initialized");
 
     info!("Initializing backtrace...");
     backtrace::init();
+    dbg_mark(0x69); // 'i'
     info!("Backtrace initialized");
 
     info!("Initializing VFS...");
     file::init();
+    dbg_mark(0x6a); // 'j'
     info!("VFS initialized");
 
     info!("Initializing IIO...");
     driver::iio::init();
+    dbg_mark(0x6b); // 'k'
     info!("IIO initialized");
 
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     {
         info!("Initializing multicore/scheduler...");
         mcore::init();
+        dbg_mark(0x6c); // 'l'
         info!("Multicore/scheduler initialized");
     }
 
@@ -131,6 +155,7 @@ pub fn init() {
 
     info!("Initializing simulated devices...");
     driver::iio::init_simulated_device();
+    dbg_mark(0x6d); // 'm'
     info!("Simulated devices initialized");
 
     info!("kernel initialized");

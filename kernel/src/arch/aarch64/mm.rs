@@ -25,6 +25,15 @@ static mut BOOT_TABLES: BootPageTables = BootPageTables {
     l1_high: PageTable::empty(),
 };
 
+#[inline(always)]
+fn dbg_mark(ch: u32) {
+    #[cfg(feature = "rpi5")]
+    // SAFETY: Early debug marker write to Pi 5 debug UART10 data register.
+    unsafe {
+        (0x10_7D00_1000 as *mut u32).write_volatile(ch);
+    }
+}
+
 /// Initialize ARM64 memory management
 ///
 /// This function:
@@ -34,37 +43,47 @@ static mut BOOT_TABLES: BootPageTables = BootPageTables {
 /// 4. Enables the MMU with new page tables
 /// 5. Maps and initializes the kernel heap
 pub fn init() {
+    dbg_mark(0x41); // 'A'
     log::info!("Initializing ARM64 memory management...");
+    dbg_mark(0x4a); // 'J'
 
     // Initialize physical memory allocator (stage 1 - bump allocator)
     phys::init_stage1();
+    dbg_mark(0x42); // 'B'
 
     // Get memory info from DTB
     let dtb_info = dtb::info();
     let total_memory = dtb_info.total_memory;
+    dbg_mark(0x43); // 'C'
 
     log::info!("Setting up kernel page tables...");
+    dbg_mark(0x44); // 'D'
 
     // Set up initial page tables
     // SAFETY: We are in early boot, single-threaded, and have exclusive access to memory.
     // The total_memory value comes from the DTB which was validated earlier.
     unsafe {
         setup_kernel_page_tables(total_memory);
+        dbg_mark(0x45); // 'E'
 
         // Configure MAIR (memory attributes)
         paging::configure_mair();
+        dbg_mark(0x46); // 'F'
 
         // Configure TCR (translation control)
         paging::configure_tcr();
+        dbg_mark(0x47); // 'G'
 
         // Set TTBR0 (user/identity mapping) and TTBR1 (kernel mapping)
         let l0_user_phys = &raw const BOOT_TABLES.l0_user as usize;
         let l0_kernel_phys = &raw const BOOT_TABLES.l0_kernel as usize;
         paging::set_ttbr0(l0_user_phys);
         paging::set_ttbr1(l0_kernel_phys);
+        dbg_mark(0x48); // 'H'
 
         // Enable the MMU
         paging::enable_mmu();
+        dbg_mark(0x49); // 'I'
     }
 
     log::info!("ARM64 memory management initialized");
@@ -117,15 +136,20 @@ unsafe fn setup_kernel_page_tables(total_memory: usize) {
         let mut block_flags = pte_flags::VALID | pte_flags::AF | pte_flags::SH_INNER;
 
         // QEMU virt memory map:
-        // 0x0000_0000 - 0x3FFF_FFFF: Devices (Flash, GIC, UART, etc.)
-        // 0x4000_0000 - ...        : RAM
+        // 0x0000_0000 - 0x3FFF_FFFF: Devices
+        // 0x4000_0000 - ...        : RAM (kernel at 0x4008_0000)
         //
-        // Map the first 1GB as Device-nGnRE.
-        // Map the rest as Normal WB.
+        // Raspberry Pi 5 boots kernel at 0x0008_0000, so mapping the entire first 1GB
+        // as Device/XN would fault immediately after MMU enable.
+        #[cfg(feature = "virt")]
         if i == 0 {
             block_flags |= pte_flags::attr_index(mem::mair::DEVICE_NGNRE);
             block_flags |= pte_flags::UXN | pte_flags::PXN;
         } else {
+            block_flags |= pte_flags::attr_index(mem::mair::NORMAL_WB);
+        }
+        #[cfg(feature = "rpi5")]
+        {
             block_flags |= pte_flags::attr_index(mem::mair::NORMAL_WB);
         }
 
@@ -135,6 +159,33 @@ unsafe fn setup_kernel_page_tables(total_memory: usize) {
         if i < 512 {
             *boot_tables.l1_high.entry_mut(i) =
                 paging::PageTableEntry::block(phys_addr, block_flags);
+        }
+    }
+
+    #[cfg(feature = "rpi5")]
+    {
+        use crate::arch::aarch64::platform::rpi5::memory_map::{
+            BCM2712_UART10_BASE, RP1_PERIPHERAL_BASE,
+        };
+
+        // Keep Pi 5 high MMIO apertures accessible after MMU-on.
+        // Without this, post-MMU debug UART writes can fault immediately.
+        let mmio_flags = pte_flags::VALID
+            | pte_flags::AF
+            | pte_flags::SH_INNER
+            | pte_flags::UXN
+            | pte_flags::PXN
+            | pte_flags::attr_index(mem::mair::DEVICE_NGNRE);
+
+        for &mmio_base in &[BCM2712_UART10_BASE, RP1_PERIPHERAL_BASE] {
+            let l1_idx = mmio_base >> 30; // 1GB block index
+            if l1_idx < 512 {
+                let phys_addr = l1_idx << 30;
+                *boot_tables.l1_low.entry_mut(l1_idx) =
+                    paging::PageTableEntry::block(phys_addr, mmio_flags);
+                *boot_tables.l1_high.entry_mut(l1_idx) =
+                    paging::PageTableEntry::block(phys_addr, mmio_flags);
+            }
         }
     }
 
