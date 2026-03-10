@@ -42,18 +42,57 @@ Debug with printf                  Trace anything, live
 
 ---
 
+## Current Reality (March 2026)
+
+This proposal keeps the long-term vision unchanged: a runtime-programmable kernel for robotics.
+What changed is execution clarity on Raspberry Pi 5 bring-up and benchmark gating.
+
+### Pi5 Bring-up Status (Evidence-Based)
+
+- Axiom on RPi5 now reaches stable post-init idle without panic.
+- Latest verified UART marker sequence:
+  - `{|}~1234567abyzZcdenrRAJKLTVWXUMVWXNOPBCDEFGHIsuvwxopqfghijklm89ABnF`
+- The `...nF` tail is important:
+  - `n` = missing block device `id=0`
+  - `F` = intentional idle fallback (not panic)
+- This means early boot, MMU, core init, and post-init control flow are stable on Pi5.
+
+### Current Blocker
+
+- Storage path is not complete on Pi5 bring-up:
+  - block device registration for `BlockDevices::by_id(0)` is missing in the tested runtime path.
+- Because of that, `/bin/init` is not active yet on Pi5.
+- This is now the critical path to hardware userspace benchmarks.
+
+### Milestone Ladder (Execution Plan)
+
+| Milestone | Scope | Status | Exit Criteria |
+|-----------|-------|--------|---------------|
+| **M1** | Pi5 boot stability | ✅ Done | Reproducible marker progression to `...nF` with no panic |
+| **M2** | Block device registration + rootfs mount | 🔄 Next | `BlockDevices::by_id(0)` available; root filesystem mounts on Pi5 |
+| **M3** | Run userspace benchmark binary on Pi5 | ⏳ Pending M2 | `/bin/benchmark` executes reliably on hardware across repeated boots |
+| **M4** | Publish matched Axiom vs Linux benchmark table | ⏳ Pending M3 | 5-run matched measurements (boot, memory, BPF load, latency) with methodology |
+
+### Benchmarking Implication
+
+- We can already benchmark early boot stability and stage timing from UART markers.
+- We should not publish full Pi5 Axiom userspace performance claims until M2 and M3 are complete.
+
+---
+
 ## Table of Contents
 
 1. [The Problem](#the-problem)
 2. [Why Not Linux?](#why-not-linux)
 3. [Technical Architecture](#technical-architecture)
-4. [Implementation Status](#implementation-status)
-5. [Roadmap](#roadmap)
-6. [Validation Strategy](#validation-strategy)
-7. [Business Model](#business-model)
-8. [Team & Requirements](#team--requirements)
-9. [Academic Positioning](#academic-positioning)
-10. [Appendices](#appendices)
+4. [Current Reality (March 2026)](#current-reality-march-2026)
+5. [Implementation Status](#implementation-status)
+6. [Roadmap](#roadmap)
+7. [Validation Strategy](#validation-strategy)
+8. [Business Model](#business-model)
+9. [Team & Requirements](#team--requirements)
+10. [Academic Positioning](#academic-positioning)
+11. [Appendices](#appendices)
 
 ---
 

@@ -153,6 +153,14 @@ pub fn init() {
         info!("VirtIO MMIO initialized");
     }
 
+    #[cfg(all(target_arch = "aarch64", feature = "rpi5"))]
+    {
+        info!("Initializing embedded ramdisk...");
+        driver::ram::init_embedded();
+        dbg_mark(0x52); // 'R'
+        info!("Embedded ramdisk initialized");
+    }
+
     info!("Initializing simulated devices...");
     driver::iio::init_simulated_device();
     dbg_mark(0x6d); // 'm'
