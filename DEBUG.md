@@ -319,6 +319,29 @@ If no `y` appears despite new build + matching SHA:
 - assume wrong boot medium/image or wrong serial source.
 - re-validate SD device path and capture port path.
 
+### 10.10 Current Long-Marker Decode (authoritative)
+
+Latest long marker seen in stable runs:
+- `{|}~1234567abyzZcdenrRAJKLTVWXUMVWXNOPBCDEFGHIsuvwxopqfghijklm89ABnF`
+
+Decode by segment:
+- `{|}~1234567`
+- assembly to Rust handoff through `kernel_main`.
+- `abyzZ`
+- entry through logger-init checkpoints; logger registration path no longer panics.
+- `cdenrRAJKLTVWXUMVWXNOPBCDEFGHI`
+- platform + memory + MMU bring-up path now passes through the previously failing windows.
+- `suvwxopqfghijklm8`
+- late `kernel::init()` phases complete and return to `kernel_main`.
+- `9ABnF`
+- post-init path executes; storage device `id=0` missing (`n`), then intentional idle (`F`).
+
+Regression cues:
+- Ends at `...ab!`: logger-init regression.
+- Ends near `...TV!`/`...WX!`: phys/mm reserved-region regression.
+- Ends at `...H!`/`...HI!`: MMU mapping regression.
+- Reaches `...nF` without `!`: expected behavior until storage registration is implemented.
+
 ## 11. Code Changes Made During This Session
 
 The branch already had multiple ongoing Pi5 debug edits. Relevant files currently modified:
@@ -364,17 +387,21 @@ Repeated checks run successfully:
 
 ## 13. Current State (latest known)
 
-Latest marker reported by user:
-- `{|}~1234567ab!`
+Latest stable marker reported:
+- `{|}~1234567abyzZcdenrRAJKLTVWXUMVWXNOPBCDEFGHIsuvwxopqfghijklm89ABnF`
 
-Interpretation:
-- panic after `init_boot_time` and before marker `c`.
-- expected to be around `log::init`.
+Interpretation of latest marker:
+- Bootloader + handoff works.
+- MMU enable now succeeds (`...H I ...`).
+- Full `kernel::init()` completes and returns (`...lm8`).
+- AArch64 post-init path executes (`9AB`).
+- No block device `id=0` exists on current Pi5 runtime path, so marker `n` is emitted.
+- Kernel then intentionally idles (`F` + `turn_idle()`).
 
-Important caveat:
-- Since `y/z/Z` markers were just added to `log::init`, next boot result must be checked for these markers to disambiguate:
-  - if `y` appears: we are definitely executing latest image and panicking inside logger init path.
-  - if still only `ab!` without `y`: likely stale image deployed, wrong SD/device, or capture from previous boot file.
+Current high-level status:
+- Kernel no longer dies in early bring-up path.
+- Boot now reaches steady-state idle loop.
+- Remaining bring-up gap is storage stack/device registration on Pi5 (so rootfs/init process path can run).
 
 ## 14. Reliable Repro/Verification Commands
 
@@ -410,10 +437,109 @@ Notes:
 
 ## 15. Next Debug Checkpoint
 
-Needed from next run:
-1. Marker output with latest binary (must show whether `y/z/Z` appear).
-2. Both SHA256 lines (local build and SD copy).
+Needed for next functional milestone (booting `/bin/init`):
+1. Ensure a Pi5 block device driver registers `BlockDevices::by_id(0)`, or change rootfs strategy.
+2. Re-enable selective logging safely (currently disabled for early stability on Pi5).
+3. Remove/trim temporary marker instrumentation once storage path works.
 
-This will determine whether the issue is:
-- true runtime panic in logger path, or
-- deployment/capture mismatch still using old image.
+This will determine whether kernel can proceed from idle bring-up into full userspace init.
+
+## 16. Extended Timeline After Initial Snapshot
+
+The earlier snapshot ended around `...ab!`. The following happened afterwards:
+
+1. Verified stale image mismatch:
+- Built image: `358136`, hash `d7f52af3b347c11aac88fea1e2e4220d3296cceb55fa704a6572d3e906db9ce1`
+- SD image initially: `358248` with different hash
+- Root cause for repeated old markers was stale `kernel8.img` on SD
+- Manual `cp` + hash verification fixed deployment mismatch
+
+2. Marker progression after image mismatch fix:
+- `{|}~1234567aby!`
+  - panic inside `log::init` before `z`
+- after switching to `set_logger_racy` / `set_max_level_racy`:
+  - `{|}~1234567abyzZc!!!!!!!!!!!!!!!!!!!!!!!!`
+  - logger init completed, but first formatted `info!` call caused panic recursion
+- set Pi5 runtime log level to `Off` for bring-up:
+  - `{|}~1234567abyzZcdenr!`
+  - advanced to memory init window
+- deeper mm/phys markers:
+  - `{|}~...rRA!`
+  - then `{|}~...rRAJKL!`
+  - then `{|}~...rRAJKLTV!`
+  - narrowed failure to reserved-region lock path
+- replaced early-lock/oncecell in phys init path with single-core static approach:
+  - advanced through `...TVWX...NOP...`
+- then marker stalled at `...H` (pre/post MMU boundary)
+  - identified first-1GB mapping issue for Pi5 kernel load at `0x0008_0000`
+  - fixed rpi5 first-1GB mapping to normal executable RAM (while keeping virt behavior)
+- finally reached:
+  - `{|}~...HIsuvwxopqfghijklm8!` and then
+  - `{|}~...89ABnF` (no panic, idle by design when no block device present)
+
+3. Root causes identified and addressed:
+- stale SD image deployment
+- early atomic logger/oncecell paths before MMU stability
+- panic recursion via formatted logging
+- reserved-region lock path in early memory setup
+- incorrect first-1GB device/XN mapping for Pi5 boot address
+- missing post-init storage path now surfaced as next real blocker
+
+4. Serial-data quality observations:
+- Full `uart.clean.log` may still contain random binary/noise fragments due bootloader/probe traffic.
+- Marker extraction remains reliable when parsed with:
+  - `grep -ao '{|}~[0-9A-Za-z!]*' uart.clean.log | tail -n 1`
+- Debug decisions in this session were made from extracted marker strings, not from raw noisy lines.
+
+## 17. Additional Code Changes Since First Draft
+
+Additional key changes made after initial `DEBUG.md` creation:
+
+- `kernel/src/log.rs`
+  - Pi5-specific early logger setup switched to `set_logger_racy` and `set_max_level_racy`
+  - runtime log level temporarily forced `Off` for early bring-up stability
+  - added `y/z/Z` markers
+
+- `kernel/src/mem/phys.rs`
+  - replaced early `OnceCell<Mutex<...>>` style init path with static single-core early-boot path
+  - removed early mutex lock from reserved-region registration path
+  - added `V/W/X` markers
+
+- `kernel/src/arch/aarch64/mm.rs`
+  - added fine-grained `A..I`, `J` markers
+  - added Pi5 high MMIO block mappings for post-MMU debug UART visibility
+  - fixed Pi5 first-1GB mapping to Normal WB (executable), while keeping `virt` behavior separate
+
+- `kernel/src/main.rs`
+  - added post-init markers (`9`, `A`, `B`, `C`, `D`, `E`, `F`, `n`, `e..i`)
+  - converted hard `expect/unwrap` points in AArch64 rootfs/init path to non-panicking fallbacks
+  - on missing block device, enter idle instead of panicking
+
+- `.gitignore`
+  - added `kernel/crates/kernel_bpf/target/`
+
+## 18. Commit History for This Bring-up Work
+
+Commits made during this debugging effort:
+- `6cd0549` - `rpi5 bring-up: stabilize early boot and add UART marker tracing`
+- `3db2af2` - `gitignore: exclude kernel_bpf build artifacts`
+
+## 19. Practical Next Steps for New Engineer
+
+1. Implement/enable a real Pi5 block device provider (SD/NVMe/USB) that registers `BlockDevices::by_id(0)`.
+2. Once storage works, verify root mount and `/bin/init` creation path.
+3. Gradually re-enable runtime logging on Pi5 (start with minimal, non-recursive paths).
+4. Remove temporary marker instrumentation after stable textual logs are confirmed.
+
+## 20. Handoff Delta (Most Recent Session End)
+
+1. User asked to commit current bring-up state first:
+- current relevant commits are recorded in Section 18.
+
+2. User flagged untracked build artifacts:
+- `kernel/crates/kernel_bpf/target/` was confirmed as build output and added to `.gitignore`.
+
+3. Final confidence state before handoff:
+- deployment mismatch issue is resolved (local and SD image hashes now intentionally checked each cycle).
+- marker stream reaches post-init idle path (`...nF`) without panic.
+- active blocker is functional storage registration, not early boot stability.
