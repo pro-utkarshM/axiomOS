@@ -180,6 +180,22 @@ unsafe extern "C" fn main() -> ! {
         dbg_mark(0x6e); // 'n'
     }
 
+    #[cfg(feature = "rpi5")]
+    {
+        // Forced scheduling probe:
+        // If timer/preemption is the blocker, this should still let a runnable init task run.
+        dbg_mark(0x53); // 'S'
+        let ctx = kernel::mcore::context::ExecutionContext::load();
+        kernel::arch::aarch64::Aarch64::disable_interrupts();
+        // SAFETY: We are in kernel context and intentionally forcing one scheduler pass
+        // to validate runnable task handoff.
+        unsafe {
+            ctx.scheduler_mut().reschedule();
+        }
+        kernel::arch::aarch64::Aarch64::enable_interrupts();
+        dbg_mark(0x59); // 'Y'
+    }
+
     dbg_mark(0x46); // 'F'
     mcore::turn_idle()
 }

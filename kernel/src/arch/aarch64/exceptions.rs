@@ -1,4 +1,18 @@
 use core::arch::asm;
+#[cfg(feature = "rpi5")]
+use core::sync::atomic::{AtomicBool, Ordering};
+
+#[cfg(feature = "rpi5")]
+static PREEMPT_MARKER_SENT: AtomicBool = AtomicBool::new(false);
+
+#[cfg(feature = "rpi5")]
+#[inline(always)]
+fn dbg_mark(ch: u32) {
+    // SAFETY: Write to Pi 5 debug UART10 data register.
+    unsafe {
+        (0x10_7D00_1000 as *mut u32).write_volatile(ch);
+    }
+}
 
 /// Exception vector table
 #[repr(C, align(2048))]
@@ -54,6 +68,11 @@ unsafe extern "C" {
 pub extern "C" fn check_preemption(_frame: *mut ExceptionContext) {
     if let Some(ctx) = crate::arch::aarch64::cpu::try_current() {
         if ctx.check_and_clear_reschedule() {
+            #[cfg(feature = "rpi5")]
+            if !PREEMPT_MARKER_SENT.swap(true, Ordering::Relaxed) {
+                dbg_mark(b'r' as u32);
+            }
+
             // SAFETY: We are in the exception return path, interrupts are disabled.
             // It is safe to call reschedule here as we haven't started restoring registers yet.
             unsafe {

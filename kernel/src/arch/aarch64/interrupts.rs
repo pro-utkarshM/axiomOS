@@ -21,6 +21,8 @@
 //! the RP1's interrupt controller to one of these PCIe lines.
 
 use super::gic;
+#[cfg(feature = "rpi5")]
+use core::sync::atomic::{AtomicBool, Ordering};
 
 /// Physical timer IRQ number (PPI 14 = IRQ 30)
 const TIMER_IRQ: u32 = gic::irq::TIMER_PHYS;
@@ -37,6 +39,18 @@ const TIMER_IRQ: u32 = gic::irq::TIMER_PHYS;
 /// (GPIO, UART, etc.) raised the interrupt.
 #[cfg(feature = "rpi5")]
 const RP1_GPIO_IRQ: u32 = 261; // GIC SPI 229 = 32 + 229
+
+#[cfg(feature = "rpi5")]
+static TIMER_IRQ_MARKER_SENT: AtomicBool = AtomicBool::new(false);
+
+#[cfg(feature = "rpi5")]
+#[inline(always)]
+fn dbg_mark(ch: u32) {
+    // SAFETY: Write to Pi 5 debug UART10 data register.
+    unsafe {
+        (0x10_7D00_1000 as *mut u32).write_volatile(ch);
+    }
+}
 
 /// Initialize interrupt controller and timer
 pub fn init() {
@@ -90,6 +104,11 @@ pub extern "C" fn handle_irq(_ctx: &mut ExceptionContext) {
 
     // Dispatch based on IRQ number
     if irq == TIMER_IRQ {
+        #[cfg(feature = "rpi5")]
+        if !TIMER_IRQ_MARKER_SENT.swap(true, Ordering::Relaxed) {
+            dbg_mark(b't' as u32);
+        }
+
         handle_timer_interrupt();
         // Signal end of interrupt for timer
         gic::end_of_interrupt(irq);

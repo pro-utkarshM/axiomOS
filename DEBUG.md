@@ -198,6 +198,16 @@ Extended markers introduced:
 - `y,z,Z`: internal `log::init()` checkpoints.
 
 Interpretation rule:
+
+## 11. Latest Observations (March 11, 2026)
+
+- The forced scheduler probe (`S`/`Y`) now runs just after rootfs mount and the UART stream reached `...SsjZ01TUu`. That proves PID=1 was scheduled, the task-entry trampoline executed, and control reached the `/bin/init` trampoline in userspace.
+- Added root-vs-user marker logging inside `kernel/src/mcore/mtask/scheduler/mod.rs` (`k/j` + `Zhh`) so we can tell whether the first switched task is the kernel worker or init process. The first `SsjZ01` run confirmed non-root (PID 1) was chosen, so the scheduler is not starving init.
+- Added `T`/`U` instrumentation at the start of `task_entry_trampoline` (`kernel/src/arch/aarch64/context.rs`) along with `u` from the trampoline itself so we know whether we ever reach the process trampoline.
+- Discovered that Pi5 kernel lives at physical/virtual low addresses (`0x0008_0000`) while each user process maps TTBR0 to a fresh high-identity mapping. Switching TTBR0 before trampoline meant UART/MMIO (debug probe) was no longer memory-mapped, so further markers disappeared. Short-term mitigation: for `feature="rpi5"` the scheduler now leaves `cr3_value` at zero (no TTBR0 switch) so the kernel still sees UART while we observe confirmation markers.
+- IIO simulation work queue was running on Pi5 before init, so initial scheduling always picked that task. We now skip spawning the simulated IIO worker on Pi5 builds (`kernel/src/driver/iio.rs` gating imports/task spawn). Cleanup worker only runs when real cleanup work exists, and `TaskCleanup::enqueue` now lazily schedules it.
+- `kernel/src/time.rs` got a working `Timestamp::now()` for AArch64 via `cntvct_el0/cntfrq_el0`, unblocking nanosleep/bpf_ktime_get_ns. `userspace/init` now spawns `/bin/benchmark` so we can exercise userspace signal paths once scheduling is healthy.
+- Next immediate validation steps: capture UART again and confirm the `AXIOM BENCHMARK RESULTS` banner is present, `BPF Load Time Summary`/`Timer Interrupt Interval` lines print, and the `w`/`p` markers follow `...SsjZ01TUu`. If any portion is still missing (e.g., `w`/`p` don't appear), instrument the syscall path and benchmark loader to see whether the userspace payload is stalling or losing MMIO access.
 - If sequence ends with `X!`, panic occurred after marker `X` and before next expected marker.
 - If marker stream stops without `!`, system likely hung/rebooted before panic handler.
 

@@ -21,6 +21,45 @@ This document contains benchmark results for the Axiom kernel and provides metho
 
 **Note**: These measurements are from QEMU emulation. Hardware measurements on Raspberry Pi 5 will provide more accurate real-world performance data, especially for interrupt latency.
 
+## Axiom Benchmark Results (Raspberry Pi 5)
+
+### Test Environment
+- **Platform**: Raspberry Pi 5 Model B Rev 1.0 (8GB)
+- **Kernel**: `axiom-ebpf` built via `./scripts/build-rpi5.sh release` with `--features embedded-rpi5`
+- **Storage**: FAT32 SD card boot partition with firmware blobs (`start4.elf`, `fixup4.dat`, overlays) and the deployed `kernel8.img`
+- **Capture**: Raspberry Pi Debug Probe UART port (`/dev/serial/by-id/usb-Raspberry_Pi_Debug_Probe__CMSIS-DAP__E6633861A355B838-if01`)
+- **Instrumentation**: Marker stream emits scheduler/trampoline (`SsjZ01TUu`) and syscall hooks (`w`, `p`)
+
+### Current Status
+- Boot now reaches `...SsjZ01TUu`, showing PID 1 is scheduled and the task-entry trampoline executes before branching into `/bin/init`.
+- `/bin/benchmark` is launched, but we are still awaiting the `AXIOM BENCHMARK RESULTS` banner plus the downstream `write`/`bpf` syscall markers (`w`, `p`) in the captured UART trace.
+- Once that full trace is stable, we will close out the Pi5 benchmark table below with real numbers and complete milestone M3.
+
+### Measurement Plan (Pending Data)
+
+| Metric | Target | Notes |
+|--------|--------|-------|
+| Boot to init | <500 ms | Capture HPET delta when `init` spawns benchmark via `boot_time_ns` log |
+| BPF load time | <20 µs (2-insn), <60 µs (100-insn) | Use `/bin/benchmark` runs; report min/max/avg for 10 iterations |
+| Timer interrupt interval | TBD | Use the benchmark’s ringbuf output to compute `bpf_ktime_get_ns()` deltas |
+| UART/syscall confirmation | `AXIOM BENCHMARK RESULTS` + `w/p` markers | Use `grep -ao '{|}~[0-9A-Za-z!]*'` to verify instrumentation is firing |
+
+### Run Checklist
+1. `./scripts/build-rpi5.sh release`
+2. `sha256sum target/aarch64-unknown-none/release/kernel8.img`
+3. Mount SD (`/dev/sda1`), copy kernel, `sync`, `sha256sum /mnt/rpi5-boot/kernel8.img`, `umount`
+4. Clear capture file: `: > uart.clean.log`
+5. Capture UART:
+   ```bash
+   PORT=/dev/serial/by-id/usb-Raspberry_Pi_Debug_Probe__CMSIS-DAP__E6633861A355B838-if01
+   sudo timeout 70s cat "$PORT" | tr -d "\r" | tee uart.clean.log >/dev/null || true
+   ```
+6. Parse markers: `grep -ao '{|}~[0-9A-Za-z!]*' uart.clean.log | tail -n 1` (expect `...SsjZ01TUu` + `w/p`)
+7. Look for benchmark banner & summary: `rg -n "AXIOM BENCHMARK RESULTS|BPF Load Time Summary|Timer Interrupt Interval" uart.clean.log`
+8. Archive run metadata (hashes, boot time, notes).
+
+### Linux Comparison Methodology
+
 ## Linux Baseline Results (RPi5, Raspberry Pi OS 64-bit)
 
 These Linux measurements were captured on Raspberry Pi 5 hardware to establish a real-device baseline before running Axiom on the same platform.

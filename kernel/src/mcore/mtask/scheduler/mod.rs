@@ -5,6 +5,8 @@ use core::arch::x86_64::_fxsave;
 use core::cell::UnsafeCell;
 use core::mem::swap;
 use core::pin::Pin;
+#[cfg(all(target_arch = "aarch64", feature = "rpi5"))]
+use core::sync::atomic::{AtomicBool, Ordering};
 
 use cleanup::TaskCleanup;
 #[cfg(target_arch = "x86_64")]
@@ -21,10 +23,37 @@ use crate::mcore::context::ExecutionContext;
 use crate::mcore::mtask::scheduler::global::GlobalTaskQueue;
 use crate::mcore::mtask::scheduler::switch::switch_impl;
 use crate::mcore::mtask::task::Task;
+#[cfg(all(target_arch = "aarch64", feature = "rpi5"))]
+use crate::mcore::mtask::process::Process;
 
 pub mod cleanup;
 pub mod global;
 mod switch;
+
+#[cfg(all(target_arch = "aarch64", feature = "rpi5"))]
+static SCHED_SWITCH_MARKER_SENT: AtomicBool = AtomicBool::new(false);
+#[cfg(all(target_arch = "aarch64", feature = "rpi5"))]
+static SCHED_SWITCH_TARGET_MARKER_SENT: AtomicBool = AtomicBool::new(false);
+
+#[cfg(all(target_arch = "aarch64", feature = "rpi5"))]
+#[inline(always)]
+fn dbg_mark(ch: u32) {
+    // SAFETY: Write to Pi 5 debug UART10 data register.
+    unsafe {
+        (0x10_7D00_1000 as *mut u32).write_volatile(ch);
+    }
+}
+
+#[cfg(all(target_arch = "aarch64", feature = "rpi5"))]
+#[inline(always)]
+fn dbg_hex_nibble(n: u8) -> u32 {
+    let v = n & 0x0F;
+    if v < 10 {
+        (b'0' + v) as u32
+    } else {
+        (b'a' + (v - 10)) as u32
+    }
+}
 
 #[derive(Debug)]
 pub struct Scheduler {
@@ -82,6 +111,27 @@ impl Scheduler {
                 return;
             };
 
+            #[cfg(all(target_arch = "aarch64", feature = "rpi5"))]
+            if !SCHED_SWITCH_MARKER_SENT.swap(true, Ordering::Relaxed) {
+                dbg_mark(b's' as u32);
+            }
+            #[cfg(all(target_arch = "aarch64", feature = "rpi5"))]
+            if !SCHED_SWITCH_TARGET_MARKER_SENT.swap(true, Ordering::Relaxed) {
+                // k: switched to root-process kernel task
+                // j: switched to non-root process task (expected for /bin/init)
+                if next_task.process().pid() == Process::root().pid() {
+                    dbg_mark(b'k' as u32);
+                } else {
+                    dbg_mark(b'j' as u32);
+                }
+
+                // Emit target PID low byte as two hex chars: Zhh
+                let pid = (next_task.process().pid().as_u64() & 0xFF) as u8;
+                dbg_mark(b'Z' as u32);
+                dbg_mark(dbg_hex_nibble(pid >> 4));
+                dbg_mark(dbg_hex_nibble(pid));
+            }
+
             log::info!("reschedule: switching to task {}", next_task.id());
 
             #[cfg(target_arch = "x86_64")]
@@ -96,7 +146,9 @@ impl Scheduler {
                     ExecutionContext::load().set_tss_rsp0(rsp0);
                 }
             }
-            #[cfg(target_arch = "aarch64")]
+            #[cfg(all(target_arch = "aarch64", feature = "rpi5"))]
+            let cr3_value = 0;
+            #[cfg(all(target_arch = "aarch64", not(feature = "rpi5")))]
             let cr3_value = next_task
                 .process()
                 .with_address_space(|as_| as_.ttbr0_value());

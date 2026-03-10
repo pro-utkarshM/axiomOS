@@ -170,6 +170,31 @@ pub fn init_task_stack(stack_top: usize, entry_point: usize, arg: usize) -> usiz
 /// `naked` attribute is used because this is a trampoline that doesn't follow
 /// standard C calling convention.
 #[unsafe(naked)]
+#[cfg(feature = "rpi5")]
+pub unsafe extern "C" fn task_entry_trampoline() {
+    core::arch::naked_asm!(
+        // Marker: reached task entry trampoline.
+        "movz x9, #0x1000",
+        "movk x9, #0x7d00, lsl #16",
+        "movk x9, #0x0010, lsl #32",
+        "mov w10, #0x54", // 'T'
+        "str w10, [x9]",
+        // Enable interrupts
+        "msr daifclr, #2",
+        // x19 contains the argument
+        // x20 contains the actual entry point
+        // x21 contains the exit function
+        "mov x0, x19",
+        "mov x30, x21", // Set LR to exit function
+        // Marker: branching to actual task entry point.
+        "mov w10, #0x55", // 'U'
+        "str w10, [x9]",
+        "br x20",
+    );
+}
+
+#[unsafe(naked)]
+#[cfg(not(feature = "rpi5"))]
 pub unsafe extern "C" fn task_entry_trampoline() {
     core::arch::naked_asm!(
         // Enable interrupts

@@ -49,34 +49,31 @@ What changed is execution clarity on Raspberry Pi 5 bring-up and benchmark gatin
 
 ### Pi5 Bring-up Status (Evidence-Based)
 
-- Axiom on RPi5 now reaches stable post-init idle without panic.
-- Latest verified UART marker sequence:
-  - `{|}~1234567abyzZcdenrRAJKLTVWXUMVWXNOPBCDEFGHIsuvwxopqfghijklm89ABnF`
-- The `...nF` tail is important:
-  - `n` = missing block device `id=0`
-  - `F` = intentional idle fallback (not panic)
-- This means early boot, MMU, core init, and post-init control flow are stable on Pi5.
+- Axiom on Pi5 now reaches stable post-init idle without panic, and the interrupt/marker trace now shows `...Rm89ABCDESsjZ01TUu`. That proves:
+  - The scheduler forced switch (`S`) picked PID 1 (`jZ01`), so `/bin/init` is scheduled.
+  - The task-entry trampoline executes (`T`), branch to the process entry occurs (`U`), and the process-level trampoline emits `u`.
+  - Storage driver/path now produces a clean `F` (no `n`), so `BlockDevices::by_id(0)` is wired and the kernel is not idling because of missing storage.
+  - The benchmark stub reaches its entry trampoline, though we still need to capture the `AXIOM BENCHMARK RESULTS` banner and `w`/`p` markers to complete the measurement.
 
 ### Current Blocker
 
-- Storage path is not complete on Pi5 bring-up:
-  - block device registration for `BlockDevices::by_id(0)` is missing in the tested runtime path.
-- Because of that, `/bin/init` is not active yet on Pi5.
-- This is now the critical path to hardware userspace benchmarks.
+- The remaining gap is full userspace benchmark telemetry:
+  - `/bin/benchmark` is launched but we still need to observe its banner (no ASCII snippet yet) and the follow-on `write`/`bpf` syscalls (`w/p`) so we can extract BPF load and timer interval metrics.
+  - Once those streams appear, we can treat M3 as complete and proceed to hardware benchmark collection.
 
 ### Milestone Ladder (Execution Plan)
 
 | Milestone | Scope | Status | Exit Criteria |
 |-----------|-------|--------|---------------|
 | **M1** | Pi5 boot stability | ✅ Done | Reproducible marker progression to `...nF` with no panic |
-| **M2** | Block device registration + rootfs mount | 🔄 Next | `BlockDevices::by_id(0)` available; root filesystem mounts on Pi5 |
-| **M3** | Run userspace benchmark binary on Pi5 | ⏳ Pending M2 | `/bin/benchmark` executes reliably on hardware across repeated boots |
+| **M2** | Block device registration + rootfs mount | ✅ Done | `BlockDevices::by_id(0)` available, root filesystem mounts, and PID 1 is scheduled |
+| **M3** | Run userspace benchmark binary on Pi5 | 🔄 In Progress | `/bin/benchmark` launches but needs repeated serial/`w/p` validation before claiming success |
 | **M4** | Publish matched Axiom vs Linux benchmark table | ⏳ Pending M3 | 5-run matched measurements (boot, memory, BPF load, latency) with methodology |
 
 ### Benchmarking Implication
 
-- We can already benchmark early boot stability and stage timing from UART markers.
-- We should not publish full Pi5 Axiom userspace performance claims until M2 and M3 are complete.
+- We can already benchmark boot-stage timing from UART markers, and with `...SsjZ01TUu` the benchmark entry path is now visible for instrumentation.
+- We should continue capturing the `AXIOM BENCHMARK RESULTS` stream (including `w`/`p` syscall markers) before promoting any Pi5 performance claims in the proposal or the benchmarks doc; once that trace is steady we can close M3.
 
 ---
 

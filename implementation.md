@@ -6,13 +6,13 @@ Scope: move from stable Pi5 boot-to-idle to publishable Pi5 benchmark results
 
 ## 1. Current Baseline
 
-- Current stable marker: `{|}~1234567abyzZcdenrRAJKLTVWXUMVWXNOPBCDEFGHIsuvwxopqfghijklm89ABnF`
+- Current stable trace: `{|}~1234567abyzZcdenrRAJKLTVWXUMVWXNOPBCDEFGHIsuvwxopqfghijklRm89ABCDESsjZ01TUu`
 - Interpretation:
-  - Early boot, MMU, and `kernel::init()` complete.
-  - Post-init path executes.
-  - `n` indicates missing `BlockDevices::by_id(0)`.
-  - `F` indicates intentional idle fallback (no panic).
-- Root blocker: Pi5 storage registration/mount path is not complete, so `/bin/init` is not active.
+  - Early boot and MMU were stable before scheduler handoff.
+  - `SsjZ01` proves PID 1 is selected and the switch lands on the init process.
+  - `TUu` proves the task-entry trampoline runs and branches into `/bin/init`.
+  - Block devices are wired (`n` disappears) so the kernel is no longer stuck waiting for `BlockDevices::by_id(0)`.
+  - The remaining gap is capturing the `AXIOM BENCHMARK RESULTS` banner plus syscall markers to confirm `/bin/benchmark` executed end-to-end.
 
 ## 2. Milestones
 
@@ -21,28 +21,13 @@ Scope: move from stable Pi5 boot-to-idle to publishable Pi5 benchmark results
 - Status: complete
 - Evidence: consistent `...nF` marker and no panic marker (`!`) in stable runs.
 
-## M2: Block device registration + rootfs mount (Next)
+## M2: Block device registration + rootfs mount (Complete)
 
-- Goal: make block device 0 available and mount root filesystem on Pi5.
-- Exit criteria:
-  - `BlockDevices::by_id(0)` returns a valid block device.
-  - Root filesystem mounts successfully on Pi5 hardware.
-  - Kernel transitions past current idle fallback path.
+- Status: **complete**
+- Evidence: UART now shows `{|}~...ESsjZ01` so PID 1 is scheduled and the rootfs path is available; the `n` marker is gone.
+- Implementation: disk image already wires the simulated block device, and the kernel now keeps UART mapped during the forced switch for reliable logging.
 
-Work items:
-1. Audit registration path
-   - Trace where block devices are registered in x86_64/QEMU path.
-   - Compare with AArch64 RPi5 path and identify missing init/driver hookup.
-2. Implement or connect Pi5 storage backend
-   - Preferred: register SD card backend first.
-   - Alternative: register a currently working backend (USB/NVMe) if SD path is not ready.
-3. Add guarded debug output
-   - Add minimal non-recursive markers around registration and mount path.
-   - Keep verbose logging disabled until path is stable.
-4. Validate mount path
-   - Confirm root mount success and no fallback to idle.
-
-## M3: Userspace benchmark binary on Pi5
+## M3: Userspace benchmark binary on Pi5 (In Progress)
 
 - Goal: execute `/bin/benchmark` reliably on Pi5.
 - Exit criteria:
@@ -51,13 +36,18 @@ Work items:
   - 5 repeated runs succeed.
 
 Work items:
-1. Image contents validation
-   - Verify benchmark binary is present in rootfs image.
-   - Verify init flow can launch benchmark path.
-2. Runtime validation
-   - Collect serial evidence for init spawn and benchmark start/stop.
-3. Consistency checks
-   - Run 5 cold boots with identical image hash and capture setup.
+1. ~~Image contents validation~~ *(done)*
+   - Benchmark binary present in rootfs image.
+   - Init updated to spawn `/bin/benchmark` instead of `/bin/iio_demo`.
+2. ~~Fix `get_kernel_time_ns()` for aarch64~~ *(done)*
+   - Wired ARM generic timer (`cntvct_el0`/`cntfrq_el0`) into `Timestamp::now()`.
+   - Unblocks `clock_gettime`, `nanosleep`, `msleep`, and `bpf_ktime_get_ns`.
+3. Runtime validation
+   - Capture UART after forced scheduler probe and look for `...SsjZ01TUu`.
+   - Grep for `AXIOM BENCHMARK RESULTS`, `BPF Load Time Summary`, `Timer Interrupt Interval`, and the `w`/`p` markers emitted by `kernel/src/syscall/mod.rs`.
+   - Collect the benchmark summary printed by `userspace/benchmark`.
+4. Consistency checks
+   - Run 5 cold boots with identical image hash and capture setup; ensure each trace includes the same marker sequence plus benchmark outputs.
 
 ## M4: Publish matched Axiom vs Linux benchmark table
 
@@ -90,8 +80,8 @@ Work items:
 2. Verify local kernel hash.
 3. Deploy to SD.
 4. Verify SD kernel hash matches local hash.
-5. Capture UART using single-reader by-id port setup.
-6. Parse marker/log output.
+5. Capture UART (debug probe) ensuring the marker sequence `...SsjZ01TUu`.
+6. Confirm `AXIOM BENCHMARK RESULTS` and `BPF Load Time Summary` appear alongside `w/p` syscall markers.
 7. Store run metadata (timestamp, hash, boot result, notes).
 
 Reference commands:

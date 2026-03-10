@@ -8,6 +8,8 @@ use core::alloc::Layout;
 use core::ffi::c_void;
 use core::fmt::{Debug, Formatter};
 use core::ptr;
+#[cfg(all(target_arch = "aarch64", feature = "rpi5"))]
+use core::sync::atomic::{AtomicBool, Ordering};
 
 use conquer_once::spin::OnceCell;
 use kernel_elfloader::{ElfFile, ElfLoader};
@@ -72,6 +74,18 @@ impl ElfSegments {
 }
 
 static ROOT_PROCESS: OnceCell<Arc<Process>> = OnceCell::uninit();
+
+#[cfg(all(target_arch = "aarch64", feature = "rpi5"))]
+static TRAMPOLINE_MARKER_SENT: AtomicBool = AtomicBool::new(false);
+
+#[cfg(all(target_arch = "aarch64", feature = "rpi5"))]
+#[inline(always)]
+fn dbg_mark(ch: u32) {
+    // SAFETY: Write to Pi 5 debug UART10 data register.
+    unsafe {
+        (0x10_7D00_1000 as *mut u32).write_volatile(ch);
+    }
+}
 
 pub struct Process {
     pid: ProcessId,
@@ -512,6 +526,11 @@ pub enum CreateProcessError {
 }
 
 extern "C" fn trampoline(_arg: *mut c_void) {
+    #[cfg(all(target_arch = "aarch64", feature = "rpi5"))]
+    if !TRAMPOLINE_MARKER_SENT.swap(true, Ordering::Relaxed) {
+        dbg_mark(b'u' as u32);
+    }
+
     log::info!("Trampoline started");
     let ctx = ExecutionContext::load();
     log::info!("Trampoline: context loaded");
