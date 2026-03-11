@@ -3,6 +3,7 @@ use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
 use alloc::string::{String, ToString};
 use alloc::sync::Arc;
+use alloc::vec;
 use alloc::vec::Vec;
 use core::alloc::Layout;
 use core::ffi::c_void;
@@ -579,6 +580,18 @@ extern "C" fn trampoline(_arg: *mut c_void) {
     let mut memapi = LowerHalfMemoryApi::new(current_process.clone());
 
     log::info!("Trampoline: allocating memory for executable");
+    let mut executable_file_buf = vec![0_u8; stat.size];
+    let mut offset = 0;
+    loop {
+        let read = node
+            .read(&mut executable_file_buf[offset..], offset)
+            .expect("should be able to read");
+        if read == 0 {
+            break;
+        }
+        offset += read;
+    }
+
     let mut executable_file_allocation = memapi
         .allocate(
             Location::Anywhere,
@@ -588,29 +601,33 @@ extern "C" fn trampoline(_arg: *mut c_void) {
         )
         .expect("should be able to allocate memory for executable file");
     log::info!("Trampoline: memory allocated");
-    let buf = executable_file_allocation.as_mut();
-    let mut offset = 0;
-    loop {
-        let read = node
-            .read(&mut buf[offset..], offset)
-            .expect("should be able to read");
-        if read == 0 {
-            break;
-        }
-        offset += read;
-    }
+
+    current_process.with_address_space(|as_| {
+        as_.with_active(|_| {
+            executable_file_allocation
+                .as_mut()
+                .copy_from_slice(&executable_file_buf);
+        })
+    });
+
     log::info!("Trampoline: executable read into memory");
-    let executable_file_allocation = memapi
-        .make_executable(executable_file_allocation)
+    let executable_file_allocation = current_process
+        .with_address_space(|as_| as_.with_active(|_| memapi.make_executable(executable_file_allocation)))
         .expect("should be able to make allocation executable");
 
-    log::info!("Trampoline: parsing ELF");
-    let elf_file = ElfFile::try_parse(executable_file_allocation.as_ref())
-        .expect("should be able to parse elf binary");
     log::info!("Trampoline: ELF parsed, loading...");
-    let elf_image = ElfLoader::new(memapi.clone())
-        .load(elf_file)
-        .expect("should be able to load elf file");
+    let code_ptr = ElfFile::try_parse(executable_file_buf.as_slice())
+        .expect("should be able to parse elf binary")
+        .entry();
+    let elf_image = current_process.with_address_space(|as_| {
+        as_.with_active(|_| {
+            let elf_file = ElfFile::try_parse(executable_file_buf.as_slice())
+                .expect("should be able to parse elf binary");
+            ElfLoader::new(memapi.clone())
+                .load(elf_file)
+                .expect("should be able to load elf file")
+        })
+    });
     log::info!("Trampoline: ELF loaded");
     #[cfg(all(target_arch = "aarch64", feature = "rpi5"))]
     if !TRAMPOLINE_ELF_STAGE_SENT.swap(true, Ordering::Relaxed) {
@@ -630,8 +647,12 @@ extern "C" fn trampoline(_arg: *mut c_void) {
             )
             .expect("should be able to allocate TLS data");
 
-        let slice = tls_alloc.as_mut();
-        slice.copy_from_slice(master_tls.as_ref());
+        current_process.with_address_space(|as_| {
+            as_.with_active(|_| {
+                let slice = tls_alloc.as_mut();
+                slice.copy_from_slice(master_tls.as_ref());
+            })
+        });
 
         #[cfg(target_arch = "x86_64")]
         FsBase::write(tls_alloc.start());
@@ -677,7 +698,6 @@ extern "C" fn trampoline(_arg: *mut c_void) {
         )
         .expect("should be able to allocate userspace stack");
 
-    let code_ptr = elf_file.entry();
     let ustack_rsp = ustack_allocation.start() + ustack_allocation.len().into_u64();
     log::info!(
         "Trampoline: ustack_rsp={:#x}, entry_point={:#x}",
