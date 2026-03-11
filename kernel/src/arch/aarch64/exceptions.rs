@@ -10,6 +10,8 @@ static SVC_MARKER_SENT: AtomicBool = AtomicBool::new(false);
 static DATA_ABORT_MARKER_SENT: AtomicBool = AtomicBool::new(false);
 #[cfg(feature = "rpi5")]
 static INSTR_ABORT_MARKER_SENT: AtomicBool = AtomicBool::new(false);
+#[cfg(feature = "rpi5")]
+static UNKNOWN_SYNC_LATCHED: AtomicBool = AtomicBool::new(false);
 
 #[cfg(feature = "rpi5")]
 #[inline(always)]
@@ -28,6 +30,14 @@ fn dbg_hex_nibble(v: u64) -> u32 {
         0..=9 => (b'0' + (v as u8 & 0xF)) as u32,
         10..=15 => (b'A' + ((v as u8 & 0xF) - 10)) as u32,
         _ => b'?' as u32,
+    }
+}
+
+#[cfg(feature = "rpi5")]
+#[inline(always)]
+fn dbg_hex_u32(v: u32) {
+    for shift in (0..8).rev() {
+        dbg_mark(dbg_hex_nibble((v as u64) >> (shift * 4)));
     }
 }
 
@@ -108,6 +118,9 @@ pub extern "C" fn check_preemption(_frame: *mut ExceptionContext) {
 /// saved on the stack. It must not unwind.
 #[unsafe(no_mangle)]
 pub extern "C" fn handle_sync_exception(ctx: &mut ExceptionContext) {
+    #[cfg(feature = "rpi5")]
+    dbg_mark(b'j' as u32);
+
     let esr: u64;
     let elr: u64;
     let far: u64;
@@ -122,6 +135,10 @@ pub extern "C" fn handle_sync_exception(ctx: &mut ExceptionContext) {
     let ec = (esr >> 26) & 0x3F; // Exception class
     let iss = esr & 0x1FFFFFF; // Instruction specific syndrome
 
+    #[cfg(feature = "rpi5")]
+    dbg_mark(b'k' as u32);
+
+    #[cfg(not(feature = "rpi5"))]
     log::debug!(
         "Sync exception: EC={:#x}, ISS={:#x}, ELR={:#x}, FAR={:#x}",
         ec,
@@ -137,7 +154,11 @@ pub extern "C" fn handle_sync_exception(ctx: &mut ExceptionContext) {
             if !SVC_MARKER_SENT.swap(true, Ordering::Relaxed) {
                 dbg_mark(b'V' as u32);
             }
+            #[cfg(feature = "rpi5")]
+            dbg_mark(b'l' as u32);
             crate::arch::aarch64::syscall::handle_syscall(ctx);
+            #[cfg(feature = "rpi5")]
+            dbg_mark(b'm' as u32);
         }
         0x20 | 0x21 => {
             // Instruction abort from lower/same EL
@@ -158,11 +179,47 @@ pub extern "C" fn handle_sync_exception(ctx: &mut ExceptionContext) {
         _ => {
             #[cfg(feature = "rpi5")]
             {
+                if UNKNOWN_SYNC_LATCHED.swap(true, Ordering::Relaxed) {
+                    // Unknown-sync diagnostics already emitted once. Hold CPU here
+                    // to avoid marker floods from repeated trap/return cycles.
+                    loop {
+                        // SAFETY: WFI in exception context is safe for a debug halt loop.
+                        unsafe { asm!("wfi", options(nomem, nostack, preserves_flags)) };
+                    }
+                }
+
                 // Unhandled sync exception class: emit Y + two hex digits of EC.
                 dbg_mark(b'Y' as u32);
                 dbg_mark(dbg_hex_nibble(ec >> 4));
                 dbg_mark(dbg_hex_nibble(ec));
+
+                // Emit ELR and ESR low 32-bit hex for precise fault localization.
+                dbg_mark(b'E' as u32);
+                dbg_hex_u32(elr as u32);
+                dbg_mark(b'R' as u32);
+                dbg_hex_u32(esr as u32);
+
+                // Emit SPSR and FAR low 32-bit values for EL0 state + fault address context.
+                dbg_mark(b'P' as u32);
+                dbg_hex_u32(ctx.spsr as u32);
+                dbg_mark(b'F' as u32);
+                dbg_hex_u32(far as u32);
+
+                // Best-effort: read the 32-bit instruction at ELR.
+                // If this read itself faults, UNKNOWN_SYNC_LATCHED ensures we halt.
+                dbg_mark(b'W' as u32);
+                let insn = unsafe { (elr as *const u32).read_volatile() };
+                dbg_hex_u32(insn);
+
+                dbg_mark(b'!' as u32);
+
+                // Stop after first unknown-sync packet so UART output remains analyzable.
+                loop {
+                    // SAFETY: WFI in exception context is safe for a debug halt loop.
+                    unsafe { asm!("wfi", options(nomem, nostack, preserves_flags)) };
+                }
             }
+            #[cfg(not(feature = "rpi5"))]
             panic!(
                 "Unhandled synchronous exception: EC={:#x}, ISS={:#x}, ELR={:#x}",
                 ec, iss, elr
