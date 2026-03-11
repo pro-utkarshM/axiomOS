@@ -43,6 +43,47 @@ fn dbg_hex_u32(v: u32) {
     }
 }
 
+#[cfg(feature = "rpi5")]
+#[inline(always)]
+fn dbg_hex_u64(v: u64) {
+    for shift in (0..16).rev() {
+        dbg_mark(dbg_hex_nibble(v >> (shift * 4)));
+    }
+}
+
+#[cfg(feature = "rpi5")]
+#[inline(always)]
+fn el0_va_to_pa(va: u64) -> Option<usize> {
+    let par: u64;
+    // SAFETY: AT+PAR_EL1 only probes translation state and does not dereference
+    // the provided VA; this avoids taking nested faults while debugging.
+    unsafe {
+        asm!("at s1e0r, {}", in(reg) va);
+        asm!("isb");
+        asm!("mrs {}, par_el1", out(reg) par);
+    }
+
+    // PAR_EL1[0] == 1 indicates translation fault.
+    if (par & 1) != 0 {
+        return None;
+    }
+
+    // PAR_EL1 provides PA[47:12] on success; preserve original page offset.
+    let pa = ((par as usize) & 0x0000_FFFF_FFFF_F000) | ((va as usize) & 0xFFF);
+    Some(pa)
+}
+
+#[cfg(feature = "rpi5")]
+#[inline(always)]
+fn read_u32_at_el0_va(va: u64) -> Option<u32> {
+    let pa = el0_va_to_pa(va)?;
+    let kva = crate::arch::aarch64::mem::phys_to_virt(pa);
+    // SAFETY: `kva` is the direct-map alias of translated physical memory.
+    // We only use this for crash-time telemetry.
+    let word = unsafe { (kva as *const u32).read_volatile() };
+    Some(word)
+}
+
 /// Exception vector table
 #[repr(C, align(2048))]
 pub struct ExceptionVectorTable {
@@ -199,6 +240,16 @@ pub extern "C" fn handle_sync_exception(ctx: &mut ExceptionContext) {
                 dbg_hex_u32(spsr as u32);
                 dbg_mark(b'F' as u32);
                 dbg_hex_u32(far as u32);
+
+                // Emit instruction words at ELR/ELR+4 and full SP_EL0 from saved context.
+                let insn0 = read_u32_at_el0_va(elr).unwrap_or(0xFFFF_FFFF);
+                let insn1 = read_u32_at_el0_va(elr.wrapping_add(4)).unwrap_or(0xFFFF_FFFF);
+                dbg_mark(b'I' as u32);
+                dbg_hex_u32(insn0);
+                dbg_mark(b'J' as u32);
+                dbg_hex_u32(insn1);
+                dbg_mark(b'S' as u32);
+                dbg_hex_u64(ctx.sp_el0);
 
                 dbg_mark(b'!' as u32);
 
