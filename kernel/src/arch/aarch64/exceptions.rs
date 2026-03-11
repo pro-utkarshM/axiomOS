@@ -14,10 +14,14 @@ static INSTR_ABORT_MARKER_SENT: AtomicBool = AtomicBool::new(false);
 #[cfg(feature = "rpi5")]
 #[inline(always)]
 fn dbg_mark(ch: u32) {
-    // SAFETY: Write to Pi 5 debug UART10 data register through the
-    // higher-half direct map alias so this remains valid after TTBR0 switch.
+    const UART_BASE: usize = 0xFFFF_8010_7D00_1000;
+    const UART_FR: usize = UART_BASE + 0x18;
+    const UART_TXFF: u32 = 1 << 5;
+    // SAFETY: Accessing the debug UART registers via the higher-half alias.
     unsafe {
-        (0xFFFF_8010_7D00_1000 as *mut u32).write_volatile(ch);
+        // Pace writes so marker bursts are not dropped when TX FIFO is full.
+        while (UART_FR as *const u32).read_volatile() & UART_TXFF != 0 {}
+        (UART_BASE as *mut u32).write_volatile(ch);
     }
 }
 
