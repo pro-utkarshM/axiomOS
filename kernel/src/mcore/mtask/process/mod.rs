@@ -549,18 +549,6 @@ extern "C" fn trampoline(_arg: *mut c_void) {
     let current_process = current_task.process().clone();
     log::info!("Trampoline: current process got");
 
-    #[cfg(target_arch = "aarch64")]
-    {
-        // Ensure user VA allocations/copies in this trampoline are performed
-        // against the current process page tables (TTBR0), not a stale mapping.
-        let ttbr0 = current_process.with_address_space(|as_| as_.ttbr0_value());
-        // SAFETY: We are in kernel context and switching TTBR0 to the current
-        // process address space before touching user virtual addresses.
-        unsafe {
-            crate::arch::aarch64::paging::set_ttbr0(ttbr0);
-        }
-    }
-
     #[cfg(all(target_arch = "aarch64", feature = "rpi5"))]
     if !TRAMPOLINE_OPEN_STAGE_SENT.swap(true, Ordering::Relaxed) {
         dbg_mark(b'q' as u32);
