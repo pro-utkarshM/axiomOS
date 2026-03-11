@@ -10,8 +10,6 @@ static SVC_MARKER_SENT: AtomicBool = AtomicBool::new(false);
 static DATA_ABORT_MARKER_SENT: AtomicBool = AtomicBool::new(false);
 #[cfg(feature = "rpi5")]
 static INSTR_ABORT_MARKER_SENT: AtomicBool = AtomicBool::new(false);
-#[cfg(feature = "rpi5")]
-static UNKNOWN_SYNC_LATCHED: AtomicBool = AtomicBool::new(false);
 
 #[cfg(feature = "rpi5")]
 #[inline(always)]
@@ -124,12 +122,14 @@ pub extern "C" fn handle_sync_exception(ctx: &mut ExceptionContext) {
     let esr: u64;
     let elr: u64;
     let far: u64;
+    let spsr: u64;
 
     // SAFETY: Reading exception registers (ESR, ELR, FAR) is safe in an exception handler.
     unsafe {
         asm!("mrs {}, esr_el1", out(reg) esr);
         asm!("mrs {}, elr_el1", out(reg) elr);
         asm!("mrs {}, far_el1", out(reg) far);
+        asm!("mrs {}, spsr_el1", out(reg) spsr);
     }
 
     let ec = (esr >> 26) & 0x3F; // Exception class
@@ -179,15 +179,6 @@ pub extern "C" fn handle_sync_exception(ctx: &mut ExceptionContext) {
         _ => {
             #[cfg(feature = "rpi5")]
             {
-                if UNKNOWN_SYNC_LATCHED.swap(true, Ordering::Relaxed) {
-                    // Unknown-sync diagnostics already emitted once. Hold CPU here
-                    // to avoid marker floods from repeated trap/return cycles.
-                    loop {
-                        // SAFETY: WFI in exception context is safe for a debug halt loop.
-                        unsafe { asm!("wfi", options(nomem, nostack, preserves_flags)) };
-                    }
-                }
-
                 // Unhandled sync exception class: emit Y + two hex digits of EC.
                 dbg_mark(b'Y' as u32);
                 dbg_mark(dbg_hex_nibble(ec >> 4));
@@ -201,15 +192,9 @@ pub extern "C" fn handle_sync_exception(ctx: &mut ExceptionContext) {
 
                 // Emit SPSR and FAR low 32-bit values for EL0 state + fault address context.
                 dbg_mark(b'P' as u32);
-                dbg_hex_u32(ctx.spsr as u32);
+                dbg_hex_u32(spsr as u32);
                 dbg_mark(b'F' as u32);
                 dbg_hex_u32(far as u32);
-
-                // Best-effort: read the 32-bit instruction at ELR.
-                // If this read itself faults, UNKNOWN_SYNC_LATCHED ensures we halt.
-                dbg_mark(b'W' as u32);
-                let insn = unsafe { (elr as *const u32).read_volatile() };
-                dbg_hex_u32(insn);
 
                 dbg_mark(b'!' as u32);
 
