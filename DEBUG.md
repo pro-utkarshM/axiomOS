@@ -667,3 +667,70 @@ If none of these appear and sequence remains hard-stuck at `...0QX`, prioritize:
 ## 25. Build Artifact Note
 
 `disk.img` appears as an untracked artifact in this workspace and should not be committed.
+
+## 26. Late Session Update (March 11, 2026, evening)
+
+This section captures the most recent progression after the previous `...0QX`/`Y00` baseline.
+
+### 26.1 Marker outcomes observed in order
+
+1. A regression build produced a tight sync loop before `s`:
+   - `...TUuqrjkjkjkjk...`
+   - Interpretation: EL1 synchronous exceptions are firing repeatedly during trampoline read/load stage, before ELF-load-complete marker `s`.
+
+2. Reverted back to pre-regression trampoline path (restored `process/mod.rs` toward known stable behavior).
+
+3. Stable baseline was re-confirmed:
+   - `{|}~1234567abyzZcdenrRAJKLTVWXUMVWXNOPBCDEFGHIsuvwxopqfghijklRm89ABCDESsjZ01TUuqrst0QX67hjkY00E00211464R02000000P00000000F00000000IFFFFFFFFJFFAFFFAFS00000001001A6000!`
+
+4. Decoding of the stable packet (important):
+   - `Y00` = unknown synchronous exception class (EC=0x00)
+   - `E00211464` = ELR low 32 bits `0x00211464` (matches `/bin/init` entry)
+   - `R02000000` = ESR low 32 bits `0x02000000`
+   - `P00000000` = SPSR low 32 bits `0x00000000`
+   - `F00000000` = FAR low 32 bits `0x00000000`
+   - `IFFFFFFFF` and `JFFAFFFAF` = instruction words fetched via telemetry path at `ELR` and `ELR+4`
+   - `S00000001001A6000` = `SP_EL0` snapshot
+
+Conclusion remains: kernel reaches EL0 handoff path, but first userspace instruction stream at entry still appears invalid/corrupted in runtime context.
+
+### 26.2 Latest code change prepared after re-confirming baseline
+
+File changed:
+- `kernel/src/mcore/mtask/process/mod.rs`
+
+Intent:
+- keep ELF file bytes in a kernel-owned `Vec<u8>` (avoid relying on user allocation as parse source)
+- run `ElfLoader::load(...)` under active process TTBR0 on AArch64, with IRQ-masked wrapper:
+  - helper `with_process_address_space_active(...)`
+- avoid inserting `executable_file_allocation` into `executable_file_data` in this path (startup simplification for this experiment)
+
+### 26.3 Build result for current unvalidated attempt
+
+Built successfully via:
+- `./scripts/build-rpi5.sh release`
+
+Produced image:
+- `target/aarch64-unknown-none/release/kernel8.img`
+- size: `10860216`
+- sha256: `46ca8fcee7b85b0740205b343c6cd6b6487c19a35ba6ffa044fb0daa1b1cf8eb`
+
+Status of this specific image at the moment of writing:
+- build is complete
+- needs hardware flash + UART verification
+- expected success signal: progression beyond `...Y00...` into syscall/user markers (`w`, `p`) or benchmark text.
+
+### 26.4 Immediate next hardware check command set
+
+```bash
+sudo mount /dev/sda1 /mnt/rpi5-boot
+sudo cp -v target/aarch64-unknown-none/release/kernel8.img /mnt/rpi5-boot/kernel8.img
+sync
+sha256sum /mnt/rpi5-boot/kernel8.img
+sudo umount /mnt/rpi5-boot
+
+: > uart.clean.log
+sudo timeout 70s cat "$PORT" | tr -d '\r' | tee uart.clean.log >/dev/null || true
+grep -ao '{|}~[0-9A-Za-z!]*' uart.clean.log | tail -n 1
+```
+
