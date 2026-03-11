@@ -1,6 +1,6 @@
 # DEBUG LOG: Raspberry Pi 5 Bring-up (axiom-ebpf)
 
-Last updated: 2026-03-10
+Last updated: 2026-03-11
 Repo: `/home/utkarsh/Work/axiom-ebpf`
 Branch: `bench-host-results-qemu-debug`
 Base commit at capture time: `b7f7f3c`
@@ -553,3 +553,117 @@ Commits made during this debugging effort:
 - deployment mismatch issue is resolved (local and SD image hashes now intentionally checked each cycle).
 - marker stream reaches post-init idle path (`...nF`) without panic.
 - active blocker is functional storage registration, not early boot stability.
+
+## 21. March 11 Continuation (Authoritative Current State)
+
+This section supersedes the older `...nF` stopping point for current bring-up status.
+
+### 21.1 What changed after the `...nF` phase
+
+1. Storage/rootfs path was wired, and marker progress moved beyond idle into userspace handoff.
+2. Marker stream advanced through:
+   - `...SsjZ01TUu`
+   - then `...SsjZ01TUuqrst0QX`
+3. Syscall markers (`w` for first `SYS_WRITE`, `p` for first `SYS_BPF`) were added in `kernel/src/syscall/mod.rs`.
+4. Additional sync-exception markers were added:
+   - `V` (SVC), `I` (instruction abort), `D` (data abort), `Yxx` (unhandled EC), `Nks` (invalid vector path).
+5. Before-TTBR0 and before-ERET instrumentation was added:
+   - in process trampoline: `...t0Q`
+   - in userspace entry: `X` immediately before `eret`.
+
+### 21.2 Latest repeated marker (current baseline)
+
+Observed repeatedly on fresh captures:
+
+- `{|}~1234567abyzZcdenrRAJKLTVWXUMVWXNOPBCDEFGHIsuvwxopqfghijklRm89ABCDESsjZ01TUuqrst0QX`
+
+Interpretation:
+- Kernel init, scheduler, PID1 selection, task trampoline, process trampoline, TTBR0 switch, and pre-ERET all execute.
+- Failure/stop occurs at or immediately after EL0 entry (`eret`) before first observed userspace syscall marker (`w`).
+- No post-`X` `V/I/D/Y/N/w/p` has been consistently seen in this path yet.
+
+### 21.3 Important exception during investigation
+
+At one point the TTBR0 switch was temporarily skipped for Pi5 and marker reached:
+- `...0QXD!`
+
+That confirmed exception/panic visibility can return when page-table state changes, and informed the current working hypothesis:
+- the EL0 entry/return boundary is still fragile, and vector/exception routing needs tighter tracing exactly at lower-EL sync entry.
+
+### 21.4 Deployment/hash lessons (critical)
+
+A recurring blocker was stale SD payload. Multiple times:
+- local `kernel8.img` hash did not match `/mnt/rpi5-boot/kernel8.img`
+- marker output remained old until manual `cp` + `sync` + hash verification.
+
+Current mandatory rule:
+1. `sha256sum target/.../kernel8.img`
+2. copy to SD
+3. `sync`
+4. `sha256sum /mnt/rpi5-boot/kernel8.img`
+5. only then boot
+
+### 21.5 UART capture lessons (critical)
+
+Corrupted captures were repeatedly caused by:
+- multiple concurrent readers (`screen` + `cat`)
+- stale/append logs
+- ownership mismatch (`sudo tee` root-owned file)
+
+Current canonical one-reader flow:
+
+```bash
+PORT=/dev/serial/by-id/usb-Raspberry_Pi_Debug_Probe__CMSIS-DAP__E6633861A355B838-if01
+: > uart.clean.log
+sudo timeout 70s cat "$PORT" | tr -d '\r' | tee uart.clean.log >/dev/null || true
+grep -ao '{|}~[0-9A-Za-z!]*' uart.clean.log | tail -n 1
+```
+
+### 21.6 Current code-side diagnostic plan (next run)
+
+To isolate whether the first EL0 `svc`/abort reaches the lower-EL sync vector at all, assembly markers were added in:
+- `kernel/src/arch/aarch64/exception_vectors.S`
+
+Lower-EL sync path markers now emit:
+- `6` after `save_context`
+- `7` before `handle_sync_exception`
+- `8` after `handle_sync_exception`
+- `9` after `check_preemption`
+- `A` before `eret` back out of the exception path
+
+How to read with current suffix:
+- If marker stays at `...0QX` with no `6789A`, sync exceptions are not reaching this path (or fail before/inside `save_context`).
+- If `...0QX67...` appears, vector entry is alive and failure is deeper in Rust sync handling or return path.
+- If `...0QX6789A` appears repeatedly, syscalls are occurring and we should then see `w`/`p`.
+
+## 22. Current Reality Snapshot (March 11, 2026)
+
+- Pi5 now reaches post-init userspace handoff markers.
+- Rootfs/bin-init path is active up to EL0 transition preparation.
+- Remaining gap is EL0 execution + first syscall visibility after `eret`.
+- Benchmark publication (M4) is blocked until `w/p` and benchmark banner are stable in repeated runs.
+
+## 23. Current Files Most Relevant To Continue
+
+- `kernel/src/mcore/mtask/process/mod.rs` (trampoline, TTBR0, `qrst0Q`)
+- `kernel/src/arch/aarch64/context.rs` (`X` before `eret`)
+- `kernel/src/arch/aarch64/exception_vectors.S` (new `6789A` assembly markers)
+- `kernel/src/arch/aarch64/exceptions.rs` (`V/I/D/Yxx/Nks`)
+- `kernel/src/syscall/mod.rs` (`w`, `p`)
+- `userspace/init/src/main.rs` (`/bin/benchmark` spawn)
+- `userspace/benchmark/src/main.rs` (expected UART benchmark banner)
+
+## 24. Definition Of Progress For The Next Session
+
+The next session should produce at least one of:
+
+1. `...0QX6` (proves lower-EL sync vector entry after EL0 transition), or
+2. `...0QXw` / benchmark text (proves userspace syscall path is alive), or
+3. `...0QXV/I/D/Y..` (proves exception class is now observable post-ERET).
+
+If none of these appear and sequence remains hard-stuck at `...0QX`, prioritize:
+- vector-entry pre-stack instrumentation and/or EL0 entry-state verification (SPSR/ELR/SP + VBAR assumptions).
+
+## 25. Build Artifact Note
+
+`disk.img` appears as an untracked artifact in this workspace and should not be committed.

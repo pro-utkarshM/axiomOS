@@ -21,6 +21,14 @@ irq_stack_top:
 
 .section .text
 
+// Emit a single debug byte to the Pi5 debug UART through higher-half alias.
+// Clobbers x14/x15; use only after register context has been saved.
+.macro uart_mark ch
+    ldr     x14, =0xFFFF80107D001000
+    mov     w15, #\ch
+    str     w15, [x14]
+.endm
+
 // Macro to save context
 // Allocates stack space and saves x0-x30, ELR_EL1, SPSR_EL1
 .macro save_context
@@ -165,11 +173,19 @@ define_invalid_handler curr_el_spx_serror_handler, 3, 1
 
 lower_el_aarch64_sync_handler:
     save_context
+    // Lower-EL sync path markers:
+    // 6 = after save_context, 7 = before Rust handler,
+    // 8 = after Rust handler, 9 = after check_preemption, A = before ERET.
+    uart_mark 0x36
     mov     x0, sp
+    uart_mark 0x37
     bl      handle_sync_exception
+    uart_mark 0x38
     mov     x0, sp
     bl      check_preemption
+    uart_mark 0x39
     restore_context
+    uart_mark 0x41
     eret
 
 lower_el_aarch64_irq_handler:

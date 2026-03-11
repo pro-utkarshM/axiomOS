@@ -1,18 +1,18 @@
 # Axiom RPi5 Implementation Plan
 
-Last updated: 2026-03-10
+Last updated: 2026-03-11
 Owner: kernel bring-up track
 Scope: move from stable Pi5 boot-to-idle to publishable Pi5 benchmark results
 
 ## 1. Current Baseline
 
-- Current stable trace: `{|}~1234567abyzZcdenrRAJKLTVWXUMVWXNOPBCDEFGHIsuvwxopqfghijklRm89ABCDESsjZ01TUu`
+- Current stable trace: `{|}~1234567abyzZcdenrRAJKLTVWXUMVWXNOPBCDEFGHIsuvwxopqfghijklRm89ABCDESsjZ01TUuqrst0QX`
 - Interpretation:
   - Early boot and MMU were stable before scheduler handoff.
   - `SsjZ01` proves PID 1 is selected and the switch lands on the init process.
-  - `TUu` proves the task-entry trampoline runs and branches into `/bin/init`.
+  - `TUuqrst0QX` proves task/process trampolines run, TTBR0 is switched, and control reaches pre-`eret` userspace handoff.
   - Block devices are wired (`n` disappears) so the kernel is no longer stuck waiting for `BlockDevices::by_id(0)`.
-  - The remaining gap is capturing the `AXIOM BENCHMARK RESULTS` banner plus syscall markers to confirm `/bin/benchmark` executed end-to-end.
+  - The remaining gap is post-`eret` EL0/syscall visibility (`w`/`p`) and benchmark banner capture.
 
 ## 2. Milestones
 
@@ -44,7 +44,9 @@ Work items:
    - Unblocks `clock_gettime`, `nanosleep`, `msleep`, and `bpf_ktime_get_ns`.
 3. Runtime validation
    - Capture UART after forced scheduler probe and look for `...SsjZ01TUu`.
+   - Confirm progression reaches `...SsjZ01TUuqrst0QX`.
    - Grep for `AXIOM BENCHMARK RESULTS`, `BPF Load Time Summary`, `Timer Interrupt Interval`, and the `w`/`p` markers emitted by `kernel/src/syscall/mod.rs`.
+   - If still stuck at `...0QX`, use vector markers (`6789A`) from `exception_vectors.S` to classify whether lower-EL sync entry is reached.
    - Collect the benchmark summary printed by `userspace/benchmark`.
 4. Consistency checks
    - Run 5 cold boots with identical image hash and capture setup; ensure each trace includes the same marker sequence plus benchmark outputs.
