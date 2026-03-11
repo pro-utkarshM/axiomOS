@@ -267,13 +267,13 @@ fn handle_panic(info: &PanicInfo) {
     }
 
     let location = info.location().unwrap();
-    error!(
+    kernel::serial_println!(
         "kernel panicked at {}:{}:{}:",
         location.file(),
         location.line(),
         location.column(),
     );
-    error!("{}", info.message());
+    kernel::serial_println!("{}", info.message());
 
     #[cfg(feature = "backtrace")]
     match kernel::backtrace::Backtrace::try_capture() {

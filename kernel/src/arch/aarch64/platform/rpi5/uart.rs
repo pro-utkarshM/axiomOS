@@ -124,9 +124,9 @@ impl Rp1Uart {
 
     /// Send a single byte (blocking)
     pub fn putc(&self, c: u8) {
-        // On Pi 5 early boot, write-only UART access is reliable via firmware-initialized
-        // debug UART. Avoid status-register polling here, which can fault before full
-        // peripheral/clock state is established.
+        // Wait for TX FIFO to have space
+        self.reg_fr().wait_clear(fr::TXFF);
+
         self.reg_dr().write(c as u32);
     }
 

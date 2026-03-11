@@ -3,7 +3,6 @@ use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
 use alloc::string::{String, ToString};
 use alloc::sync::Arc;
-use alloc::vec;
 use alloc::vec::Vec;
 use core::alloc::Layout;
 use core::ffi::c_void;
@@ -104,12 +103,13 @@ fn with_process_address_space_active<T, F>(process: &Arc<Process>, f: F) -> T
 where
     F: FnOnce() -> T,
 {
-    // SAFETY: Keep IRQs masked while TTBR0 is temporarily switched.
+    // SAFETY: While TTBR0 is temporarily switched via with_active(), keep IRQs masked
+    // because the rpi5 scheduler path does not currently save/restore TTBR0 on switch.
     unsafe {
         core::arch::asm!("msr daifset, #2", options(nostack, preserves_flags));
     }
     let out = process.with_address_space(|as_| as_.with_active(|_| f()));
-    // SAFETY: Restore IRQ mask state.
+    // SAFETY: Restore normal IRQ state after finishing user-AS memory access.
     unsafe {
         core::arch::asm!("msr daifclr, #2", options(nostack, preserves_flags));
     }
@@ -192,11 +192,11 @@ impl Process {
                 #[cfg(target_arch = "x86_64")]
                 VirtAddr::new(0xF000),
                 #[cfg(target_arch = "aarch64")]
-                VirtAddr::new(0x1_0000_0000), // Start at 2GB to avoid identity map (L0[0])
+                VirtAddr::new(0x2_0000_0000), // Start Location::Anywhere allocations at 8GB to leave 4GB (0x1_0000_0000) for Fixed ELF load segments
                 #[cfg(target_arch = "x86_64")]
                 0x0000_7FFF_FFFF_0FFF,
                 #[cfg(target_arch = "aarch64")]
-                0x0000_007F_0000_0000, // Size: ~510GB (Total user space is 256TB, minus 512GB start)
+                0x0000_007E_0000_0000, // Size adjusted
             ))),
             telemetry: Telemetry::default(),
             memory_regions: MemoryRegions::new(),
@@ -598,23 +598,80 @@ extern "C" fn trampoline(_arg: *mut c_void) {
     let mut memapi = LowerHalfMemoryApi::new(current_process.clone());
 
     log::info!("Trampoline: allocating memory for executable");
-    let mut executable_file_buf = vec![0_u8; stat.size];
-    let mut offset = 0;
-    loop {
-        let read = node
-            .read(&mut executable_file_buf[offset..], offset)
-            .expect("should be able to read");
-        if read == 0 {
-            break;
+    #[cfg(feature = "rpi5")]
+    dbg_mark(b'A' as u32);
+    let mut executable_file_allocation = memapi
+        .allocate(
+            Location::Anywhere,
+            Layout::from_size_align(stat.size, Size4KiB::SIZE.into_usize()).unwrap(),
+            UserAccessible::Yes,
+            Guarded::No,
+        )
+        .expect("should be able to allocate memory for executable file");
+    log::info!("Trampoline: memory allocated");
+    #[cfg(feature = "rpi5")]
+    dbg_mark(b'B' as u32);
+
+    #[cfg(target_arch = "aarch64")]
+    with_process_address_space_active(&current_process, || {
+        let buf = executable_file_allocation.as_mut();
+        let mut offset = 0;
+        loop {
+            let read = node
+                .read(&mut buf[offset..], offset)
+                .expect("should be able to read");
+            if read == 0 {
+                break;
+            }
+            offset += read;
         }
-        offset += read;
+    });
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        let buf = executable_file_allocation.as_mut();
+        let mut offset = 0;
+        loop {
+            let read = node
+                .read(&mut buf[offset..], offset)
+                .expect("should be able to read");
+            if read == 0 {
+                break;
+            }
+            offset += read;
+        }
     }
     log::info!("Trampoline: executable read into memory");
+    #[cfg(feature = "rpi5")]
+    dbg_mark(b'C' as u32);
+
+    #[cfg(target_arch = "aarch64")]
+    let executable_file_allocation = with_process_address_space_active(&current_process, || {
+        memapi
+            .make_executable(executable_file_allocation)
+            .expect("should be able to make allocation executable")
+    });
+    #[cfg(not(target_arch = "aarch64"))]
+    let executable_file_allocation = memapi
+        .make_executable(executable_file_allocation)
+        .expect("should be able to make allocation executable");
 
     log::info!("Trampoline: parsing ELF");
-    let elf_file = ElfFile::try_parse(executable_file_buf.as_slice())
+    #[cfg(feature = "rpi5")]
+    dbg_mark(b'D' as u32);
+
+    #[cfg(target_arch = "aarch64")]
+    let elf_file = with_process_address_space_active(&current_process, || {
+        ElfFile::try_parse(executable_file_allocation.as_ref())
+            .expect("should be able to parse elf binary")
+    });
+    #[cfg(not(target_arch = "aarch64"))]
+    let elf_file = ElfFile::try_parse(executable_file_allocation.as_ref())
         .expect("should be able to parse elf binary");
+    let code_ptr = elf_file.entry();
     log::info!("Trampoline: ELF parsed, loading...");
+    #[cfg(feature = "rpi5")]
+    dbg_mark(b'E' as u32);
+
     #[cfg(target_arch = "aarch64")]
     let elf_image = with_process_address_space_active(&current_process, || {
         ElfLoader::new(memapi.clone())
@@ -641,11 +698,19 @@ extern "C" fn trampoline(_arg: *mut c_void) {
                 master_tls.layout(),
                 UserAccessible::Yes,
                 Guarded::No,
-            )
+        )
             .expect("should be able to allocate TLS data");
 
-        let slice = tls_alloc.as_mut();
-        slice.copy_from_slice(master_tls.as_ref());
+        #[cfg(target_arch = "aarch64")]
+        with_process_address_space_active(&current_process, || {
+            let slice = tls_alloc.as_mut();
+            slice.copy_from_slice(master_tls.as_ref());
+        });
+        #[cfg(not(target_arch = "aarch64"))]
+        {
+            let slice = tls_alloc.as_mut();
+            slice.copy_from_slice(master_tls.as_ref());
+        }
 
         #[cfg(target_arch = "x86_64")]
         FsBase::write(tls_alloc.start());
@@ -691,7 +756,6 @@ extern "C" fn trampoline(_arg: *mut c_void) {
         )
         .expect("should be able to allocate userspace stack");
 
-    let code_ptr = elf_file.entry();
     let ustack_rsp = ustack_allocation.start() + ustack_allocation.len().into_u64();
     log::info!(
         "Trampoline: ustack_rsp={:#x}, entry_point={:#x}",
@@ -707,6 +771,11 @@ extern "C" fn trampoline(_arg: *mut c_void) {
 
     #[cfg(target_arch = "x86_64")]
     let sel = ctx.selectors();
+
+    let _ = current_process
+        .executable_file_data
+        .write()
+        .insert(executable_file_allocation);
 
     debug!("stack_ptr: {:p}", ustack_rsp.as_ptr::<u8>());
     debug!("code_ptr: {:p}", code_ptr as *const u8);

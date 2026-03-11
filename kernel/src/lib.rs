@@ -30,7 +30,7 @@ mod log;
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 pub mod mcore;
 pub mod mem;
-mod serial;
+pub mod serial;
 
 // Provide a dummy allocator for non-x86_64 and non-aarch64 targets
 #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]

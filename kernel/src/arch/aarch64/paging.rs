@@ -240,9 +240,13 @@ impl PageTableWalker {
 
         *entry = PageTableEntry::page(phys, flags);
 
-        // Ensure the write is visible to the MMU
+        // Ensure the write is visible to the MMU and subsequent instruction fetches
         unsafe {
-            core::arch::asm!("dsb ishst", options(nostack, preserves_flags));
+            core::arch::asm!(
+                "dsb ishst",
+                "isb",
+                options(nostack, preserves_flags)
+            );
         }
 
         Ok(())
