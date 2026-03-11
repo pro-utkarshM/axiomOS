@@ -251,6 +251,20 @@ pub fn create_user_address_space() -> Option<usize> {
             | paging::PageTableFlags::MMIO_DEVICE
             | paging::PageTableFlags::NO_EXECUTE; // Devices shouldn't be executable
 
+        // Keep a small EL1-only bootstrap identity window so low-address kernel code can
+        // safely execute the TTBR0 switch + ERET path on Pi5.
+        //
+        // Important: keep this below 0x0020_0000 to avoid colliding with userspace ET_EXEC
+        // load addresses (init currently starts around 0x0021_xxxx).
+        let kernel_bootstrap_flags =
+            paging::PageTableFlags::PRESENT | paging::PageTableFlags::WRITABLE;
+        let _ = walker.map_range(
+            0x0000_0000,
+            0x0000_0000,
+            0x0020_0000,
+            kernel_bootstrap_flags.to_pte_bits(),
+        );
+
         // UART (PL011) at 0x0900_0000
         let _ = walker.map_page(0x0900_0000, 0x0900_0000, device_flags.to_pte_bits());
 

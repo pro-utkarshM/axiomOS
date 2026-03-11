@@ -263,7 +263,7 @@ fn handle_panic(info: &PanicInfo) {
     #[cfg(all(target_arch = "aarch64", feature = "rpi5"))]
     // SAFETY: Panic-time debug marker write to Pi 5 debug UART10 data register.
     unsafe {
-        (0x10_7D00_1000 as *mut u32).write_volatile(0x21); // '!'
+        (0xFFFF_8010_7D00_1000 as *mut u32).write_volatile(0x21); // '!'
     }
 
     let location = info.location().unwrap();

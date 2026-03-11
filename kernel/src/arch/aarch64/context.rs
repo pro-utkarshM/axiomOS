@@ -263,6 +263,12 @@ pub unsafe fn enter_userspace(entry_point: usize, stack_pointer: usize) -> ! {
     // Note: We MUST ensure we are using EL0t, which is mode 0.
     let spsr: u64 = 0;
 
+    #[cfg(feature = "rpi5")]
+    // SAFETY: Marker write to Pi 5 debug UART10 via higher-half alias before ERET.
+    unsafe {
+        (0xFFFF_8010_7D00_1000 as *mut u32).write_volatile(b'X' as u32);
+    }
+
     core::arch::asm!(
         "msr sp_el0, {sp}",
         "msr elr_el1, {entry}",

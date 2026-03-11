@@ -77,13 +77,23 @@ static ROOT_PROCESS: OnceCell<Arc<Process>> = OnceCell::uninit();
 
 #[cfg(all(target_arch = "aarch64", feature = "rpi5"))]
 static TRAMPOLINE_MARKER_SENT: AtomicBool = AtomicBool::new(false);
+#[cfg(all(target_arch = "aarch64", feature = "rpi5"))]
+static TRAMPOLINE_OPEN_STAGE_SENT: AtomicBool = AtomicBool::new(false);
+#[cfg(all(target_arch = "aarch64", feature = "rpi5"))]
+static TRAMPOLINE_READ_STAGE_SENT: AtomicBool = AtomicBool::new(false);
+#[cfg(all(target_arch = "aarch64", feature = "rpi5"))]
+static TRAMPOLINE_ELF_STAGE_SENT: AtomicBool = AtomicBool::new(false);
+#[cfg(all(target_arch = "aarch64", feature = "rpi5"))]
+static TRAMPOLINE_ENTER_USER_STAGE_SENT: AtomicBool = AtomicBool::new(false);
+#[cfg(all(target_arch = "aarch64", feature = "rpi5"))]
+static TRAMPOLINE_TTBR0_STAGE_SENT: AtomicBool = AtomicBool::new(false);
 
 #[cfg(all(target_arch = "aarch64", feature = "rpi5"))]
 #[inline(always)]
 fn dbg_mark(ch: u32) {
-    // SAFETY: Write to Pi 5 debug UART10 data register.
+    // SAFETY: Write to Pi 5 debug UART10 data register through higher-half alias.
     unsafe {
-        (0x10_7D00_1000 as *mut u32).write_volatile(ch);
+        (0xFFFF_8010_7D00_1000 as *mut u32).write_volatile(ch);
     }
 }
 
@@ -538,6 +548,10 @@ extern "C" fn trampoline(_arg: *mut c_void) {
     log::info!("Trampoline: current task got");
     let current_process = current_task.process().clone();
     log::info!("Trampoline: current process got");
+    #[cfg(all(target_arch = "aarch64", feature = "rpi5"))]
+    if !TRAMPOLINE_OPEN_STAGE_SENT.swap(true, Ordering::Relaxed) {
+        dbg_mark(b'q' as u32);
+    }
 
     let executable_path = current_process
         .executable_path
@@ -556,6 +570,10 @@ extern "C" fn trampoline(_arg: *mut c_void) {
         stat
     };
     log::info!("Trampoline: executable stated, size={}", stat.size);
+    #[cfg(all(target_arch = "aarch64", feature = "rpi5"))]
+    if !TRAMPOLINE_READ_STAGE_SENT.swap(true, Ordering::Relaxed) {
+        dbg_mark(b'r' as u32);
+    }
 
     let mut memapi = LowerHalfMemoryApi::new(current_process.clone());
 
@@ -593,6 +611,10 @@ extern "C" fn trampoline(_arg: *mut c_void) {
         .load(elf_file)
         .expect("should be able to load elf file");
     log::info!("Trampoline: ELF loaded");
+    #[cfg(all(target_arch = "aarch64", feature = "rpi5"))]
+    if !TRAMPOLINE_ELF_STAGE_SENT.swap(true, Ordering::Relaxed) {
+        dbg_mark(b's' as u32);
+    }
 
     let (exec_allocs, mut ro_allocs, wr_allocs, tls_master) = elf_image.into_inner();
 
@@ -735,8 +757,20 @@ extern "C" fn trampoline(_arg: *mut c_void) {
         // We are entering userspace (EL0).
         // Before entering, we must ensure the process's address space is active.
         unsafe {
+            #[cfg(all(target_arch = "aarch64", feature = "rpi5"))]
+            if !TRAMPOLINE_ENTER_USER_STAGE_SENT.swap(true, Ordering::Relaxed) {
+                dbg_mark(b't' as u32);
+            }
+            #[cfg(all(target_arch = "aarch64", feature = "rpi5"))]
+            if !TRAMPOLINE_TTBR0_STAGE_SENT.swap(true, Ordering::Relaxed) {
+                dbg_mark(b'0' as u32);
+            }
+
             let ttbr0 = current_process.with_address_space(|as_| as_.ttbr0_value());
             crate::arch::aarch64::paging::set_ttbr0(ttbr0);
+
+            #[cfg(all(target_arch = "aarch64", feature = "rpi5"))]
+            dbg_mark(b'Q' as u32);
 
             crate::arch::aarch64::context::enter_userspace(
                 code_ptr as usize,

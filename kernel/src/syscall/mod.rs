@@ -66,9 +66,10 @@ static BPF_MARKER_SENT: AtomicBool = AtomicBool::new(false);
 #[cfg(feature = "rpi5")]
 #[inline(always)]
 fn dbg_mark(ch: u32) {
-    // SAFETY: Write to Pi 5 debug UART10 data register.
+    // SAFETY: Write to Pi 5 debug UART10 data register through the
+    // higher-half direct map alias so this remains valid after TTBR0 switch.
     unsafe {
-        (0x10_7D00_1000 as *mut u32).write_volatile(ch);
+        (0xFFFF_8010_7D00_1000 as *mut u32).write_volatile(ch);
     }
 }
 

@@ -4,13 +4,30 @@ use core::sync::atomic::{AtomicBool, Ordering};
 
 #[cfg(feature = "rpi5")]
 static PREEMPT_MARKER_SENT: AtomicBool = AtomicBool::new(false);
+#[cfg(feature = "rpi5")]
+static SVC_MARKER_SENT: AtomicBool = AtomicBool::new(false);
+#[cfg(feature = "rpi5")]
+static DATA_ABORT_MARKER_SENT: AtomicBool = AtomicBool::new(false);
+#[cfg(feature = "rpi5")]
+static INSTR_ABORT_MARKER_SENT: AtomicBool = AtomicBool::new(false);
 
 #[cfg(feature = "rpi5")]
 #[inline(always)]
 fn dbg_mark(ch: u32) {
-    // SAFETY: Write to Pi 5 debug UART10 data register.
+    // SAFETY: Write to Pi 5 debug UART10 data register through the
+    // higher-half direct map alias so this remains valid after TTBR0 switch.
     unsafe {
-        (0x10_7D00_1000 as *mut u32).write_volatile(ch);
+        (0xFFFF_8010_7D00_1000 as *mut u32).write_volatile(ch);
+    }
+}
+
+#[cfg(feature = "rpi5")]
+#[inline(always)]
+fn dbg_hex_nibble(v: u64) -> u32 {
+    match (v & 0xF) as u8 {
+        0..=9 => (b'0' + (v as u8 & 0xF)) as u32,
+        10..=15 => (b'A' + ((v as u8 & 0xF) - 10)) as u32,
+        _ => b'?' as u32,
     }
 }
 
@@ -116,17 +133,36 @@ pub extern "C" fn handle_sync_exception(ctx: &mut ExceptionContext) {
     match ec {
         0x15 => {
             // SVC instruction execution in AArch64 state
+            #[cfg(feature = "rpi5")]
+            if !SVC_MARKER_SENT.swap(true, Ordering::Relaxed) {
+                dbg_mark(b'V' as u32);
+            }
             crate::arch::aarch64::syscall::handle_syscall(ctx);
         }
         0x20 | 0x21 => {
             // Instruction abort from lower/same EL
+            #[cfg(feature = "rpi5")]
+            if !INSTR_ABORT_MARKER_SENT.swap(true, Ordering::Relaxed) {
+                dbg_mark(b'I' as u32);
+            }
             panic!("Instruction abort at {:#x}, far: {:#x}", elr, far);
         }
         0x24 | 0x25 => {
             // Data abort from lower/same EL
+            #[cfg(feature = "rpi5")]
+            if !DATA_ABORT_MARKER_SENT.swap(true, Ordering::Relaxed) {
+                dbg_mark(b'D' as u32);
+            }
             handle_data_abort(elr, far, iss);
         }
         _ => {
+            #[cfg(feature = "rpi5")]
+            {
+                // Unhandled sync exception class: emit Y + two hex digits of EC.
+                dbg_mark(b'Y' as u32);
+                dbg_mark(dbg_hex_nibble(ec >> 4));
+                dbg_mark(dbg_hex_nibble(ec));
+            }
             panic!(
                 "Unhandled synchronous exception: EC={:#x}, ISS={:#x}, ELR={:#x}",
                 ec, iss, elr
@@ -336,6 +372,13 @@ pub extern "C" fn handle_serror() {
 /// Invalid exception handler (called for unhandled vectors)
 #[unsafe(no_mangle)]
 pub extern "C" fn handle_invalid_exception(kind: u64, source: u64) {
+    #[cfg(feature = "rpi5")]
+    {
+        // Invalid vector taken: emit N + kind + source (low nibble each).
+        dbg_mark(b'N' as u32);
+        dbg_mark(dbg_hex_nibble(kind));
+        dbg_mark(dbg_hex_nibble(source));
+    }
     let esr: u64;
     let elr: u64;
     let far: u64;
