@@ -60,4 +60,5 @@ pub fn handle_syscall(ctx: &mut ExceptionContext) {
     // Advance ELR past SVC instruction (4 bytes)
     // The exception handler saves ELR to the stack context, so we modify it there.
     // When the handler returns, it restores ELR from this context.
+    ctx.elr = ctx.elr.wrapping_add(4);
 }
