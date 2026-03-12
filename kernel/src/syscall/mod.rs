@@ -688,6 +688,8 @@ fn dispatch_sys_spawn(path_ptr: usize, path_len: usize) -> Result<usize, Errno> 
     use crate::U64Ext;
     #[cfg(feature = "rpi5")]
     dbg_mark(b'g' as u32);
+    #[cfg(target_arch = "aarch64")]
+    crate::mcore::context::ExecutionContext::load().set_need_reschedule();
     Ok(child_proc.pid().as_u64().into_usize())
 }
 
