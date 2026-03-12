@@ -38,5 +38,10 @@ pub fn handle_syscall(ctx: &mut ExceptionContext) {
     // Return result in x0
     ctx.x0 = result as u64;
 
+    // Ensure EL0 returns with IRQs unmasked.
+    // This makes timer IRQ delivery robust even if userspace-saved PSTATE
+    // carries a stale I-bit.
+    ctx.spsr &= !(1 << 7);
+
     // ELR already points to the correct return address for SVC on AArch64.
 }

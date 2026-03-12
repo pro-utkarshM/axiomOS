@@ -42,13 +42,24 @@ const RP1_GPIO_IRQ: u32 = 261; // GIC SPI 229 = 32 + 229
 
 #[cfg(feature = "rpi5")]
 static TIMER_IRQ_MARKER_SENT: AtomicBool = AtomicBool::new(false);
+#[cfg(feature = "rpi5")]
+static FIRST_IRQ_MARKER_SENT: AtomicBool = AtomicBool::new(false);
 
 #[cfg(feature = "rpi5")]
 #[inline(always)]
 fn dbg_mark(ch: u32) {
     // SAFETY: Write to Pi 5 debug UART10 data register.
     unsafe {
-        (0x10_7D00_1000 as *mut u32).write_volatile(ch);
+        (0xFFFF_8010_7D00_1000 as *mut u32).write_volatile(ch);
+    }
+}
+
+#[cfg(feature = "rpi5")]
+#[inline(always)]
+fn dbg_hex_nibble(v: u32) -> u32 {
+    match v & 0xF {
+        0..=9 => b'0' as u32 + (v & 0xF),
+        _ => b'A' as u32 + ((v & 0xF) - 10),
     }
 }
 
@@ -100,6 +111,15 @@ pub extern "C" fn handle_irq(_ctx: &mut ExceptionContext) {
     // Check for spurious interrupt
     if irq == gic::irq::SPURIOUS {
         return;
+    }
+
+    #[cfg(feature = "rpi5")]
+    if !FIRST_IRQ_MARKER_SENT.swap(true, Ordering::Relaxed) {
+        // Emit "M" + 3 hex nibbles of IRQ ID once (e.g., M01E for IRQ 30).
+        dbg_mark(b'M' as u32);
+        dbg_mark(dbg_hex_nibble((irq >> 8) & 0xF));
+        dbg_mark(dbg_hex_nibble((irq >> 4) & 0xF));
+        dbg_mark(dbg_hex_nibble(irq & 0xF));
     }
 
     // log::info!("Handling IRQ {}", irq);
