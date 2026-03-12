@@ -272,14 +272,17 @@ pub fn create_user_address_space() -> Option<usize> {
         #[cfg(feature = "rpi5")]
         let _ = walker.map_page(0x10_7D00_1000, 0x10_7D00_1000, device_flags.to_pte_bits());
 
-        // GICv2 at 0x0800_0000
-        // Distributor: 0x0800_0000, CPU Interface: 0x0801_0000
-        let _ = walker.map_range(
-            0x0800_0000,
-            0x0800_0000,
-            0x20000,
-            device_flags.to_pte_bits(),
-        );
+        #[cfg(feature = "rpi5")]
+        {
+            use crate::arch::aarch64::platform::rpi5::memory_map::{GICC_BASE, GICD_BASE};
+
+            // Keep the Pi 5 GIC distributor + CPU interface visible while TTBR0 is active.
+            let _ = walker.map_range(GICD_BASE, GICD_BASE, 0x20000, device_flags.to_pte_bits());
+            let _ = walker.map_range(GICC_BASE, GICC_BASE, 0x20000, device_flags.to_pte_bits());
+        }
+
+        #[cfg(all(feature = "virt", not(feature = "rpi5")))]
+        let _ = walker.map_range(0x0800_0000, 0x0800_0000, 0x20000, device_flags.to_pte_bits());
 
         // VirtIO MMIO at 0x0a00_0000 (32 devices * 512 bytes = 16KB)
         let _ = walker.map_range(0x0a00_0000, 0x0a00_0000, 0x4000, device_flags.to_pte_bits());
