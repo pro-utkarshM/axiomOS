@@ -7,12 +7,11 @@ use alloc::vec::Vec;
 
 use kernel_bpf::bytecode::insn::BpfInsn;
 use kernel_bpf::bytecode::program::BpfProgram;
-#[cfg(not(target_arch = "aarch64"))]
 use kernel_bpf::execution::Interpreter;
 use kernel_bpf::execution::{BpfContext, BpfError, BpfExecutor};
 use kernel_bpf::loader::BpfLoader;
 use kernel_bpf::maps::{ArrayMap, BpfMap, HashMap as BpfHashMap, RingBufMap, TimeSeriesMap};
-use kernel_bpf::profile::ActiveProfile;
+use kernel_bpf::profile::{ActiveProfile, PhysicalProfile};
 
 pub const ATTACH_TYPE_TIMER: u32 = 1;
 pub const ATTACH_TYPE_GPIO: u32 = 2;
@@ -129,6 +128,11 @@ impl BpfManager {
     ) -> Result<u64, BpfError> {
         #[cfg(target_arch = "aarch64")]
         {
+            if !<ActiveProfile as PhysicalProfile>::JIT_ALLOWED {
+                let interpreter = Interpreter::<ActiveProfile>::new();
+                return interpreter.execute(program, ctx);
+            }
+
             use kernel_bpf::execution::Arm64JitExecutor;
             let executor = Arm64JitExecutor::<ActiveProfile>::new();
             executor.execute(program, ctx)
