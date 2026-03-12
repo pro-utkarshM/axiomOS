@@ -644,17 +644,8 @@ extern "C" fn trampoline(_arg: *mut c_void) {
     #[cfg(feature = "rpi5")]
     dbg_mark(b'C' as u32);
 
-    #[cfg(target_arch = "aarch64")]
-    let executable_file_allocation = with_process_address_space_active(&current_process, || {
-        memapi
-            .make_executable(executable_file_allocation)
-            .expect("should be able to make allocation executable")
-    });
-    #[cfg(not(target_arch = "aarch64"))]
-    let executable_file_allocation = memapi
-        .make_executable(executable_file_allocation)
-        .expect("should be able to make allocation executable");
-
+    // Parse and load ELF while the file allocation is still writable (readable).
+    // make_executable is deferred until after into_inner() releases the borrow.
     log::info!("Trampoline: parsing ELF");
     #[cfg(feature = "rpi5")]
     dbg_mark(b'D' as u32);
@@ -689,6 +680,18 @@ extern "C" fn trampoline(_arg: *mut c_void) {
     }
 
     let (exec_allocs, mut ro_allocs, wr_allocs, tls_master) = elf_image.into_inner();
+
+    // Now that the ELF borrow is released, make the file allocation executable for storage.
+    #[cfg(target_arch = "aarch64")]
+    let executable_file_allocation = with_process_address_space_active(&current_process, || {
+        memapi
+            .make_executable(executable_file_allocation)
+            .expect("should be able to make allocation executable")
+    });
+    #[cfg(not(target_arch = "aarch64"))]
+    let executable_file_allocation = memapi
+        .make_executable(executable_file_allocation)
+        .expect("should be able to make allocation executable");
 
     if let Some(ref master_tls) = tls_master {
         log::info!("Trampoline: setting up TLS");
