@@ -60,11 +60,14 @@ pub const RP1_PWM0_BASE: usize = rp1_peripheral_addr(RP1_PWM0_OFFSET);
 /// PWM1 base address
 pub const RP1_PWM1_BASE: usize = rp1_peripheral_addr(RP1_PWM1_OFFSET);
 
-/// ARM GIC distributor base address (on BCM2712, not RP1)
-pub const GICD_BASE: usize = 0xFF84_1000;
+/// ARM GIC-400 distributor base address (translated through the main SoC bus)
+///
+/// The Pi 5 DTB exposes the GIC at child addresses `0x7fff9000/0x7fffa000`
+/// under the `soc` bus, which maps to CPU physical `0x10_7fff9000/0x10_7fffa000`.
+pub const GICD_BASE: usize = 0x10_7FFF_9000;
 
-/// ARM GIC CPU interface base address (on BCM2712, not RP1)
-pub const GICC_BASE: usize = 0xFF84_2000;
+/// ARM GIC-400 CPU interface base address
+pub const GICC_BASE: usize = 0x10_7FFF_A000;
 
 /// Physical memory (DRAM) start
 pub const DRAM_BASE: usize = 0x0;
