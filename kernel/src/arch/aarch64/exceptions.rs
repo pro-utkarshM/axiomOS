@@ -92,6 +92,16 @@ fn read_u32_at_el0_va(va: u64) -> Option<u32> {
     Some(word)
 }
 
+#[cfg(feature = "rpi5")]
+#[inline(always)]
+fn current_ttbr0_el1() -> u64 {
+    let ttbr0: u64;
+    unsafe {
+        asm!("mrs {}, ttbr0_el1", out(reg) ttbr0);
+    }
+    ttbr0
+}
+
 /// Exception vector table
 #[repr(C, align(2048))]
 pub struct ExceptionVectorTable {
@@ -245,17 +255,24 @@ pub extern "C" fn handle_sync_exception(ctx: &mut ExceptionContext) {
                 dbg_mark(dbg_hex_nibble(ec >> 4));
                 dbg_mark(dbg_hex_nibble(ec));
 
-                // Emit ELR and ESR low 32-bit hex for precise fault localization.
+                // Emit full ELR/ESR/SPSR/FAR to avoid ambiguity about EL0 vs EL1 faults.
                 dbg_mark(b'E' as u32);
-                dbg_hex_u32(elr as u32);
+                dbg_hex_u64(elr);
                 dbg_mark(b'R' as u32);
-                dbg_hex_u32(esr as u32);
-
-                // Emit SPSR and FAR low 32-bit values for EL0 state + fault address context.
+                dbg_hex_u64(esr);
                 dbg_mark(b'P' as u32);
-                dbg_hex_u32(spsr as u32);
+                dbg_hex_u64(spsr);
                 dbg_mark(b'F' as u32);
-                dbg_hex_u32(far as u32);
+                dbg_hex_u64(far);
+
+                dbg_mark(b'T' as u32);
+                dbg_hex_u64(current_ttbr0_el1());
+
+                if let Some(ctx) = crate::arch::aarch64::cpu::try_current() {
+                    let pid = ctx.current_task().process().pid().as_u64();
+                    dbg_mark(b'Q' as u32);
+                    dbg_hex_u64(pid);
+                }
 
                 // Emit instruction words at ELR/ELR+4 and full SP_EL0 from saved context.
                 let insn0 = read_u32_at_el0_va(elr).unwrap_or(0xFFFF_FFFF);
