@@ -92,8 +92,10 @@ use super::exceptions::ExceptionContext;
 /// and that it's safe to interact with hardware state. It must not unwind.
 #[unsafe(no_mangle)]
 pub extern "C" fn handle_irq(_ctx: &mut ExceptionContext) {
-    // Acknowledge the interrupt and get its ID
-    let irq = gic::acknowledge();
+    // Acknowledge the interrupt and decode the IRQ ID for dispatch.
+    // EOIR must receive the raw IAR value, not just the 10-bit ID.
+    let iar = gic::acknowledge();
+    let irq = gic::irq_id_from_iar(iar);
 
     // Check for spurious interrupt
     if irq == gic::irq::SPURIOUS {
@@ -111,7 +113,7 @@ pub extern "C" fn handle_irq(_ctx: &mut ExceptionContext) {
 
         handle_timer_interrupt();
         // Signal end of interrupt for timer
-        gic::end_of_interrupt(irq);
+        gic::end_of_interrupt(iar);
 
         // Trigger scheduler tick (may cause context switch)
         // We do this AFTER EOI so that new tasks don't inherit the active interrupt state
@@ -128,7 +130,7 @@ pub extern "C" fn handle_irq(_ctx: &mut ExceptionContext) {
             }
         }
         // Signal end of interrupt for other IRQs
-        gic::end_of_interrupt(irq);
+        gic::end_of_interrupt(iar);
     }
 }
 

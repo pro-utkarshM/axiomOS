@@ -192,7 +192,8 @@ pub fn disable_irq(_irq: u32) {}
 
 /// Acknowledge an interrupt (read IAR)
 ///
-/// Returns the interrupt ID. A value of 1023 indicates a spurious interrupt.
+/// Returns the raw IAR value. Use [`irq_id_from_iar`] to extract the 10-bit
+/// interrupt ID for dispatch decisions.
 #[cfg(any(feature = "rpi5", feature = "virt"))]
 pub fn acknowledge() -> u32 {
     // SAFETY: Reading IAR is the standard way to acknowledge an interrupt.
@@ -204,6 +205,15 @@ pub fn acknowledge() -> u32 {
 #[cfg(not(any(feature = "rpi5", feature = "virt")))]
 pub fn acknowledge() -> u32 {
     irq::SPURIOUS
+}
+
+/// Extract the interrupt ID from a raw IAR value.
+///
+/// In GICv2, IAR bits [9:0] contain the interrupt ID and upper bits may carry
+/// CPU/source metadata. Dispatch logic should compare against this masked ID.
+#[inline]
+pub const fn irq_id_from_iar(iar: u32) -> u32 {
+    iar & 0x3FF
 }
 
 /// Signal end of interrupt handling
