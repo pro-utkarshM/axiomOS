@@ -172,31 +172,19 @@ define_invalid_handler curr_el_spx_fiq_handler, 2, 1
 define_invalid_handler curr_el_spx_serror_handler, 3, 1
 
 lower_el_sync_call_wrapper:
-    // Assembly-side wrapper to isolate Rust handler call boundary.
-    // h = entered wrapper, i = returned from Rust handler.
     // Preserve caller LR across nested BL so RET returns to vector path.
     mov     x19, x30
-    uart_mark 0x68
     bl      handle_sync_exception
-    uart_mark 0x69
     mov     x30, x19
     ret
 
 lower_el_aarch64_sync_handler:
     save_context
-    // Lower-EL sync path markers:
-    // 6 = after save_context, 7 = before Rust handler,
-    // 8 = after Rust handler, 9 = after check_preemption, A = before ERET.
-    uart_mark 0x36
     mov     x0, sp
-    uart_mark 0x37
     bl      lower_el_sync_call_wrapper
-    uart_mark 0x38
     mov     x0, sp
     bl      check_preemption
-    uart_mark 0x39
     restore_context
-    uart_mark 0x41
     eret
 
 lower_el_aarch64_irq_handler:

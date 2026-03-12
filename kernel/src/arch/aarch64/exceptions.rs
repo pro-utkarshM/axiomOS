@@ -5,7 +5,15 @@ use core::sync::atomic::{AtomicBool, Ordering};
 #[cfg(feature = "rpi5")]
 static PREEMPT_MARKER_SENT: AtomicBool = AtomicBool::new(false);
 #[cfg(feature = "rpi5")]
+static SYNC_ENTRY_MARKER_SENT: AtomicBool = AtomicBool::new(false);
+#[cfg(feature = "rpi5")]
+static SYNC_DECODE_MARKER_SENT: AtomicBool = AtomicBool::new(false);
+#[cfg(feature = "rpi5")]
 static SVC_MARKER_SENT: AtomicBool = AtomicBool::new(false);
+#[cfg(feature = "rpi5")]
+static SVC_ENTER_MARKER_SENT: AtomicBool = AtomicBool::new(false);
+#[cfg(feature = "rpi5")]
+static SVC_RETURN_MARKER_SENT: AtomicBool = AtomicBool::new(false);
 #[cfg(feature = "rpi5")]
 static DATA_ABORT_MARKER_SENT: AtomicBool = AtomicBool::new(false);
 #[cfg(feature = "rpi5")]
@@ -162,7 +170,9 @@ pub extern "C" fn check_preemption(_frame: *mut ExceptionContext) {
 #[unsafe(no_mangle)]
 pub extern "C" fn handle_sync_exception(ctx: &mut ExceptionContext) {
     #[cfg(feature = "rpi5")]
-    dbg_mark(b'j' as u32);
+    if !SYNC_ENTRY_MARKER_SENT.swap(true, Ordering::Relaxed) {
+        dbg_mark(b'j' as u32);
+    }
 
     let esr: u64;
     let elr: u64;
@@ -181,7 +191,9 @@ pub extern "C" fn handle_sync_exception(ctx: &mut ExceptionContext) {
     let iss = esr & 0x1FFFFFF; // Instruction specific syndrome
 
     #[cfg(feature = "rpi5")]
-    dbg_mark(b'k' as u32);
+    if !SYNC_DECODE_MARKER_SENT.swap(true, Ordering::Relaxed) {
+        dbg_mark(b'k' as u32);
+    }
 
     #[cfg(not(feature = "rpi5"))]
     log::debug!(
@@ -200,10 +212,14 @@ pub extern "C" fn handle_sync_exception(ctx: &mut ExceptionContext) {
                 dbg_mark(b'V' as u32);
             }
             #[cfg(feature = "rpi5")]
-            dbg_mark(b'l' as u32);
+            if !SVC_ENTER_MARKER_SENT.swap(true, Ordering::Relaxed) {
+                dbg_mark(b'l' as u32);
+            }
             crate::arch::aarch64::syscall::handle_syscall(ctx);
             #[cfg(feature = "rpi5")]
-            dbg_mark(b'm' as u32);
+            if !SVC_RETURN_MARKER_SENT.swap(true, Ordering::Relaxed) {
+                dbg_mark(b'm' as u32);
+            }
         }
         0x20 | 0x21 => {
             // Instruction abort from lower/same EL
