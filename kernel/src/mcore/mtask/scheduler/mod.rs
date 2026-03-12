@@ -146,9 +146,7 @@ impl Scheduler {
                     ExecutionContext::load().set_tss_rsp0(rsp0);
                 }
             }
-            #[cfg(all(target_arch = "aarch64", feature = "rpi5"))]
-            let cr3_value = 0;
-            #[cfg(all(target_arch = "aarch64", not(feature = "rpi5")))]
+            #[cfg(target_arch = "aarch64")]
             let cr3_value = next_task
                 .process()
                 .with_address_space(|as_| as_.ttbr0_value());
