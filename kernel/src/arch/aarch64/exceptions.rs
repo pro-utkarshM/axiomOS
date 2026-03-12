@@ -340,6 +340,19 @@ fn handle_data_abort(elr: u64, far: u64, iss: u64) {
 
     let fault_code = DataFaultCode::from_iss(iss);
 
+    #[cfg(feature = "rpi5")]
+    {
+        // Emit compact abort telemetry so we can decode failures even when panic text is truncated.
+        dbg_mark(b'X' as u32); // ELR
+        dbg_hex_u64(elr);
+        dbg_mark(b'Y' as u32); // FAR
+        dbg_hex_u64(far);
+        dbg_mark(if is_write { b'W' as u32 } else { b'R' as u32 }); // access type
+        dbg_mark(b'Z' as u32); // DFSC (ISS[5:0]) as two hex nibbles
+        dbg_mark(dbg_hex_nibble((iss >> 4) & 0xF));
+        dbg_mark(dbg_hex_nibble(iss & 0xF));
+    }
+
     log::debug!(
         "Data abort: PC={:#x}, addr={:#x}, write={}, dfsc={:?}",
         elr,

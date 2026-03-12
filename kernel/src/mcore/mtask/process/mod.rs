@@ -108,7 +108,31 @@ where
     unsafe {
         core::arch::asm!("msr daifset, #2", options(nostack, preserves_flags));
     }
-    let out = process.with_address_space(|as_| as_.with_active(|_| f()));
+    let current_ttbr0 = crate::arch::aarch64::paging::get_ttbr0();
+    let target_ttbr0 = {
+        let guard = process.address_space.read();
+        guard
+            .as_ref()
+            .expect("process should have an address space")
+            .ttbr0_value()
+    };
+
+    if target_ttbr0 != current_ttbr0 {
+        // SAFETY: target_ttbr0 is the process's L0 page table root.
+        unsafe {
+            crate::arch::aarch64::paging::set_ttbr0(target_ttbr0);
+        }
+    }
+
+    let out = f();
+
+    if target_ttbr0 != current_ttbr0 {
+        // SAFETY: Restore the original TTBR0 after scoped access.
+        unsafe {
+            crate::arch::aarch64::paging::set_ttbr0(current_ttbr0);
+        }
+    }
+
     // SAFETY: Restore normal IRQ state after finishing user-AS memory access.
     unsafe {
         core::arch::asm!("msr daifclr, #2", options(nostack, preserves_flags));
@@ -651,7 +675,8 @@ extern "C" fn trampoline(_arg: *mut c_void) {
     dbg_mark(b'D' as u32);
 
     #[cfg(target_arch = "aarch64")]
-    let (code_ptr, elf_image) = with_process_address_space_active(&current_process, || {
+    let (code_ptr, exec_allocs, mut ro_allocs, wr_allocs, tls_master) =
+        with_process_address_space_active(&current_process, || {
         // Keep all borrowed ELF reads in the active process address space.
         let elf_file = ElfFile::try_parse(executable_file_allocation.as_ref())
             .expect("should be able to parse elf binary");
@@ -662,7 +687,8 @@ extern "C" fn trampoline(_arg: *mut c_void) {
         let elf_image = ElfLoader::new(memapi.clone())
             .load(elf_file)
             .expect("should be able to load elf file");
-        (code_ptr, elf_image)
+        let (exec_allocs, ro_allocs, wr_allocs, tls_master) = elf_image.into_inner();
+        (code_ptr, exec_allocs, ro_allocs, wr_allocs, tls_master)
     });
     #[cfg(not(target_arch = "aarch64"))]
     let elf_file = ElfFile::try_parse(executable_file_allocation.as_ref())
@@ -677,13 +703,13 @@ extern "C" fn trampoline(_arg: *mut c_void) {
     let elf_image = ElfLoader::new(memapi.clone())
         .load(elf_file)
         .expect("should be able to load elf file");
+    #[cfg(not(target_arch = "aarch64"))]
+    let (exec_allocs, mut ro_allocs, wr_allocs, tls_master) = elf_image.into_inner();
     log::info!("Trampoline: ELF loaded");
     #[cfg(all(target_arch = "aarch64", feature = "rpi5"))]
     if !TRAMPOLINE_ELF_STAGE_SENT.swap(true, Ordering::Relaxed) {
         dbg_mark(b's' as u32);
     }
-
-    let (exec_allocs, mut ro_allocs, wr_allocs, tls_master) = elf_image.into_inner();
 
     // Now that the ELF borrow is released, make the file allocation executable for storage.
     #[cfg(target_arch = "aarch64")]

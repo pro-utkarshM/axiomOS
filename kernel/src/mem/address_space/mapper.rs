@@ -261,9 +261,6 @@ impl AddressSpaceMapper {
         let phys = walker.unmap_page(vaddr)?;
         let pte_bits = new_flags.to_pte_bits();
 
-        crate::serial_println!("remap vaddr={:#x} phys={:#x} raw_old={:#x} old={:?} new={:?} pte_bits={:#x}",
-            vaddr, phys, raw_flags, old_flags, new_flags, pte_bits);
-
         walker.map_page(vaddr, phys, pte_bits)
     }
 

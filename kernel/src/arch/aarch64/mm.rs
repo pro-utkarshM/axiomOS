@@ -267,6 +267,11 @@ pub fn create_user_address_space() -> Option<usize> {
         // UART (PL011) at 0x0900_0000
         let _ = walker.map_page(0x0900_0000, 0x0900_0000, device_flags.to_pte_bits());
 
+        // Pi 5 debug connector UART10 (BCM2712 PL011) used by serial/log paths.
+        // This MMIO must remain visible while TTBR0 is switched for process-AS operations.
+        #[cfg(feature = "rpi5")]
+        let _ = walker.map_page(0x10_7D00_1000, 0x10_7D00_1000, device_flags.to_pte_bits());
+
         // GICv2 at 0x0800_0000
         // Distributor: 0x0800_0000, CPU Interface: 0x0801_0000
         let _ = walker.map_range(
