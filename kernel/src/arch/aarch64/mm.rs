@@ -165,7 +165,7 @@ unsafe fn setup_kernel_page_tables(total_memory: usize) {
     #[cfg(feature = "rpi5")]
     {
         use crate::arch::aarch64::platform::rpi5::memory_map::{
-            BCM2712_UART10_BASE, RP1_PERIPHERAL_BASE,
+            BCM2712_UART10_BASE, GICC_BASE, GICD_BASE, RP1_PERIPHERAL_BASE,
         };
 
         // Keep Pi 5 high MMIO apertures accessible after MMU-on.
@@ -177,7 +177,7 @@ unsafe fn setup_kernel_page_tables(total_memory: usize) {
             | pte_flags::PXN
             | pte_flags::attr_index(mem::mair::DEVICE_NGNRE);
 
-        for &mmio_base in &[BCM2712_UART10_BASE, RP1_PERIPHERAL_BASE] {
+        for &mmio_base in &[BCM2712_UART10_BASE, GICD_BASE, GICC_BASE, RP1_PERIPHERAL_BASE] {
             let l1_idx = mmio_base >> 30; // 1GB block index
             if l1_idx < 512 {
                 let phys_addr = l1_idx << 30;
