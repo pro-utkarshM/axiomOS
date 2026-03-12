@@ -174,9 +174,12 @@ define_invalid_handler curr_el_spx_serror_handler, 3, 1
 lower_el_sync_call_wrapper:
     // Assembly-side wrapper to isolate Rust handler call boundary.
     // h = entered wrapper, i = returned from Rust handler.
+    // Preserve caller LR across nested BL so RET returns to vector path.
+    mov     x19, x30
     uart_mark 0x68
     bl      handle_sync_exception
     uart_mark 0x69
+    mov     x30, x19
     ret
 
 lower_el_aarch64_sync_handler:
