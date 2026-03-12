@@ -29,6 +29,8 @@ mod gicd {
     /// Distributor Implementer Identification Register
     #[allow(dead_code)]
     pub const IIDR: usize = 0x008;
+    /// Interrupt Group Registers (0 = Group 0, 1 = Group 1)
+    pub const IGROUPR: usize = 0x080;
     /// Interrupt Set-Enable Registers (32 bits each, 1 bit per IRQ)
     pub const ISENABLER: usize = 0x100;
     /// Interrupt Clear-Enable Registers
@@ -110,6 +112,12 @@ pub fn init() {
             write_gicd(gicd::ICENABLER + i as usize * 4, 0xFFFF_FFFF);
         }
 
+        // Route all interrupts to Group 1 (non-secure). On BCM2712/EL1-NS we
+        // must handle Group 1 IRQs; leaving defaults can keep PPIs undispatched.
+        for i in 0..num_regs {
+            write_gicd(gicd::IGROUPR + i as usize * 4, 0xFFFF_FFFF);
+        }
+
         // Clear all pending interrupts
         for i in 0..num_regs {
             write_gicd(gicd::ICPENDR + i as usize * 4, 0xFFFF_FFFF);
@@ -134,15 +142,15 @@ pub fn init() {
             write_gicd(gicd::ICFGR + i as usize * 4, 0);
         }
 
-        // Enable distributor
-        write_gicd(gicd::CTLR, 1);
+        // Enable distributor for both Group 0 and Group 1 interrupts.
+        write_gicd(gicd::CTLR, 0b11);
 
         // Configure CPU interface
         // Set priority mask to accept all priorities
         write_gicc(gicc::PMR, 0xFF);
 
-        // Enable CPU interface
-        write_gicc(gicc::CTLR, 1);
+        // Enable CPU interface for both Group 0 and Group 1 interrupts.
+        write_gicc(gicc::CTLR, 0b11);
     }
 
     log::info!("GICv2 initialized");
