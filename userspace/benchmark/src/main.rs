@@ -248,9 +248,13 @@ pub extern "C" fn _start() -> ! {
     let mut timestamps = [0u64; 100];
     let mut collected = 0;
     let mut buf = [0u8; 64];
+    let mut poll_attempts: u32 = 0;
+    let mut poll_errors: u32 = 0;
+    let mut last_poll_res: i32 = 0;
+    const MAX_POLLS: u32 = 20_000; // ~20s with msleep(1)
 
-    // Collect 100 timestamps
-    while collected < 100 {
+    // Collect up to 100 timestamps with a bounded wait.
+    while collected < 100 && poll_attempts < MAX_POLLS {
         let poll_attr = kernel_abi::BpfAttr {
             map_fd: ringbuf_map_id as u32,
             key: buf.as_mut_ptr() as u64,
@@ -259,6 +263,7 @@ pub extern "C" fn _start() -> ! {
         };
 
         let poll_res = bpf(37, &poll_attr as *const _ as *const u8, attr_size);
+        last_poll_res = poll_res;
 
         if poll_res >= 8 {
             // Parse timestamp
@@ -267,21 +272,44 @@ pub extern "C" fn _start() -> ! {
             ]);
             timestamps[collected] = ts;
             collected += 1;
+        } else if poll_res < 0 {
+            poll_errors += 1;
         }
 
+        poll_attempts += 1;
         msleep(1); // Brief sleep between polls
     }
 
+    if collected < 100 {
+        write(1, b"  [WARN] Timer sample collection incomplete\n");
+        write(1, b"  Collected: ");
+        print_num(collected as u64);
+        write(1, b"/100\n");
+        write(1, b"  Poll attempts: ");
+        print_num(poll_attempts as u64);
+        write(1, b"\n");
+        write(1, b"  Poll errors: ");
+        print_num(poll_errors as u64);
+        write(1, b"\n");
+        write(1, b"  Last poll result: ");
+        print_i32(last_poll_res);
+        write(1, b"\n\n");
+    }
+
+    if collected < 2 {
+        write(1, b"  [ERROR] Not enough timer samples for interval stats\n");
+        exit(1);
+    }
+
     // Calculate intervals between consecutive timestamps
-    let mut intervals_us = [0u64; 99];
+    let interval_count = collected - 1;
     let mut min_interval_us = u64::MAX;
     let mut max_interval_us = 0u64;
     let mut total_interval_us = 0u64;
 
-    for i in 0..99 {
+    for i in 0..interval_count {
         let interval_ns = timestamps[i + 1].saturating_sub(timestamps[i]);
         let interval_us = interval_ns / 1000;
-        intervals_us[i] = interval_us;
         if interval_us < min_interval_us {
             min_interval_us = interval_us;
         }
@@ -291,9 +319,12 @@ pub extern "C" fn _start() -> ! {
         total_interval_us += interval_us;
     }
 
-    let avg_interval_us = total_interval_us / 99;
+    let avg_interval_us = total_interval_us / interval_count as u64;
 
     write(1, b"\nTimer Interrupt Interval Summary:\n");
+    write(1, b"  Samples: ");
+    print_num(collected as u64);
+    write(1, b"\n");
     write(1, b"  Min: ");
     print_num(min_interval_us);
     write(1, b" us\n");
@@ -318,7 +349,9 @@ pub extern "C" fn _start() -> ! {
     write(1, b" us (avg of 10)\n");
     write(1, b"Timer interval:      ");
     print_num(avg_interval_us);
-    write(1, b" us (avg of 99)\n");
+    write(1, b" us (avg of ");
+    print_num(interval_count as u64);
+    write(1, b")\n");
     write(1, b"========================================\n");
     write(1, b"\n");
 
@@ -348,4 +381,13 @@ fn print_num(mut n: u64) {
     }
 
     write(1, &buf[..i]);
+}
+
+fn print_i32(n: i32) {
+    if n < 0 {
+        write(1, b"-");
+        print_num((-n) as u64);
+    } else {
+        print_num(n as u64);
+    }
 }
