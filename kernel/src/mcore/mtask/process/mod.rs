@@ -651,24 +651,28 @@ extern "C" fn trampoline(_arg: *mut c_void) {
     dbg_mark(b'D' as u32);
 
     #[cfg(target_arch = "aarch64")]
-    let elf_file = with_process_address_space_active(&current_process, || {
-        ElfFile::try_parse(executable_file_allocation.as_ref())
-            .expect("should be able to parse elf binary")
+    let (code_ptr, elf_image) = with_process_address_space_active(&current_process, || {
+        // Keep all borrowed ELF reads in the active process address space.
+        let elf_file = ElfFile::try_parse(executable_file_allocation.as_ref())
+            .expect("should be able to parse elf binary");
+        let code_ptr = elf_file.entry();
+        log::info!("Trampoline: ELF parsed, loading...");
+        #[cfg(feature = "rpi5")]
+        dbg_mark(b'E' as u32);
+        let elf_image = ElfLoader::new(memapi.clone())
+            .load(elf_file)
+            .expect("should be able to load elf file");
+        (code_ptr, elf_image)
     });
     #[cfg(not(target_arch = "aarch64"))]
     let elf_file = ElfFile::try_parse(executable_file_allocation.as_ref())
         .expect("should be able to parse elf binary");
+    #[cfg(not(target_arch = "aarch64"))]
     let code_ptr = elf_file.entry();
+    #[cfg(not(target_arch = "aarch64"))]
     log::info!("Trampoline: ELF parsed, loading...");
-    #[cfg(feature = "rpi5")]
+    #[cfg(all(not(target_arch = "aarch64"), feature = "rpi5"))]
     dbg_mark(b'E' as u32);
-
-    #[cfg(target_arch = "aarch64")]
-    let elf_image = with_process_address_space_active(&current_process, || {
-        ElfLoader::new(memapi.clone())
-            .load(elf_file)
-            .expect("should be able to load elf file")
-    });
     #[cfg(not(target_arch = "aarch64"))]
     let elf_image = ElfLoader::new(memapi.clone())
         .load(elf_file)
