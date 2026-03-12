@@ -174,13 +174,13 @@ fn set_next_timer() {
         let cntfrq: u64;
         core::arch::asm!("mrs {}, cntfrq_el0", out(reg) cntfrq);
 
-        // Read current counter value
-        let cntvct: u64;
-        core::arch::asm!("mrs {}, cntvct_el0", out(reg) cntvct);
+        // Read current physical counter value. This must match CNTP_* timer state.
+        let cntpct: u64;
+        core::arch::asm!("mrs {}, cntpct_el0", out(reg) cntpct);
 
         // Set timer to fire in 10ms (100 Hz)
         let interval = cntfrq / 100;
-        let next = cntvct + interval;
+        let next = cntpct + interval;
 
         // Write compare value
         core::arch::asm!("msr cntp_cval_el0, {}", in(reg) next);
