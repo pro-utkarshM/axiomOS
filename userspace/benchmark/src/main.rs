@@ -3,7 +3,7 @@
 
 use core::panic::PanicInfo;
 
-use minilib::{bpf, clock_gettime, exit, msleep, timespec, write};
+use minilib::{bpf, clock_gettime, exit, pause, timespec, write};
 
 #[panic_handler]
 fn panic(_info: &PanicInfo) -> ! {
@@ -251,7 +251,8 @@ pub extern "C" fn _start() -> ! {
     let mut poll_attempts: u32 = 0;
     let mut poll_errors: u32 = 0;
     let mut last_poll_res: i32 = 0;
-    const MAX_POLLS: u32 = 20_000; // ~20s with msleep(1)
+    const MAX_POLLS: u32 = 5_000;
+    const POLL_PAUSE_ITERS: u32 = 50_000;
 
     // Collect up to 100 timestamps with a bounded wait.
     while collected < 100 && poll_attempts < MAX_POLLS {
@@ -277,7 +278,9 @@ pub extern "C" fn _start() -> ! {
         }
 
         poll_attempts += 1;
-        msleep(1); // Brief sleep between polls
+        for _ in 0..POLL_PAUSE_ITERS {
+            pause();
+        }
     }
 
     if collected < 100 {
