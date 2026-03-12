@@ -640,7 +640,12 @@ fn dispatch_sys_nanosleep(req: usize, _rem: usize) -> Result<usize, Errno> {
 
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 fn dispatch_sys_spawn(path_ptr: usize, path_len: usize) -> Result<usize, Errno> {
-    use kernel_abi::ENAMETOOLONG;
+    use kernel_abi::{ENAMETOOLONG, ENOMEM};
+    use crate::mcore::mtask::process::CreateProcessError;
+    use crate::mcore::mtask::task::StackAllocationError;
+
+    #[cfg(feature = "rpi5")]
+    dbg_mark(b's' as u32);
 
     // 1. Read path from userspace
     // We reuse logic similar to sys_open
@@ -666,12 +671,23 @@ fn dispatch_sys_spawn(path_ptr: usize, path_len: usize) -> Result<usize, Errno> 
     // Process::create_from_executable handles task creation and enqueuing
     let child_proc = match Process::create_from_executable(parent, abs_path) {
         Ok(p) => p,
-        Err(_) => return Err(EINVAL), // Map CreateProcessError to Errno
+        Err(CreateProcessError::StackAllocationError(StackAllocationError::OutOfVirtualMemory)) => {
+            #[cfg(feature = "rpi5")]
+            dbg_mark(b'v' as u32);
+            return Err(ENOMEM);
+        }
+        Err(CreateProcessError::StackAllocationError(StackAllocationError::OutOfPhysicalMemory)) => {
+            #[cfg(feature = "rpi5")]
+            dbg_mark(b'f' as u32);
+            return Err(ENOMEM);
+        }
     };
 
     // Use .as_u64() and then cast/convert to usize
     // We defined U64Ext for u64, so we can use into_usize() on the u64 value.
     use crate::U64Ext;
+    #[cfg(feature = "rpi5")]
+    dbg_mark(b'g' as u32);
     Ok(child_proc.pid().as_u64().into_usize())
 }
 

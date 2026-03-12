@@ -12,7 +12,9 @@ pub extern "C" fn _start() -> ! {
     write(1, b"Spawning /bin/benchmark...\n");
     let pid = minilib::spawn("/bin/benchmark");
     if pid < 0 {
-        write(1, b"Failed to spawn benchmark!\n");
+        write(1, b"Failed to spawn benchmark, errno=");
+        print_num((-pid) as u64);
+        write(1, b"\n");
     } else {
         write(1, b"Spawned benchmark with PID: ");
         print_num(pid as u64);
