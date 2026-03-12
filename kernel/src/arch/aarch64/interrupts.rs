@@ -24,8 +24,8 @@ use super::gic;
 #[cfg(feature = "rpi5")]
 use core::sync::atomic::{AtomicBool, Ordering};
 
-/// Virtual timer IRQ number (PPI 11 = IRQ 27)
-const TIMER_IRQ: u32 = gic::irq::TIMER_VIRT;
+/// Non-secure physical timer IRQ number (PPI 14 = IRQ 30)
+const TIMER_IRQ: u32 = gic::irq::TIMER_PHYS;
 
 /// RP1 GPIO IRQ number
 ///
@@ -180,35 +180,35 @@ fn handle_timer_interrupt() {
 
 /// Clear timer interrupt
 fn clear_timer_interrupt() {
-    // SAFETY: Writing to CNTV_CTL_EL0 is safe in EL1/EL0. Disabling the timer clears the interrupt.
+    // SAFETY: Writing to CNTP_CTL_EL0 is safe in EL1/EL0. Disabling the timer clears the interrupt.
     unsafe {
         // Disable timer to clear interrupt
-        core::arch::asm!("msr cntv_ctl_el0, {}", in(reg) 0u64);
+        core::arch::asm!("msr cntp_ctl_el0, {}", in(reg) 0u64);
     }
 }
 
 /// Set next timer interrupt
 fn set_next_timer() {
-    // SAFETY: Accessing timer registers (CNTV_*) is safe in EL1. We are configuring the
-    // virtual timer for the next scheduler tick.
+    // SAFETY: Accessing timer registers (CNTP_*) is safe in EL1. We are configuring the
+    // non-secure physical timer for the next scheduler tick.
     unsafe {
         // Read timer frequency
         let cntfrq: u64;
         core::arch::asm!("mrs {}, cntfrq_el0", out(reg) cntfrq);
 
-        // Read current virtual counter value. This must match CNTV_* timer state.
-        let cntvct: u64;
-        core::arch::asm!("mrs {}, cntvct_el0", out(reg) cntvct);
+        // Read current physical counter value. This must match CNTP_* timer state.
+        let cntpct: u64;
+        core::arch::asm!("mrs {}, cntpct_el0", out(reg) cntpct);
 
         // Set timer to fire in 10ms (100 Hz)
         let interval = cntfrq / 100;
-        let next = cntvct + interval;
+        let next = cntpct + interval;
 
         // Write compare value
-        core::arch::asm!("msr cntv_cval_el0, {}", in(reg) next);
+        core::arch::asm!("msr cntp_cval_el0, {}", in(reg) next);
 
         // Enable timer (bit 0 = enable, bit 1 = mask output)
-        core::arch::asm!("msr cntv_ctl_el0, {}", in(reg) 1u64);
+        core::arch::asm!("msr cntp_ctl_el0, {}", in(reg) 1u64);
     }
 }
 
