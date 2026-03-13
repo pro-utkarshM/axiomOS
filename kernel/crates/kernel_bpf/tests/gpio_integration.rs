@@ -26,6 +26,24 @@ pub extern "C" fn bpf_get_interrupt_latency_ns(_ctx: *const BpfContext) -> u64 {
 
 // SAFETY: Test stub for BPF helper.
 #[unsafe(no_mangle)]
+pub extern "C" fn bpf_get_boot_time_ms(_ctx: *const BpfContext) -> u64 {
+    0
+}
+
+// SAFETY: Test stub for BPF helper.
+#[unsafe(no_mangle)]
+pub extern "C" fn bpf_get_kernel_heap_kb(_ctx: *const BpfContext) -> u64 {
+    0
+}
+
+// SAFETY: Test stub for BPF helper.
+#[unsafe(no_mangle)]
+pub extern "C" fn bpf_get_kernel_image_mb(_ctx: *const BpfContext) -> u64 {
+    0
+}
+
+// SAFETY: Test stub for BPF helper.
+#[unsafe(no_mangle)]
 pub extern "C" fn bpf_trace_printk(_fmt: *const u8, _len: u32) -> i32 {
     0
 }

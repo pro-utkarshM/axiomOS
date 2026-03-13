@@ -403,7 +403,7 @@ mod tests {
     #[test]
     fn test_path_as_ref() {
         let path = Path::new("/foo/bar");
-        let path_ref: &Path = path.as_ref();
+        let path_ref: &Path = path;
         assert_eq!(path_ref, path);
 
         // Test converting from &str to &Path using as_ref

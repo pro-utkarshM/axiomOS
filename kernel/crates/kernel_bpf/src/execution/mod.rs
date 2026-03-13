@@ -21,8 +21,9 @@ mod interpreter;
 #[cfg(test)]
 #[allow(clippy::missing_safety_doc, improper_ctypes_definitions)]
 pub mod helpers_stub {
-    use super::BpfContext;
     use core::sync::atomic::{AtomicU64, Ordering};
+
+    use super::BpfContext;
 
     static TEST_MAP_VALUE: AtomicU64 = AtomicU64::new(0);
 
