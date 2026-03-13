@@ -273,7 +273,7 @@ impl<P: PhysicalProfile> Interpreter<P> {
                 1 => Ok(bpf_ktime_get_ns()),
 
                 // bpf_get_interrupt_latency_ns
-                12 => Ok(bpf_get_interrupt_latency_ns(ctx as *const BpfContext)),
+                13 => Ok(bpf_get_interrupt_latency_ns(ctx as *const BpfContext)),
 
                 // bpf_trace_printk
                 2 => Ok(bpf_trace_printk(args[0] as *const u8, args[1] as u32) as u64),
@@ -293,13 +293,13 @@ impl<P: PhysicalProfile> Interpreter<P> {
                 7 => Ok(bpf_map_delete_elem(args[0] as u32, args[1] as *const u8) as u64),
 
                 // bpf_ringbuf_output
-                6 => Ok(
+                8 => Ok(
                     bpf_ringbuf_output(args[0] as u32, args[1] as *const u8, args[2], args[3])
                         as u64,
                 ),
 
                 // bpf_timeseries_push
-                1001 => Ok(bpf_timeseries_push(
+                9 => Ok(bpf_timeseries_push(
                     args[0] as u32,
                     args[1] as *const u8,
                     args[2] as *const u8,
@@ -815,7 +815,7 @@ mod tests {
     #[test]
     fn execute_latency_helper() {
         let program = ProgramBuilder::<ActiveProfile>::new(BpfProgType::SocketFilter)
-            .insn(BpfInsn::call(12)) // r0 = bpf_get_interrupt_latency_ns(r1)
+            .insn(BpfInsn::call(13)) // r0 = bpf_get_interrupt_latency_ns(r1)
             .exit()
             .build()
             .expect("valid program");

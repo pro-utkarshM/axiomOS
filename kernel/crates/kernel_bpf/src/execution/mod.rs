@@ -309,20 +309,38 @@ pub enum HelperFunc {
     /// Map delete element
     MapDeleteElem = 7,
 
-    /// Probe read (safe memory read)
-    ProbeRead = 8,
+    /// Ring buffer output
+    RingbufOutput = 8,
+
+    /// Time series push
+    TimeseriesPush = 9,
 
     /// Get current PID/TID
-    GetCurrentPidTgid = 9,
+    GetCurrentPidTgid = 10,
 
     /// Get current UID/GID
-    GetCurrentUidGid = 10,
+    GetCurrentUidGid = 11,
 
     /// Get current comm (process name)
-    GetCurrentComm = 11,
+    GetCurrentComm = 12,
 
     /// Get interrupt latency in nanoseconds
-    GetInterruptLatencyNs = 12,
+    GetInterruptLatencyNs = 13,
+
+    /// Probe read
+    ProbeRead = 14,
+
+    /// GPIO read
+    GpioRead = 1004,
+
+    /// GPIO write
+    GpioWrite = 1003,
+
+    /// Motor emergency stop
+    MotorEmergencyStop = 1000,
+
+    /// PWM write
+    PwmWrite = 1005,
 }
 
 impl HelperFunc {
@@ -338,10 +356,16 @@ impl HelperFunc {
             | Self::MapLookupElem
             | Self::MapUpdateElem
             | Self::MapDeleteElem
+            | Self::RingbufOutput
+            | Self::TimeseriesPush
             | Self::GetCurrentPidTgid
             | Self::GetCurrentUidGid
             | Self::GetCurrentComm
-            | Self::GetInterruptLatencyNs => true,
+            | Self::GetInterruptLatencyNs
+            | Self::GpioRead
+            | Self::GpioWrite
+            | Self::MotorEmergencyStop
+            | Self::PwmWrite => true,
 
             // Trace/debug helpers may be restricted in embedded
             Self::TracePrintk | Self::ProbeRead => {

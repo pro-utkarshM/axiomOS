@@ -174,8 +174,8 @@ pub extern "C" fn _start() -> ! {
             code: 0x85,
             dst_src: 0x00,
             off: 0,
-            imm: 12,
-        }, // call helper 12 (bpf_get_interrupt_latency_ns)
+            imm: 13,
+        }, // call helper 13 (bpf_get_interrupt_latency_ns)
         // r0 now contains latency
         // Store latency on stack
         BpfInsn {
@@ -219,8 +219,8 @@ pub extern "C" fn _start() -> ! {
             code: 0x85,
             dst_src: 0x00,
             off: 0,
-            imm: 6,
-        }, // call bpf_ringbuf_output
+            imm: 8,
+        }, // call bpf_ringbuf_output (helper 8)
         BpfInsn {
             code: 0xb7,
             dst_src: regs(0, 0),
