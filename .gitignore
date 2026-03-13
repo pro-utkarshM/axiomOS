@@ -16,3 +16,4 @@ kernel/crates/kernel_bpf/target/
 #/target
 *.txt
 *.log
+.planning/
