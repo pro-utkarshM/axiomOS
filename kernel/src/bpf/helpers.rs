@@ -18,9 +18,14 @@ pub extern "C" fn bpf_ktime_get_ns() -> u64 {
 ///
 /// # Safety
 ///
+/// # Safety
+///
 /// This function expects the BPF context to be passed in R1 by the executor.
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[unsafe(no_mangle)]
-pub extern "C" fn bpf_get_interrupt_latency_ns(ctx: *const kernel_bpf::execution::BpfContext) -> u64 {
+pub extern "C" fn bpf_get_interrupt_latency_ns(
+    ctx: *const kernel_bpf::execution::BpfContext,
+) -> u64 {
     if ctx.is_null() {
         return 0;
     }

@@ -323,7 +323,10 @@ pub extern "C" fn _start() -> ! {
     }
 
     if collected < 2 {
-        write(1, b"  [ERROR] Not enough timer samples for interval stats\n");
+        write(
+            1,
+            b"  [ERROR] Not enough timer samples for interval stats\n",
+        );
         exit(1);
     }
 
@@ -352,8 +355,7 @@ pub extern "C" fn _start() -> ! {
     let mut max_latency_ns = 0u64;
     let mut total_latency_ns = 0u64;
 
-    for i in 0..collected {
-        let lat = latencies[i];
+    for &lat in latencies.iter().take(collected) {
         if lat < min_latency_ns {
             min_latency_ns = lat;
         }
