@@ -17,6 +17,15 @@ use crate::arch::traits::Architecture;
 
 pub struct Aarch64;
 
+#[inline(always)]
+fn dbg_mark(ch: u32) {
+    #[cfg(feature = "rpi5")]
+    // SAFETY: Early debug marker write to Pi 5 debug UART10 data register.
+    unsafe {
+        (0x10_7D00_1000 as *mut u32).write_volatile(ch);
+    }
+}
+
 impl Architecture for Aarch64 {
     fn early_init() {
         // Setup exception vector table
@@ -25,13 +34,17 @@ impl Architecture for Aarch64 {
 
     fn init() {
         // Initialize memory management (physical allocator + page tables)
+        dbg_mark(0x6e); // 'n'
         crate::mem::init();
+        dbg_mark(0x6f); // 'o'
 
         // Initialize interrupt controller (GIC)
         interrupts::init();
+        dbg_mark(0x70); // 'p'
 
         // Setup syscall interface
         syscall::init();
+        dbg_mark(0x71); // 'q'
     }
 
     fn enable_interrupts() {

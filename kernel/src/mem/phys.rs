@@ -2,7 +2,6 @@ use alloc::vec::Vec;
 use core::iter::from_fn;
 use core::mem::swap;
 
-use conquer_once::spin::OnceCell;
 use kernel_physical_memory::{FrameState, PhysicalFrameAllocator, PhysicalMemoryManager};
 #[cfg(target_arch = "x86_64")]
 use limine::memory_map::{Entry, EntryType};
@@ -12,8 +11,9 @@ use spin::Mutex;
 use crate::arch::types::{PageSize, PhysAddr, PhysFrame, PhysFrameRange, Size4KiB};
 use crate::mem::heap::Heap;
 
-static PHYS_ALLOC: OnceCell<Mutex<MultiStageAllocator>> = OnceCell::uninit();
+static mut PHYS_ALLOC: Option<Mutex<MultiStageAllocator>> = None;
 
+#[derive(Clone, Copy)]
 struct ReservedRegions {
     regions: [MemoryRegion; 16],
     count: usize,
@@ -47,12 +47,25 @@ impl ReservedRegions {
     }
 }
 
-static RESERVED_REGIONS: Mutex<ReservedRegions> = Mutex::new(ReservedRegions::new());
+static mut RESERVED_REGIONS: ReservedRegions = ReservedRegions::new();
+
+#[inline(always)]
+fn dbg_mark(ch: u32) {
+    #[cfg(feature = "rpi5")]
+    // SAFETY: Early debug marker write to Pi 5 debug UART10 data register.
+    unsafe {
+        (0x10_7D00_1000 as *mut u32).write_volatile(ch);
+    }
+}
 
 fn allocator() -> &'static Mutex<MultiStageAllocator> {
-    PHYS_ALLOC
-        .get()
-        .expect("physical allocator not initialized")
+    #[allow(static_mut_refs)]
+    // SAFETY: Accessed during kernel init. Callers ensure allocator was initialized first.
+    unsafe {
+        PHYS_ALLOC
+            .as_ref()
+            .expect("physical allocator not initialized")
+    }
 }
 
 /// Zero-sized facade to the global physical memory allocator.
@@ -62,7 +75,8 @@ pub struct PhysicalMemory;
 #[allow(dead_code)]
 impl PhysicalMemory {
     pub fn is_initialized() -> bool {
-        PHYS_ALLOC.is_initialized()
+        // SAFETY: Read-only check of initialization state.
+        unsafe { PHYS_ALLOC.is_some() }
     }
 
     pub fn allocate_frames_non_contiguous<S: PageSize>() -> impl Iterator<Item = PhysFrame<S>>
@@ -111,7 +125,13 @@ pub struct MemoryRegion {
 }
 
 pub fn register_reserved_region(base: u64, length: u64) {
-    RESERVED_REGIONS.lock().push(MemoryRegion { base, length });
+    dbg_mark(0x56); // 'V'
+                    // SAFETY: Early boot is single-core while reserved regions are populated.
+    unsafe {
+        dbg_mark(0x57); // 'W'
+        RESERVED_REGIONS.push(MemoryRegion { base, length });
+        dbg_mark(0x58); // 'X'
+    }
 }
 
 #[cfg(target_arch = "x86_64")]
@@ -151,7 +171,10 @@ pub fn init_stage1(entries: &[&Entry]) -> usize {
     let regions_static: &'static [MemoryRegion] = unsafe { &BOOT_REGIONS[..count] };
 
     let stage1 = MultiStageAllocator::Stage1(PhysicalBumpAllocator::new(regions_static));
-    PHYS_ALLOC.init_once(|| Mutex::new(stage1));
+    // SAFETY: Stage-1 physical allocator is initialized exactly once during boot.
+    unsafe {
+        PHYS_ALLOC = Some(Mutex::new(stage1));
+    }
 
     usable_physical_memory as usize
 }
@@ -161,7 +184,10 @@ pub fn init_stage1_aarch64(regions: &'static [MemoryRegion]) -> usize {
     info!("usable RAM: ~{} MiB", usable_physical_memory / 1024 / 1024);
 
     let stage1 = MultiStageAllocator::Stage1(PhysicalBumpAllocator::new(regions));
-    PHYS_ALLOC.init_once(|| Mutex::new(stage1));
+    // SAFETY: Stage-1 physical allocator is initialized exactly once during boot.
+    unsafe {
+        PHYS_ALLOC = Some(Mutex::new(stage1));
+    }
 
     usable_physical_memory as usize
 }
@@ -221,7 +247,9 @@ pub fn init_stage2() {
 
     // Also mark all reserved regions as allocated
     let mut reserved_marked = 0;
-    let reserved = RESERVED_REGIONS.lock();
+    // SAFETY: Reserved regions are only populated during early single-core boot and
+    // become read-only afterwards.
+    let reserved = unsafe { RESERVED_REGIONS };
     for i in 0..reserved.count {
         let res = &reserved.regions[i];
         let start_addr = res.base;
@@ -365,13 +393,15 @@ impl PhysicalBumpAllocator {
     }
 
     fn usable_frames(&self) -> impl Iterator<Item = PhysFrame> {
+        // SAFETY: Reserved regions are populated during early init and then treated read-only.
+        let reserved = unsafe { RESERVED_REGIONS };
         self.regions
             .iter()
             .flat_map(|region| (region.base..(region.base + region.length)).step_by(4096))
             .map(|addr| PhysFrame::containing_address(PhysAddr::new(addr)))
-            .filter(|frame| {
+            .filter(move |frame| {
                 let addr = frame.start_address().as_u64();
-                !RESERVED_REGIONS.lock().is_reserved(addr)
+                !reserved.is_reserved(addr)
             })
     }
 

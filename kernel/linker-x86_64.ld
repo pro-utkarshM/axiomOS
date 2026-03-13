@@ -23,6 +23,7 @@ SECTIONS
     . = 0xffffffff80000000;
 
     .text : {
+        __text_start = .;
         *(.text .text.*)
     } :text
 
@@ -54,6 +55,8 @@ SECTIONS
         *(.bss .bss.*)
         *(COMMON)
     } :data
+
+    __kernel_end = .;
 
     /* Discard .note.* and .eh_frame* since they may cause issues on some hosts. */
     /DISCARD/ : {

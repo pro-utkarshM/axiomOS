@@ -38,7 +38,10 @@ pub fn handle_syscall(ctx: &mut ExceptionContext) {
     // Return result in x0
     ctx.x0 = result as u64;
 
-    // Advance ELR past SVC instruction (4 bytes)
-    // The exception handler saves ELR to the stack context, so we modify it there.
-    // When the handler returns, it restores ELR from this context.
+    // Ensure EL0 returns with IRQs unmasked.
+    // This makes timer IRQ delivery robust even if userspace-saved PSTATE
+    // carries a stale I-bit.
+    ctx.spsr &= !(1 << 7);
+
+    // ELR already points to the correct return address for SVC on AArch64.
 }

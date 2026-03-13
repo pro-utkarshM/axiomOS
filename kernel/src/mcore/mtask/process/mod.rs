@@ -8,6 +8,8 @@ use core::alloc::Layout;
 use core::ffi::c_void;
 use core::fmt::{Debug, Formatter};
 use core::ptr;
+#[cfg(all(target_arch = "aarch64", feature = "rpi5"))]
+use core::sync::atomic::{AtomicBool, Ordering};
 
 use conquer_once::spin::OnceCell;
 use kernel_elfloader::{ElfFile, ElfLoader};
@@ -72,6 +74,71 @@ impl ElfSegments {
 }
 
 static ROOT_PROCESS: OnceCell<Arc<Process>> = OnceCell::uninit();
+
+#[cfg(all(target_arch = "aarch64", feature = "rpi5"))]
+static TRAMPOLINE_MARKER_SENT: AtomicBool = AtomicBool::new(false);
+#[cfg(all(target_arch = "aarch64", feature = "rpi5"))]
+static TRAMPOLINE_OPEN_STAGE_SENT: AtomicBool = AtomicBool::new(false);
+#[cfg(all(target_arch = "aarch64", feature = "rpi5"))]
+static TRAMPOLINE_READ_STAGE_SENT: AtomicBool = AtomicBool::new(false);
+#[cfg(all(target_arch = "aarch64", feature = "rpi5"))]
+static TRAMPOLINE_ELF_STAGE_SENT: AtomicBool = AtomicBool::new(false);
+#[cfg(all(target_arch = "aarch64", feature = "rpi5"))]
+static TRAMPOLINE_ENTER_USER_STAGE_SENT: AtomicBool = AtomicBool::new(false);
+#[cfg(all(target_arch = "aarch64", feature = "rpi5"))]
+static TRAMPOLINE_TTBR0_STAGE_SENT: AtomicBool = AtomicBool::new(false);
+
+#[cfg(all(target_arch = "aarch64", feature = "rpi5"))]
+#[inline(always)]
+fn dbg_mark(ch: u32) {
+    // SAFETY: Write to Pi 5 debug UART10 data register through higher-half alias.
+    unsafe {
+        (0xFFFF_8010_7D00_1000 as *mut u32).write_volatile(ch);
+    }
+}
+
+#[cfg(target_arch = "aarch64")]
+#[inline(always)]
+fn with_process_address_space_active<T, F>(process: &Arc<Process>, f: F) -> T
+where
+    F: FnOnce() -> T,
+{
+    // SAFETY: While TTBR0 is temporarily switched via with_active(), keep IRQs masked
+    // because the rpi5 scheduler path does not currently save/restore TTBR0 on switch.
+    unsafe {
+        core::arch::asm!("msr daifset, #2", options(nostack, preserves_flags));
+    }
+    let current_ttbr0 = crate::arch::aarch64::paging::get_ttbr0();
+    let target_ttbr0 = {
+        let guard = process.address_space.read();
+        guard
+            .as_ref()
+            .expect("process should have an address space")
+            .ttbr0_value()
+    };
+
+    if target_ttbr0 != current_ttbr0 {
+        // SAFETY: target_ttbr0 is the process's L0 page table root.
+        unsafe {
+            crate::arch::aarch64::paging::set_ttbr0(target_ttbr0);
+        }
+    }
+
+    let out = f();
+
+    if target_ttbr0 != current_ttbr0 {
+        // SAFETY: Restore the original TTBR0 after scoped access.
+        unsafe {
+            crate::arch::aarch64::paging::set_ttbr0(current_ttbr0);
+        }
+    }
+
+    // SAFETY: Restore normal IRQ state after finishing user-AS memory access.
+    unsafe {
+        core::arch::asm!("msr daifclr, #2", options(nostack, preserves_flags));
+    }
+    out
+}
 
 pub struct Process {
     pid: ProcessId,
@@ -149,11 +216,11 @@ impl Process {
                 #[cfg(target_arch = "x86_64")]
                 VirtAddr::new(0xF000),
                 #[cfg(target_arch = "aarch64")]
-                VirtAddr::new(0x1_0000_0000), // Start at 2GB to avoid identity map (L0[0])
+                VirtAddr::new(0x2_0000_0000), // Start Location::Anywhere allocations at 8GB to leave 4GB (0x1_0000_0000) for Fixed ELF load segments
                 #[cfg(target_arch = "x86_64")]
                 0x0000_7FFF_FFFF_0FFF,
                 #[cfg(target_arch = "aarch64")]
-                0x0000_007F_0000_0000, // Size: ~510GB (Total user space is 256TB, minus 512GB start)
+                0x0000_007E_0000_0000, // Size adjusted
             ))),
             telemetry: Telemetry::default(),
             memory_regions: MemoryRegions::new(),
@@ -512,6 +579,11 @@ pub enum CreateProcessError {
 }
 
 extern "C" fn trampoline(_arg: *mut c_void) {
+    #[cfg(all(target_arch = "aarch64", feature = "rpi5"))]
+    if !TRAMPOLINE_MARKER_SENT.swap(true, Ordering::Relaxed) {
+        dbg_mark(b'u' as u32);
+    }
+
     log::info!("Trampoline started");
     let ctx = ExecutionContext::load();
     log::info!("Trampoline: context loaded");
@@ -519,6 +591,11 @@ extern "C" fn trampoline(_arg: *mut c_void) {
     log::info!("Trampoline: current task got");
     let current_process = current_task.process().clone();
     log::info!("Trampoline: current process got");
+
+    #[cfg(all(target_arch = "aarch64", feature = "rpi5"))]
+    if !TRAMPOLINE_OPEN_STAGE_SENT.swap(true, Ordering::Relaxed) {
+        dbg_mark(b'q' as u32);
+    }
 
     let executable_path = current_process
         .executable_path
@@ -537,10 +614,16 @@ extern "C" fn trampoline(_arg: *mut c_void) {
         stat
     };
     log::info!("Trampoline: executable stated, size={}", stat.size);
+    #[cfg(all(target_arch = "aarch64", feature = "rpi5"))]
+    if !TRAMPOLINE_READ_STAGE_SENT.swap(true, Ordering::Relaxed) {
+        dbg_mark(b'r' as u32);
+    }
 
     let mut memapi = LowerHalfMemoryApi::new(current_process.clone());
 
     log::info!("Trampoline: allocating memory for executable");
+    #[cfg(feature = "rpi5")]
+    dbg_mark(b'A' as u32);
     let mut executable_file_allocation = memapi
         .allocate(
             Location::Anywhere,
@@ -550,32 +633,95 @@ extern "C" fn trampoline(_arg: *mut c_void) {
         )
         .expect("should be able to allocate memory for executable file");
     log::info!("Trampoline: memory allocated");
-    let buf = executable_file_allocation.as_mut();
-    let mut offset = 0;
-    loop {
-        let read = node
-            .read(&mut buf[offset..], offset)
-            .expect("should be able to read");
-        if read == 0 {
-            break;
+    #[cfg(feature = "rpi5")]
+    dbg_mark(b'B' as u32);
+
+    #[cfg(target_arch = "aarch64")]
+    with_process_address_space_active(&current_process, || {
+        let buf = executable_file_allocation.as_mut();
+        let mut offset = 0;
+        loop {
+            let read = node
+                .read(&mut buf[offset..], offset)
+                .expect("should be able to read");
+            if read == 0 {
+                break;
+            }
+            offset += read;
         }
-        offset += read;
+    });
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        let buf = executable_file_allocation.as_mut();
+        let mut offset = 0;
+        loop {
+            let read = node
+                .read(&mut buf[offset..], offset)
+                .expect("should be able to read");
+            if read == 0 {
+                break;
+            }
+            offset += read;
+        }
     }
     log::info!("Trampoline: executable read into memory");
-    let executable_file_allocation = memapi
-        .make_executable(executable_file_allocation)
-        .expect("should be able to make allocation executable");
+    #[cfg(feature = "rpi5")]
+    dbg_mark(b'C' as u32);
 
+    // Parse and load ELF while the file allocation is still writable (readable).
+    // make_executable is deferred until after into_inner() releases the borrow.
     log::info!("Trampoline: parsing ELF");
+    #[cfg(feature = "rpi5")]
+    dbg_mark(b'D' as u32);
+
+    #[cfg(target_arch = "aarch64")]
+    let (code_ptr, exec_allocs, mut ro_allocs, wr_allocs, tls_master) =
+        with_process_address_space_active(&current_process, || {
+            // Keep all borrowed ELF reads in the active process address space.
+            let elf_file = ElfFile::try_parse(executable_file_allocation.as_ref())
+                .expect("should be able to parse elf binary");
+            let code_ptr = elf_file.entry();
+            log::info!("Trampoline: ELF parsed, loading...");
+            #[cfg(feature = "rpi5")]
+            dbg_mark(b'E' as u32);
+            let elf_image = ElfLoader::new(memapi.clone())
+                .load(elf_file)
+                .expect("should be able to load elf file");
+            let (exec_allocs, ro_allocs, wr_allocs, tls_master) = elf_image.into_inner();
+            (code_ptr, exec_allocs, ro_allocs, wr_allocs, tls_master)
+        });
+    #[cfg(not(target_arch = "aarch64"))]
     let elf_file = ElfFile::try_parse(executable_file_allocation.as_ref())
         .expect("should be able to parse elf binary");
+    #[cfg(not(target_arch = "aarch64"))]
+    let code_ptr = elf_file.entry();
+    #[cfg(not(target_arch = "aarch64"))]
     log::info!("Trampoline: ELF parsed, loading...");
+    #[cfg(all(not(target_arch = "aarch64"), feature = "rpi5"))]
+    dbg_mark(b'E' as u32);
+    #[cfg(not(target_arch = "aarch64"))]
     let elf_image = ElfLoader::new(memapi.clone())
         .load(elf_file)
         .expect("should be able to load elf file");
-    log::info!("Trampoline: ELF loaded");
-
+    #[cfg(not(target_arch = "aarch64"))]
     let (exec_allocs, mut ro_allocs, wr_allocs, tls_master) = elf_image.into_inner();
+    log::info!("Trampoline: ELF loaded");
+    #[cfg(all(target_arch = "aarch64", feature = "rpi5"))]
+    if !TRAMPOLINE_ELF_STAGE_SENT.swap(true, Ordering::Relaxed) {
+        dbg_mark(b's' as u32);
+    }
+
+    // Now that the ELF borrow is released, make the file allocation executable for storage.
+    #[cfg(target_arch = "aarch64")]
+    let executable_file_allocation = with_process_address_space_active(&current_process, || {
+        memapi
+            .make_executable(executable_file_allocation)
+            .expect("should be able to make allocation executable")
+    });
+    #[cfg(not(target_arch = "aarch64"))]
+    let executable_file_allocation = memapi
+        .make_executable(executable_file_allocation)
+        .expect("should be able to make allocation executable");
 
     if let Some(ref master_tls) = tls_master {
         log::info!("Trampoline: setting up TLS");
@@ -588,8 +734,16 @@ extern "C" fn trampoline(_arg: *mut c_void) {
             )
             .expect("should be able to allocate TLS data");
 
-        let slice = tls_alloc.as_mut();
-        slice.copy_from_slice(master_tls.as_ref());
+        #[cfg(target_arch = "aarch64")]
+        with_process_address_space_active(&current_process, || {
+            let slice = tls_alloc.as_mut();
+            slice.copy_from_slice(master_tls.as_ref());
+        });
+        #[cfg(not(target_arch = "aarch64"))]
+        {
+            let slice = tls_alloc.as_mut();
+            slice.copy_from_slice(master_tls.as_ref());
+        }
 
         #[cfg(target_arch = "x86_64")]
         FsBase::write(tls_alloc.start());
@@ -635,7 +789,6 @@ extern "C" fn trampoline(_arg: *mut c_void) {
         )
         .expect("should be able to allocate userspace stack");
 
-    let code_ptr = elf_file.entry();
     let ustack_rsp = ustack_allocation.start() + ustack_allocation.len().into_u64();
     log::info!(
         "Trampoline: ustack_rsp={:#x}, entry_point={:#x}",
@@ -716,8 +869,20 @@ extern "C" fn trampoline(_arg: *mut c_void) {
         // We are entering userspace (EL0).
         // Before entering, we must ensure the process's address space is active.
         unsafe {
+            #[cfg(all(target_arch = "aarch64", feature = "rpi5"))]
+            if !TRAMPOLINE_ENTER_USER_STAGE_SENT.swap(true, Ordering::Relaxed) {
+                dbg_mark(b't' as u32);
+            }
+            #[cfg(all(target_arch = "aarch64", feature = "rpi5"))]
+            if !TRAMPOLINE_TTBR0_STAGE_SENT.swap(true, Ordering::Relaxed) {
+                dbg_mark(b'0' as u32);
+            }
+
             let ttbr0 = current_process.with_address_space(|as_| as_.ttbr0_value());
             crate::arch::aarch64::paging::set_ttbr0(ttbr0);
+
+            #[cfg(all(target_arch = "aarch64", feature = "rpi5"))]
+            dbg_mark(b'Q' as u32);
 
             crate::arch::aarch64::context::enter_userspace(
                 code_ptr as usize,

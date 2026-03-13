@@ -1,6 +1,8 @@
 use core::ops::Neg;
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 use core::slice::{from_raw_parts, from_raw_parts_mut};
+#[cfg(feature = "rpi5")]
+use core::sync::atomic::{AtomicBool, Ordering};
 
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 use access::KernelAccess;
@@ -55,6 +57,21 @@ pub mod pwm;
 mod validation;
 
 use crate::arch::UserContext;
+
+#[cfg(feature = "rpi5")]
+static WRITE_MARKER_SENT: AtomicBool = AtomicBool::new(false);
+#[cfg(feature = "rpi5")]
+static BPF_MARKER_SENT: AtomicBool = AtomicBool::new(false);
+
+#[cfg(feature = "rpi5")]
+#[inline(always)]
+fn dbg_mark(ch: u32) {
+    // SAFETY: Write to Pi 5 debug UART10 data register through the
+    // higher-half direct map alias so this remains valid after TTBR0 switch.
+    unsafe {
+        (0xFFFF_8010_7D00_1000 as *mut u32).write_volatile(ch);
+    }
+}
 
 #[must_use]
 #[allow(clippy::too_many_arguments)]
@@ -341,6 +358,10 @@ fn dispatch_sys_read(fd: usize, buf: usize, nbyte: usize) -> Result<usize, Errno
 
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 fn dispatch_sys_write(fd: usize, buf: usize, nbyte: usize) -> Result<usize, Errno> {
+    #[cfg(feature = "rpi5")]
+    if !WRITE_MARKER_SENT.swap(true, Ordering::Relaxed) {
+        dbg_mark(b'w' as u32);
+    }
     let cx = KernelAccess::new();
 
     let fd = i32::try_from(fd).map_err(|_| EINVAL)?;
@@ -369,6 +390,10 @@ fn dispatch_sys_writev(fd: usize, iov_ptr: usize, iovcnt: usize) -> Result<usize
 
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 fn dispatch_sys_bpf(cmd: usize, attr: usize, size: usize) -> Result<usize, Errno> {
+    #[cfg(feature = "rpi5")]
+    if !BPF_MARKER_SENT.swap(true, Ordering::Relaxed) {
+        dbg_mark(b'p' as u32);
+    }
     let ret = bpf::sys_bpf(cmd, attr, size);
     Ok(ret as usize)
 }
@@ -615,7 +640,13 @@ fn dispatch_sys_nanosleep(req: usize, _rem: usize) -> Result<usize, Errno> {
 
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 fn dispatch_sys_spawn(path_ptr: usize, path_len: usize) -> Result<usize, Errno> {
-    use kernel_abi::ENAMETOOLONG;
+    use kernel_abi::{ENAMETOOLONG, ENOMEM};
+
+    use crate::mcore::mtask::process::CreateProcessError;
+    use crate::mcore::mtask::task::StackAllocationError;
+
+    #[cfg(feature = "rpi5")]
+    dbg_mark(b's' as u32);
 
     // 1. Read path from userspace
     // We reuse logic similar to sys_open
@@ -641,12 +672,27 @@ fn dispatch_sys_spawn(path_ptr: usize, path_len: usize) -> Result<usize, Errno> 
     // Process::create_from_executable handles task creation and enqueuing
     let child_proc = match Process::create_from_executable(parent, abs_path) {
         Ok(p) => p,
-        Err(_) => return Err(EINVAL), // Map CreateProcessError to Errno
+        Err(CreateProcessError::StackAllocationError(StackAllocationError::OutOfVirtualMemory)) => {
+            #[cfg(feature = "rpi5")]
+            dbg_mark(b'v' as u32);
+            return Err(ENOMEM);
+        }
+        Err(CreateProcessError::StackAllocationError(
+            StackAllocationError::OutOfPhysicalMemory,
+        )) => {
+            #[cfg(feature = "rpi5")]
+            dbg_mark(b'f' as u32);
+            return Err(ENOMEM);
+        }
     };
 
     // Use .as_u64() and then cast/convert to usize
     // We defined U64Ext for u64, so we can use into_usize() on the u64 value.
     use crate::U64Ext;
+    #[cfg(feature = "rpi5")]
+    dbg_mark(b'g' as u32);
+    #[cfg(target_arch = "aarch64")]
+    crate::mcore::context::ExecutionContext::load().set_need_reschedule();
     Ok(child_proc.pid().as_u64().into_usize())
 }
 

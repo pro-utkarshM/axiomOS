@@ -258,11 +258,10 @@ impl AddressSpaceMapper {
         let old_flags = PageTableFlags::from_pte_bits(raw_flags);
         let new_flags = f(old_flags);
 
-        // AArch64 doesn't have an easy "update flags" without unmap/map in the current walker
-        // but we can just map again with different flags if the walker supports it,
-        // or unmap and map.
         let phys = walker.unmap_page(vaddr)?;
-        walker.map_page(vaddr, phys, new_flags.to_pte_bits())
+        let pte_bits = new_flags.to_pte_bits();
+
+        walker.map_page(vaddr, phys, pte_bits)
     }
 
     #[cfg(target_arch = "aarch64")]

@@ -25,6 +25,15 @@ static mut BOOT_TABLES: BootPageTables = BootPageTables {
     l1_high: PageTable::empty(),
 };
 
+#[inline(always)]
+fn dbg_mark(ch: u32) {
+    #[cfg(feature = "rpi5")]
+    // SAFETY: Early debug marker write to Pi 5 debug UART10 data register.
+    unsafe {
+        (0x10_7D00_1000 as *mut u32).write_volatile(ch);
+    }
+}
+
 /// Initialize ARM64 memory management
 ///
 /// This function:
@@ -34,37 +43,47 @@ static mut BOOT_TABLES: BootPageTables = BootPageTables {
 /// 4. Enables the MMU with new page tables
 /// 5. Maps and initializes the kernel heap
 pub fn init() {
+    dbg_mark(0x41); // 'A'
     log::info!("Initializing ARM64 memory management...");
+    dbg_mark(0x4a); // 'J'
 
     // Initialize physical memory allocator (stage 1 - bump allocator)
     phys::init_stage1();
+    dbg_mark(0x42); // 'B'
 
     // Get memory info from DTB
     let dtb_info = dtb::info();
     let total_memory = dtb_info.total_memory;
+    dbg_mark(0x43); // 'C'
 
     log::info!("Setting up kernel page tables...");
+    dbg_mark(0x44); // 'D'
 
     // Set up initial page tables
     // SAFETY: We are in early boot, single-threaded, and have exclusive access to memory.
     // The total_memory value comes from the DTB which was validated earlier.
     unsafe {
         setup_kernel_page_tables(total_memory);
+        dbg_mark(0x45); // 'E'
 
         // Configure MAIR (memory attributes)
         paging::configure_mair();
+        dbg_mark(0x46); // 'F'
 
         // Configure TCR (translation control)
         paging::configure_tcr();
+        dbg_mark(0x47); // 'G'
 
         // Set TTBR0 (user/identity mapping) and TTBR1 (kernel mapping)
         let l0_user_phys = &raw const BOOT_TABLES.l0_user as usize;
         let l0_kernel_phys = &raw const BOOT_TABLES.l0_kernel as usize;
         paging::set_ttbr0(l0_user_phys);
         paging::set_ttbr1(l0_kernel_phys);
+        dbg_mark(0x48); // 'H'
 
         // Enable the MMU
         paging::enable_mmu();
+        dbg_mark(0x49); // 'I'
     }
 
     log::info!("ARM64 memory management initialized");
@@ -117,15 +136,20 @@ unsafe fn setup_kernel_page_tables(total_memory: usize) {
         let mut block_flags = pte_flags::VALID | pte_flags::AF | pte_flags::SH_INNER;
 
         // QEMU virt memory map:
-        // 0x0000_0000 - 0x3FFF_FFFF: Devices (Flash, GIC, UART, etc.)
-        // 0x4000_0000 - ...        : RAM
+        // 0x0000_0000 - 0x3FFF_FFFF: Devices
+        // 0x4000_0000 - ...        : RAM (kernel at 0x4008_0000)
         //
-        // Map the first 1GB as Device-nGnRE.
-        // Map the rest as Normal WB.
+        // Raspberry Pi 5 boots kernel at 0x0008_0000, so mapping the entire first 1GB
+        // as Device/XN would fault immediately after MMU enable.
+        #[cfg(feature = "virt")]
         if i == 0 {
             block_flags |= pte_flags::attr_index(mem::mair::DEVICE_NGNRE);
             block_flags |= pte_flags::UXN | pte_flags::PXN;
         } else {
+            block_flags |= pte_flags::attr_index(mem::mair::NORMAL_WB);
+        }
+        #[cfg(feature = "rpi5")]
+        {
             block_flags |= pte_flags::attr_index(mem::mair::NORMAL_WB);
         }
 
@@ -135,6 +159,38 @@ unsafe fn setup_kernel_page_tables(total_memory: usize) {
         if i < 512 {
             *boot_tables.l1_high.entry_mut(i) =
                 paging::PageTableEntry::block(phys_addr, block_flags);
+        }
+    }
+
+    #[cfg(feature = "rpi5")]
+    {
+        use crate::arch::aarch64::platform::rpi5::memory_map::{
+            BCM2712_UART10_BASE, GICC_BASE, GICD_BASE, RP1_PERIPHERAL_BASE,
+        };
+
+        // Keep Pi 5 high MMIO apertures accessible after MMU-on.
+        // Without this, post-MMU debug UART writes can fault immediately.
+        let mmio_flags = pte_flags::VALID
+            | pte_flags::AF
+            | pte_flags::SH_INNER
+            | pte_flags::UXN
+            | pte_flags::PXN
+            | pte_flags::attr_index(mem::mair::DEVICE_NGNRE);
+
+        for &mmio_base in &[
+            BCM2712_UART10_BASE,
+            GICD_BASE,
+            GICC_BASE,
+            RP1_PERIPHERAL_BASE,
+        ] {
+            let l1_idx = mmio_base >> 30; // 1GB block index
+            if l1_idx < 512 {
+                let phys_addr = l1_idx << 30;
+                *boot_tables.l1_low.entry_mut(l1_idx) =
+                    paging::PageTableEntry::block(phys_addr, mmio_flags);
+                *boot_tables.l1_high.entry_mut(l1_idx) =
+                    paging::PageTableEntry::block(phys_addr, mmio_flags);
+            }
         }
     }
 
@@ -200,11 +256,37 @@ pub fn create_user_address_space() -> Option<usize> {
             | paging::PageTableFlags::MMIO_DEVICE
             | paging::PageTableFlags::NO_EXECUTE; // Devices shouldn't be executable
 
+        // Keep a larger EL1-only bootstrap identity window so low-address kernel code can
+        // safely execute the TTBR0 switch + ERET path on Pi5. The kernel is ~11MB.
+        //
+        // Important: keep this below user app load addresses (user apps start at 0x1_0000_0000 on Pi5).
+        let kernel_bootstrap_flags =
+            paging::PageTableFlags::PRESENT | paging::PageTableFlags::WRITABLE;
+        let _ = walker.map_range(
+            0x0000_0000,
+            0x0000_0000,
+            0x0200_0000, // Map 32MB to cover the entire kernel
+            kernel_bootstrap_flags.to_pte_bits(),
+        );
+
         // UART (PL011) at 0x0900_0000
         let _ = walker.map_page(0x0900_0000, 0x0900_0000, device_flags.to_pte_bits());
 
-        // GICv2 at 0x0800_0000
-        // Distributor: 0x0800_0000, CPU Interface: 0x0801_0000
+        // Pi 5 debug connector UART10 (BCM2712 PL011) used by serial/log paths.
+        // This MMIO must remain visible while TTBR0 is switched for process-AS operations.
+        #[cfg(feature = "rpi5")]
+        let _ = walker.map_page(0x10_7D00_1000, 0x10_7D00_1000, device_flags.to_pte_bits());
+
+        #[cfg(feature = "rpi5")]
+        {
+            use crate::arch::aarch64::platform::rpi5::memory_map::{GICC_BASE, GICD_BASE};
+
+            // Keep the Pi 5 GIC distributor + CPU interface visible while TTBR0 is active.
+            let _ = walker.map_range(GICD_BASE, GICD_BASE, 0x20000, device_flags.to_pte_bits());
+            let _ = walker.map_range(GICC_BASE, GICC_BASE, 0x20000, device_flags.to_pte_bits());
+        }
+
+        #[cfg(all(feature = "virt", not(feature = "rpi5")))]
         let _ = walker.map_range(
             0x0800_0000,
             0x0800_0000,

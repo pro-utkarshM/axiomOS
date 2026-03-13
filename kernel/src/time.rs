@@ -2,6 +2,7 @@ use jiff::Timestamp;
 
 #[cfg(target_arch = "x86_64")]
 use crate::hpet::hpet;
+#[cfg(target_arch = "x86_64")]
 use crate::BOOT_TIME_SECONDS;
 
 pub trait TimestampExt {
@@ -22,16 +23,27 @@ impl TimestampExt for Timestamp {
     }
 }
 
-#[cfg(not(target_arch = "x86_64"))]
+#[cfg(target_arch = "aarch64")]
 impl TimestampExt for Timestamp {
     fn now() -> Self {
-        // TODO: Implement proper time handling for aarch64/riscv64
-        let secs = BOOT_TIME_SECONDS.get().unwrap();
-        Timestamp::new(
-            i64::try_from(*secs).expect("shouldn't have more seconds than i64::MAX"),
-            0,
-        )
-        .unwrap()
+        let counter: u64;
+        unsafe { core::arch::asm!("mrs {}, cntvct_el0", out(reg) counter) };
+        let freq: u64;
+        unsafe { core::arch::asm!("mrs {}, cntfrq_el0", out(reg) freq) };
+        if freq == 0 {
+            return Timestamp::new(0, 0).unwrap();
+        }
+        let secs = counter / freq;
+        let remainder = counter % freq;
+        let nsec = (remainder * 1_000_000_000) / freq;
+        Timestamp::new(secs as i64, nsec as i32).unwrap()
+    }
+}
+
+#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+impl TimestampExt for Timestamp {
+    fn now() -> Self {
+        Timestamp::new(0, 0).unwrap()
     }
 }
 

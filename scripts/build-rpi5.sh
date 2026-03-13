@@ -4,6 +4,9 @@
 # This script builds the kernel for the aarch64-unknown-none target
 # with the rpi5 feature enabled, then creates a raw binary suitable
 # for the Pi 5 bootloader.
+#
+# The disk image (ext2 rootfs with userspace binaries) is embedded
+# directly into the kernel binary via include_bytes!().
 
 set -e
 
@@ -24,8 +27,21 @@ if ! rustup target list | grep -q "$TARGET (installed)"; then
     rustup target add "$TARGET"
 fi
 
-# Build the kernel
-echo "Building kernel..."
+# Step 1: Build disk image with userspace binaries
+echo "Building userspace binaries and disk image..."
+cargo build -p muffinos --target "$TARGET" --no-default-features --features aarch64_deps
+
+# Find the most recently built disk.img
+DISK_PATH=$(find "target/$TARGET" -name disk.img -printf "%T@ %p\n" | sort -n | tail -n 1 | awk '{print $2}')
+if [ -z "$DISK_PATH" ]; then
+    echo "Error: disk.img not found after workspace build"
+    exit 1
+fi
+echo "Using disk image: $DISK_PATH ($(stat -c%s "$DISK_PATH" 2>/dev/null || stat -f%z "$DISK_PATH") bytes)"
+
+# Step 2: Build the kernel with embedded disk image
+export AXIOM_DISK_IMAGE="$PROJECT_DIR/$DISK_PATH"
+echo "Building kernel (AXIOM_DISK_IMAGE=$AXIOM_DISK_IMAGE)..."
 if [ "$PROFILE" = "release" ]; then
     cargo build --target "$TARGET" --features embedded-rpi5 --release -p kernel
     BUILD_DIR="target/$TARGET/release"
