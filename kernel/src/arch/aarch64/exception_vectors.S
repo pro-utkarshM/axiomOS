@@ -21,10 +21,28 @@ irq_stack_top:
 
 .section .text
 
+// Emit a single debug byte to the Pi5 debug UART through higher-half alias.
+// Clobbers x14/x15; use only after register context has been saved.
+.macro uart_mark ch
+    ldr     x14, =0xFFFF80107D001000
+    mov     w15, #\ch
+    str     w15, [x14]
+.endm
+
 // Macro to save context
-// Allocates stack space and saves x0-x30, ELR_EL1, SPSR_EL1
+// Allocates stack space and saves x0-x30, ELR_EL1, SPSR_EL1, and captures vector_entry_timestamp.
 .macro save_context
-    sub     sp, sp, #272
+    // Allocate 288 bytes (aligned to 16)
+    // 31 GPRs (x0-x30) = 248 bytes
+    // ELR_EL1 + SPSR_EL1 = 16 bytes
+    // SP_EL0 = 8 bytes
+    // vector_entry_timestamp = 8 bytes
+    // Total = 280 bytes -> 288 for 16-byte alignment
+    sub     sp, sp, #288
+
+    // Capture hardware timestamp as early as possible
+    mrs     x9, cntvct_el0
+    str     x9, [sp, #272]
 
     stp     x0, x1, [sp, #0]
     stp     x2, x3, [sp, #16]
@@ -78,7 +96,7 @@ irq_stack_top:
     ldp     x2, x3, [sp, #16]
     ldp     x0, x1, [sp, #0]
 
-    add     sp, sp, #272
+    add     sp, sp, #288
 .endm
 
 // Macro to define a vector table entry
@@ -163,10 +181,17 @@ curr_el_spx_irq_handler:
 define_invalid_handler curr_el_spx_fiq_handler, 2, 1
 define_invalid_handler curr_el_spx_serror_handler, 3, 1
 
+lower_el_sync_call_wrapper:
+    // Preserve caller LR across nested BL so RET returns to vector path.
+    mov     x19, x30
+    bl      handle_sync_exception
+    mov     x30, x19
+    ret
+
 lower_el_aarch64_sync_handler:
     save_context
     mov     x0, sp
-    bl      handle_sync_exception
+    bl      lower_el_sync_call_wrapper
     mov     x0, sp
     bl      check_preemption
     restore_context

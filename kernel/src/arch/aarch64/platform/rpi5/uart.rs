@@ -1,17 +1,14 @@
-//! RP1 UART Driver for Raspberry Pi 5
+//! Raspberry Pi 5 UART Driver for debug console
 //!
-//! The RP1 UART is a PL011-compatible UART peripheral. When using the
-//! firmware shortcut `enable_rp1_uart=1`, the UART is pre-configured
-//! with 115200 baud, 8N1 settings.
+//! Uses BCM2712 PL011 UART10 (board debug connector), which is what
+//! the official Raspberry Pi Debug Probe is wired to.
 //!
 //! Physical connection:
-//! - GPIO14 (Pin 8) = TXD0 -> USB-TTL RX
-//! - GPIO15 (Pin 10) = RXD0 -> USB-TTL TX
-//! - GND (Pin 6) -> USB-TTL GND
+//! - Pi 5 debug header JST -> Raspberry Pi Debug Probe UART port
 
 use core::fmt::{self, Write};
 
-use super::memory_map::RP1_UART0_BASE;
+use super::memory_map::BCM2712_UART10_BASE;
 use super::mmio::MmioReg;
 
 /// PL011 UART Register offsets
@@ -98,7 +95,7 @@ mod cr {
     pub const RTS: u32 = 1 << 11;
 }
 
-/// RP1 PL011 UART Driver
+/// BCM2712 PL011 UART Driver
 pub struct Rp1Uart {
     base: usize,
 }
@@ -112,37 +109,17 @@ impl Rp1Uart {
     /// must be accessible at the configured address.
     pub const unsafe fn new() -> Self {
         Self {
-            base: RP1_UART0_BASE,
+            base: BCM2712_UART10_BASE,
         }
     }
 
     /// Initialize the UART
     ///
-    /// When using `enable_rp1_uart=1` in config.txt, the firmware has
-    /// already configured the baud rate. We just need to ensure the
-    /// UART is enabled with correct line settings.
+    /// Firmware pre-initializes console UART settings (baud, routing, clocks).
+    /// Avoid reprogramming control registers here during early boot.
     pub fn init(&mut self) {
-        let cr = self.reg_cr();
-        let lcrh = self.reg_lcrh();
-        let icr = self.reg_icr();
-
-        // Disable UART while configuring
-        cr.write(0);
-
-        // Wait for any pending transmission to complete
-        self.reg_fr().wait_clear(fr::BUSY);
-
-        // Flush FIFOs by disabling them
-        lcrh.clear_bits(lcrh::FEN);
-
-        // Clear all pending interrupts
-        icr.write(0x7FF);
-
-        // Configure line: 8 data bits, no parity, 1 stop bit, FIFOs enabled
-        lcrh.write(lcrh::WLEN_8 | lcrh::FEN);
-
-        // Enable UART, transmitter, and receiver
-        cr.write(cr::UARTEN | cr::TXE | cr::RXE);
+        // Intentionally no-op.
+        // We rely on firmware/bootloader UART setup to keep early console alive.
     }
 
     /// Send a single byte (blocking)
@@ -150,7 +127,6 @@ impl Rp1Uart {
         // Wait for TX FIFO to have space
         self.reg_fr().wait_clear(fr::TXFF);
 
-        // Write the byte
         self.reg_dr().write(c as u32);
     }
 

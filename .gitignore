@@ -4,6 +4,7 @@ debug.lldb
 
 # RISC-V demo kernel build artifacts
 kernel/demos/riscv/target/
+kernel/crates/kernel_bpf/target/
 
 # Claude Code settings
 .claude/

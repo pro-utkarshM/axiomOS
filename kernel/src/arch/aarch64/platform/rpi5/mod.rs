@@ -6,9 +6,9 @@
 //! address space.
 //!
 //! Key addresses:
-//! - RP1 peripheral base: 0x1F00_0000_0000
-//! - UART0: 0x1F00_0030_0000
-//! - GPIO: 0x1F00_00D0_0000
+//! - RP1 peripheral base: 0x1F_0000_0000
+//! - Debug UART (UART10): 0x10_7D00_1000
+//! - RP1 GPIO: 0x1F_000D_0000
 
 pub mod gpio;
 pub mod memory_map;
@@ -53,11 +53,6 @@ pub static PWM1: Lazy<Mutex<Rp1Pwm>> = Lazy::new(|| {
 /// This should be called early in boot to set up essential peripherals
 /// like UART for debug output.
 pub fn init() {
-    // Force lazy initialization of UART
-    let _ = &*UART;
-
-    // Print boot banner
-    use core::fmt::Write;
-    let _ = writeln!(UART.lock(), "\n=== axiom-ebpf on Raspberry Pi 5 ===");
-    let _ = writeln!(UART.lock(), "Platform initialized");
+    // Keep early platform init side-effect free. Firmware already sets up
+    // debug UART routing; first real log write will lazily initialize UART.
 }

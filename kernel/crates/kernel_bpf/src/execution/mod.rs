@@ -18,6 +18,126 @@ extern crate alloc;
 
 mod interpreter;
 
+#[cfg(test)]
+#[allow(clippy::missing_safety_doc, improper_ctypes_definitions)]
+pub mod helpers_stub {
+    use core::sync::atomic::{AtomicU64, Ordering};
+
+    use super::BpfContext;
+
+    static TEST_MAP_VALUE: AtomicU64 = AtomicU64::new(0);
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn bpf_ktime_get_ns() -> u64 {
+        0
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn bpf_get_interrupt_latency_ns(ctx: *const BpfContext) -> u64 {
+        if ctx.is_null() {
+            return 0;
+        }
+        unsafe { (*ctx).interrupt_latency_ns }
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn bpf_get_boot_time_ms(ctx: *const BpfContext) -> u64 {
+        if ctx.is_null() {
+            return 0;
+        }
+        unsafe { (*ctx).boot_time_ms }
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn bpf_get_kernel_heap_kb(ctx: *const BpfContext) -> u64 {
+        if ctx.is_null() {
+            return 0;
+        }
+        unsafe { (*ctx).kernel_heap_kb }
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn bpf_get_kernel_image_mb(ctx: *const BpfContext) -> u64 {
+        if ctx.is_null() {
+            return 0;
+        }
+        unsafe { (*ctx).kernel_image_mb }
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn bpf_trace_printk(_fmt: *const u8, _len: u32) -> i32 {
+        0
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn bpf_map_lookup_elem(_map_id: u32, _key: *const u8) -> *mut u8 {
+        TEST_MAP_VALUE.as_ptr() as *mut u8
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn bpf_map_update_elem(
+        _map_id: u32,
+        _key: *const u8,
+        value: *const u8,
+        _flags: u64,
+    ) -> i32 {
+        if !value.is_null() {
+            let val = unsafe { *(value as *const u64) };
+            TEST_MAP_VALUE.store(val, Ordering::SeqCst);
+        }
+        0
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn bpf_map_delete_elem(_map_id: u32, _key: *const u8) -> i32 {
+        TEST_MAP_VALUE.store(0, Ordering::SeqCst);
+        0
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn bpf_ringbuf_output(
+        _map_id: u32,
+        _data: *const u8,
+        _size: u64,
+        _flags: u64,
+    ) -> i64 {
+        0
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn bpf_gpio_read(_pin: u32) -> i64 {
+        0
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn bpf_gpio_write(_pin: u32, _value: u32) -> i64 {
+        0
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn bpf_pwm_write(_pwm_id: u32, _channel: u32, _duty: u32) -> i64 {
+        0
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn bpf_timeseries_push(_map_id: u32, _key: *const u8, _value: *const u8) -> i64 {
+        0
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn bpf_motor_emergency_stop(_reason: u32) -> i64 {
+        0
+    }
+
+    pub fn get_test_map_value() -> u64 {
+        TEST_MAP_VALUE.load(Ordering::SeqCst)
+    }
+
+    pub fn reset_test_map() {
+        TEST_MAP_VALUE.store(0, Ordering::SeqCst);
+    }
+}
+
 // JIT is only available for cloud profile
 #[cfg(all(feature = "cloud-profile", target_arch = "x86_64"))]
 pub mod jit;
@@ -45,6 +165,14 @@ pub struct BpfContext {
     pub data_end: *const u8,
     /// Pointer to packet metadata
     pub data_meta: *const u8,
+    /// Interrupt latency in nanoseconds (time from IRQ entry to BPF execution)
+    pub interrupt_latency_ns: u64,
+    /// Boot time in milliseconds (kernel start to init)
+    pub boot_time_ms: u64,
+    /// Kernel heap usage in KB
+    pub kernel_heap_kb: u64,
+    /// Kernel image size in MB
+    pub kernel_image_mb: u64,
 }
 
 /// Context for syscall tracepoints.
@@ -70,6 +198,10 @@ impl BpfContext {
             data: core::ptr::null(),
             data_end: core::ptr::null(),
             data_meta: core::ptr::null(),
+            interrupt_latency_ns: 0,
+            boot_time_ms: 0,
+            kernel_heap_kb: 0,
+            kernel_image_mb: 0,
         }
     }
 
@@ -80,6 +212,10 @@ impl BpfContext {
             // SAFETY: data is a valid slice, so adding its length to the pointer remains within the object.
             data_end: unsafe { data.as_ptr().add(data.len()) },
             data_meta: core::ptr::null(),
+            interrupt_latency_ns: 0,
+            boot_time_ms: 0,
+            kernel_heap_kb: 0,
+            kernel_image_mb: 0,
         }
     }
 
@@ -210,17 +346,47 @@ pub enum HelperFunc {
     /// Map delete element
     MapDeleteElem = 7,
 
-    /// Probe read (safe memory read)
-    ProbeRead = 8,
+    /// Ring buffer output
+    RingbufOutput = 8,
+
+    /// Time series push
+    TimeseriesPush = 9,
 
     /// Get current PID/TID
-    GetCurrentPidTgid = 9,
+    GetCurrentPidTgid = 10,
 
     /// Get current UID/GID
-    GetCurrentUidGid = 10,
+    GetCurrentUidGid = 11,
 
     /// Get current comm (process name)
-    GetCurrentComm = 11,
+    GetCurrentComm = 12,
+
+    /// Get interrupt latency in nanoseconds
+    GetInterruptLatencyNs = 13,
+
+    /// Get boot time in milliseconds
+    GetBootTimeMs = 15,
+
+    /// Get kernel heap usage in KB
+    GetKernelHeapKb = 16,
+
+    /// Get kernel image size in MB
+    GetKernelImageMb = 17,
+
+    /// Probe read
+    ProbeRead = 14,
+
+    /// GPIO read
+    GpioRead = 1004,
+
+    /// GPIO write
+    GpioWrite = 1003,
+
+    /// Motor emergency stop
+    MotorEmergencyStop = 1000,
+
+    /// PWM write
+    PwmWrite = 1005,
 }
 
 impl HelperFunc {
@@ -236,9 +402,19 @@ impl HelperFunc {
             | Self::MapLookupElem
             | Self::MapUpdateElem
             | Self::MapDeleteElem
+            | Self::RingbufOutput
+            | Self::TimeseriesPush
             | Self::GetCurrentPidTgid
             | Self::GetCurrentUidGid
-            | Self::GetCurrentComm => true,
+            | Self::GetCurrentComm
+            | Self::GetInterruptLatencyNs
+            | Self::GetBootTimeMs
+            | Self::GetKernelHeapKb
+            | Self::GetKernelImageMb
+            | Self::GpioRead
+            | Self::GpioWrite
+            | Self::MotorEmergencyStop
+            | Self::PwmWrite => true,
 
             // Trace/debug helpers may be restricted in embedded
             Self::TracePrintk | Self::ProbeRead => {
@@ -252,6 +428,13 @@ impl HelperFunc {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ensure_stubs_linked() {
+        // Explicitly reference a stub to ensure the module and its no_mangle symbols
+        // are not optimized away by the linker during host tests.
+        assert_eq!(helpers_stub::bpf_ktime_get_ns(), 0);
+    }
 
     #[test]
     fn context_from_slice() {

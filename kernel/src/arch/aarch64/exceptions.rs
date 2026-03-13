@@ -1,4 +1,106 @@
 use core::arch::asm;
+#[cfg(feature = "rpi5")]
+use core::sync::atomic::{AtomicBool, Ordering};
+
+#[cfg(feature = "rpi5")]
+static PREEMPT_MARKER_SENT: AtomicBool = AtomicBool::new(false);
+#[cfg(feature = "rpi5")]
+static SYNC_ENTRY_MARKER_SENT: AtomicBool = AtomicBool::new(false);
+#[cfg(feature = "rpi5")]
+static SYNC_DECODE_MARKER_SENT: AtomicBool = AtomicBool::new(false);
+#[cfg(feature = "rpi5")]
+static SVC_MARKER_SENT: AtomicBool = AtomicBool::new(false);
+#[cfg(feature = "rpi5")]
+static SVC_ENTER_MARKER_SENT: AtomicBool = AtomicBool::new(false);
+#[cfg(feature = "rpi5")]
+static SVC_RETURN_MARKER_SENT: AtomicBool = AtomicBool::new(false);
+#[cfg(feature = "rpi5")]
+static DATA_ABORT_MARKER_SENT: AtomicBool = AtomicBool::new(false);
+#[cfg(feature = "rpi5")]
+static INSTR_ABORT_MARKER_SENT: AtomicBool = AtomicBool::new(false);
+
+#[cfg(feature = "rpi5")]
+#[inline(always)]
+fn dbg_mark(ch: u32) {
+    const UART_BASE: usize = 0xFFFF_8010_7D00_1000;
+    const UART_FR: usize = UART_BASE + 0x18;
+    const UART_TXFF: u32 = 1 << 5;
+    // SAFETY: Accessing the debug UART registers via the higher-half alias.
+    unsafe {
+        // Pace writes so marker bursts are not dropped when TX FIFO is full.
+        while (UART_FR as *const u32).read_volatile() & UART_TXFF != 0 {}
+        (UART_BASE as *mut u32).write_volatile(ch);
+    }
+}
+
+#[cfg(feature = "rpi5")]
+#[inline(always)]
+fn dbg_hex_nibble(v: u64) -> u32 {
+    match (v & 0xF) as u8 {
+        0..=9 => (b'0' + (v as u8 & 0xF)) as u32,
+        10..=15 => (b'A' + ((v as u8 & 0xF) - 10)) as u32,
+        _ => b'?' as u32,
+    }
+}
+
+#[cfg(feature = "rpi5")]
+#[inline(always)]
+fn dbg_hex_u32(v: u32) {
+    for shift in (0..8).rev() {
+        dbg_mark(dbg_hex_nibble((v as u64) >> (shift * 4)));
+    }
+}
+
+#[cfg(feature = "rpi5")]
+#[inline(always)]
+fn dbg_hex_u64(v: u64) {
+    for shift in (0..16).rev() {
+        dbg_mark(dbg_hex_nibble(v >> (shift * 4)));
+    }
+}
+
+#[cfg(feature = "rpi5")]
+#[inline(always)]
+fn el0_va_to_pa(va: u64) -> Option<usize> {
+    let par: u64;
+    // SAFETY: AT+PAR_EL1 only probes translation state and does not dereference
+    // the provided VA; this avoids taking nested faults while debugging.
+    unsafe {
+        asm!("at s1e0r, {}", in(reg) va);
+        asm!("isb");
+        asm!("mrs {}, par_el1", out(reg) par);
+    }
+
+    // PAR_EL1[0] == 1 indicates translation fault.
+    if (par & 1) != 0 {
+        return None;
+    }
+
+    // PAR_EL1 provides PA[47:12] on success; preserve original page offset.
+    let pa = ((par as usize) & 0x0000_FFFF_FFFF_F000) | ((va as usize) & 0xFFF);
+    Some(pa)
+}
+
+#[cfg(feature = "rpi5")]
+#[inline(always)]
+fn read_u32_at_el0_va(va: u64) -> Option<u32> {
+    let pa = el0_va_to_pa(va)?;
+    let kva = crate::arch::aarch64::mem::phys_to_virt(pa);
+    // SAFETY: `kva` is the direct-map alias of translated physical memory.
+    // We only use this for crash-time telemetry.
+    let word = unsafe { (kva as *const u32).read_volatile() };
+    Some(word)
+}
+
+#[cfg(feature = "rpi5")]
+#[inline(always)]
+fn current_ttbr0_el1() -> u64 {
+    let ttbr0: u64;
+    unsafe {
+        asm!("mrs {}, ttbr0_el1", out(reg) ttbr0);
+    }
+    ttbr0
+}
 
 /// Exception vector table
 #[repr(C, align(2048))]
@@ -54,6 +156,11 @@ unsafe extern "C" {
 pub extern "C" fn check_preemption(_frame: *mut ExceptionContext) {
     if let Some(ctx) = crate::arch::aarch64::cpu::try_current() {
         if ctx.check_and_clear_reschedule() {
+            #[cfg(feature = "rpi5")]
+            if !PREEMPT_MARKER_SENT.swap(true, Ordering::Relaxed) {
+                dbg_mark(b'r' as u32);
+            }
+
             // SAFETY: We are in the exception return path, interrupts are disabled.
             // It is safe to call reschedule here as we haven't started restoring registers yet.
             unsafe {
@@ -72,20 +179,33 @@ pub extern "C" fn check_preemption(_frame: *mut ExceptionContext) {
 /// saved on the stack. It must not unwind.
 #[unsafe(no_mangle)]
 pub extern "C" fn handle_sync_exception(ctx: &mut ExceptionContext) {
+    #[cfg(feature = "rpi5")]
+    if !SYNC_ENTRY_MARKER_SENT.swap(true, Ordering::Relaxed) {
+        dbg_mark(b'j' as u32);
+    }
+
     let esr: u64;
     let elr: u64;
     let far: u64;
+    let spsr: u64;
 
     // SAFETY: Reading exception registers (ESR, ELR, FAR) is safe in an exception handler.
     unsafe {
         asm!("mrs {}, esr_el1", out(reg) esr);
         asm!("mrs {}, elr_el1", out(reg) elr);
         asm!("mrs {}, far_el1", out(reg) far);
+        asm!("mrs {}, spsr_el1", out(reg) spsr);
     }
 
     let ec = (esr >> 26) & 0x3F; // Exception class
     let iss = esr & 0x1FFFFFF; // Instruction specific syndrome
 
+    #[cfg(feature = "rpi5")]
+    if !SYNC_DECODE_MARKER_SENT.swap(true, Ordering::Relaxed) {
+        dbg_mark(b'k' as u32);
+    }
+
+    #[cfg(not(feature = "rpi5"))]
     log::debug!(
         "Sync exception: EC={:#x}, ISS={:#x}, ELR={:#x}, FAR={:#x}",
         ec,
@@ -97,17 +217,82 @@ pub extern "C" fn handle_sync_exception(ctx: &mut ExceptionContext) {
     match ec {
         0x15 => {
             // SVC instruction execution in AArch64 state
+            #[cfg(feature = "rpi5")]
+            if !SVC_MARKER_SENT.swap(true, Ordering::Relaxed) {
+                dbg_mark(b'V' as u32);
+            }
+            #[cfg(feature = "rpi5")]
+            if !SVC_ENTER_MARKER_SENT.swap(true, Ordering::Relaxed) {
+                dbg_mark(b'l' as u32);
+            }
             crate::arch::aarch64::syscall::handle_syscall(ctx);
+            #[cfg(feature = "rpi5")]
+            if !SVC_RETURN_MARKER_SENT.swap(true, Ordering::Relaxed) {
+                dbg_mark(b'm' as u32);
+            }
         }
         0x20 | 0x21 => {
             // Instruction abort from lower/same EL
+            #[cfg(feature = "rpi5")]
+            if !INSTR_ABORT_MARKER_SENT.swap(true, Ordering::Relaxed) {
+                dbg_mark(b'I' as u32);
+            }
             panic!("Instruction abort at {:#x}, far: {:#x}", elr, far);
         }
         0x24 | 0x25 => {
             // Data abort from lower/same EL
+            #[cfg(feature = "rpi5")]
+            if !DATA_ABORT_MARKER_SENT.swap(true, Ordering::Relaxed) {
+                dbg_mark(b'D' as u32);
+            }
             handle_data_abort(elr, far, iss);
         }
         _ => {
+            #[cfg(feature = "rpi5")]
+            {
+                // Unhandled sync exception class: emit Y + two hex digits of EC.
+                dbg_mark(b'Y' as u32);
+                dbg_mark(dbg_hex_nibble(ec >> 4));
+                dbg_mark(dbg_hex_nibble(ec));
+
+                // Emit full ELR/ESR/SPSR/FAR to avoid ambiguity about EL0 vs EL1 faults.
+                dbg_mark(b'E' as u32);
+                dbg_hex_u64(elr);
+                dbg_mark(b'R' as u32);
+                dbg_hex_u64(esr);
+                dbg_mark(b'P' as u32);
+                dbg_hex_u64(spsr);
+                dbg_mark(b'F' as u32);
+                dbg_hex_u64(far);
+
+                dbg_mark(b'T' as u32);
+                dbg_hex_u64(current_ttbr0_el1());
+
+                if let Some(ctx) = crate::arch::aarch64::cpu::try_current() {
+                    let pid = ctx.current_task().process().pid().as_u64();
+                    dbg_mark(b'Q' as u32);
+                    dbg_hex_u64(pid);
+                }
+
+                // Emit instruction words at ELR/ELR+4 and full SP_EL0 from saved context.
+                let insn0 = read_u32_at_el0_va(elr).unwrap_or(0xFFFF_FFFF);
+                let insn1 = read_u32_at_el0_va(elr.wrapping_add(4)).unwrap_or(0xFFFF_FFFF);
+                dbg_mark(b'I' as u32);
+                dbg_hex_u32(insn0);
+                dbg_mark(b'J' as u32);
+                dbg_hex_u32(insn1);
+                dbg_mark(b'S' as u32);
+                dbg_hex_u64(ctx.sp_el0);
+
+                dbg_mark(b'!' as u32);
+
+                // Stop after first unknown-sync packet so UART output remains analyzable.
+                loop {
+                    // SAFETY: WFI in exception context is safe for a debug halt loop.
+                    unsafe { asm!("wfi", options(nomem, nostack, preserves_flags)) };
+                }
+            }
+            #[cfg(not(feature = "rpi5"))]
             panic!(
                 "Unhandled synchronous exception: EC={:#x}, ISS={:#x}, ELR={:#x}",
                 ec, iss, elr
@@ -187,6 +372,19 @@ fn handle_data_abort(elr: u64, far: u64, iss: u64) {
     let _is_s1ptw = (iss & (1 << 7)) != 0; // Stage 1 page table walk
 
     let fault_code = DataFaultCode::from_iss(iss);
+
+    #[cfg(feature = "rpi5")]
+    {
+        // Emit compact abort telemetry so we can decode failures even when panic text is truncated.
+        dbg_mark(b'X' as u32); // ELR
+        dbg_hex_u64(elr);
+        dbg_mark(b'Y' as u32); // FAR
+        dbg_hex_u64(far);
+        dbg_mark(if is_write { b'W' as u32 } else { b'R' as u32 }); // access type
+        dbg_mark(b'Z' as u32); // DFSC (ISS[5:0]) as two hex nibbles
+        dbg_mark(dbg_hex_nibble((iss >> 4) & 0xF));
+        dbg_mark(dbg_hex_nibble(iss & 0xF));
+    }
 
     log::debug!(
         "Data abort: PC={:#x}, addr={:#x}, write={}, dfsc={:?}",
@@ -317,6 +515,13 @@ pub extern "C" fn handle_serror() {
 /// Invalid exception handler (called for unhandled vectors)
 #[unsafe(no_mangle)]
 pub extern "C" fn handle_invalid_exception(kind: u64, source: u64) {
+    #[cfg(feature = "rpi5")]
+    {
+        // Invalid vector taken: emit N + kind + source (low nibble each).
+        dbg_mark(b'N' as u32);
+        dbg_mark(dbg_hex_nibble(kind));
+        dbg_mark(dbg_hex_nibble(source));
+    }
     let esr: u64;
     let elr: u64;
     let far: u64;
@@ -383,4 +588,8 @@ pub struct ExceptionContext {
     pub elr: u64,    // Exception link register
     pub spsr: u64,   // Saved program status register
     pub sp_el0: u64, // User stack pointer (saved from SP_EL0)
+
+    /// Timestamp captured at the very beginning of the exception vector entry.
+    /// Used for interrupt latency benchmarking.
+    pub vector_entry_timestamp: u64,
 }

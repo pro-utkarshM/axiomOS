@@ -20,9 +20,12 @@
 //! The RP1's GPIO Bank 0 generates internal IRQ 0, which routes through
 //! the RP1's interrupt controller to one of these PCIe lines.
 
+#[cfg(feature = "rpi5")]
+use core::sync::atomic::{AtomicBool, Ordering};
+
 use super::gic;
 
-/// Physical timer IRQ number (PPI 14 = IRQ 30)
+/// Non-secure physical timer IRQ number (PPI 14 = IRQ 30)
 const TIMER_IRQ: u32 = gic::irq::TIMER_PHYS;
 
 /// RP1 GPIO IRQ number
@@ -37,6 +40,29 @@ const TIMER_IRQ: u32 = gic::irq::TIMER_PHYS;
 /// (GPIO, UART, etc.) raised the interrupt.
 #[cfg(feature = "rpi5")]
 const RP1_GPIO_IRQ: u32 = 261; // GIC SPI 229 = 32 + 229
+
+#[cfg(feature = "rpi5")]
+static TIMER_IRQ_MARKER_SENT: AtomicBool = AtomicBool::new(false);
+#[cfg(feature = "rpi5")]
+static FIRST_IRQ_MARKER_SENT: AtomicBool = AtomicBool::new(false);
+
+#[cfg(feature = "rpi5")]
+#[inline(always)]
+fn dbg_mark(ch: u32) {
+    // SAFETY: Write to Pi 5 debug UART10 data register.
+    unsafe {
+        (0xFFFF_8010_7D00_1000 as *mut u32).write_volatile(ch);
+    }
+}
+
+#[cfg(feature = "rpi5")]
+#[inline(always)]
+fn dbg_hex_nibble(v: u32) -> u32 {
+    match v & 0xF {
+        0..=9 => b'0' as u32 + (v & 0xF),
+        _ => b'A' as u32 + ((v & 0xF) - 10),
+    }
+}
 
 /// Initialize interrupt controller and timer
 pub fn init() {
@@ -78,21 +104,37 @@ use super::exceptions::ExceptionContext;
 /// and that it's safe to interact with hardware state. It must not unwind.
 #[unsafe(no_mangle)]
 pub extern "C" fn handle_irq(_ctx: &mut ExceptionContext) {
-    // Acknowledge the interrupt and get its ID
-    let irq = gic::acknowledge();
+    // Acknowledge the interrupt and decode the IRQ ID for dispatch.
+    // EOIR must receive the raw IAR value, not just the 10-bit ID.
+    let iar = gic::acknowledge();
+    let irq = gic::irq_id_from_iar(iar);
 
     // Check for spurious interrupt
     if irq == gic::irq::SPURIOUS {
         return;
     }
 
+    #[cfg(feature = "rpi5")]
+    if !FIRST_IRQ_MARKER_SENT.swap(true, Ordering::Relaxed) {
+        // Emit "M" + 3 hex nibbles of IRQ ID once (e.g., M01E for IRQ 30).
+        dbg_mark(b'M' as u32);
+        dbg_mark(dbg_hex_nibble((irq >> 8) & 0xF));
+        dbg_mark(dbg_hex_nibble((irq >> 4) & 0xF));
+        dbg_mark(dbg_hex_nibble(irq & 0xF));
+    }
+
     // log::info!("Handling IRQ {}", irq);
 
     // Dispatch based on IRQ number
     if irq == TIMER_IRQ {
-        handle_timer_interrupt();
+        #[cfg(feature = "rpi5")]
+        if !TIMER_IRQ_MARKER_SENT.swap(true, Ordering::Relaxed) {
+            dbg_mark(b't' as u32);
+        }
+
+        handle_timer_interrupt(_ctx);
         // Signal end of interrupt for timer
-        gic::end_of_interrupt(irq);
+        gic::end_of_interrupt(iar);
 
         // Trigger scheduler tick (may cause context switch)
         // We do this AFTER EOI so that new tasks don't inherit the active interrupt state
@@ -109,12 +151,12 @@ pub extern "C" fn handle_irq(_ctx: &mut ExceptionContext) {
             }
         }
         // Signal end of interrupt for other IRQs
-        gic::end_of_interrupt(irq);
+        gic::end_of_interrupt(iar);
     }
 }
 
 /// Handle timer interrupt (without rescheduling)
-fn handle_timer_interrupt() {
+fn handle_timer_interrupt(ctx: &ExceptionContext) {
     // log::info!("Timer interrupt started");
     // Clear and reset timer for next interrupt
     clear_timer_interrupt();
@@ -127,9 +169,31 @@ fn handle_timer_interrupt() {
     // operations without deadlocking.
     if let Some(manager) = crate::BPF_MANAGER.get() {
         let programs = manager.lock().get_hook_programs(1);
-        let ctx = kernel_bpf::execution::BpfContext::empty();
+
+        // Calculate interrupt latency from vector entry to now
+        let mut bpf_ctx = kernel_bpf::execution::BpfContext::empty();
+
+        // Include kernel metrics if available
+        if let Some(metrics) = crate::BOOT_METRICS.get() {
+            bpf_ctx.boot_time_ms = metrics.boot_time_ms;
+            bpf_ctx.kernel_heap_kb = metrics.kernel_heap_kb;
+            bpf_ctx.kernel_image_mb = metrics.kernel_image_mb;
+        }
+
+        unsafe {
+            let now: u64;
+            core::arch::asm!("mrs {}, cntvct_el0", out(reg) now);
+            let latency_ticks = now.saturating_sub(ctx.vector_entry_timestamp);
+
+            // Convert ticks to nanoseconds: ns = ticks * 1,000,000,000 / freq
+            let freq: u64;
+            core::arch::asm!("mrs {}, cntfrq_el0", out(reg) freq);
+            bpf_ctx.interrupt_latency_ns =
+                (latency_ticks as u128 * 1_000_000_000 / freq as u128) as u64;
+        }
+
         for (prog_id, program) in &programs {
-            match crate::bpf::BpfManager::execute_program(program, &ctx) {
+            match crate::bpf::BpfManager::execute_program(program, &bpf_ctx) {
                 Ok(_res) => {}
                 Err(e) => log::error!("BPF Timer Hook [id={}] failed: {:?}", prog_id, e),
             }
@@ -149,19 +213,19 @@ fn clear_timer_interrupt() {
 /// Set next timer interrupt
 fn set_next_timer() {
     // SAFETY: Accessing timer registers (CNTP_*) is safe in EL1. We are configuring the
-    // physical timer for the next scheduler tick.
+    // non-secure physical timer for the next scheduler tick.
     unsafe {
         // Read timer frequency
         let cntfrq: u64;
         core::arch::asm!("mrs {}, cntfrq_el0", out(reg) cntfrq);
 
-        // Read current counter value
-        let cntvct: u64;
-        core::arch::asm!("mrs {}, cntvct_el0", out(reg) cntvct);
+        // Read current physical counter value. This must match CNTP_* timer state.
+        let cntpct: u64;
+        core::arch::asm!("mrs {}, cntpct_el0", out(reg) cntpct);
 
         // Set timer to fire in 10ms (100 Hz)
         let interval = cntfrq / 100;
-        let next = cntvct + interval;
+        let next = cntpct + interval;
 
         // Write compare value
         core::arch::asm!("msr cntp_cval_el0, {}", in(reg) next);

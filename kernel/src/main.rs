@@ -76,11 +76,6 @@ unsafe extern "C" fn main() -> ! {
     {
         info!("starting init process...");
 
-        // Measure boot time from HPET start to init spawn
-        let boot_time_ns = kernel::hpet::hpet().read().main_counter_value();
-        let boot_time_ms = boot_time_ns / 1_000_000;
-        info!("Boot to init: {} ms", boot_time_ms);
-
         let init_path = AbsolutePath::try_new("/bin/init").unwrap();
         let _ = vfs().read().open(init_path).expect("should have /bin/init");
         let proc = Process::create_from_executable(Process::root(), init_path).unwrap();
@@ -95,46 +90,106 @@ unsafe extern "C" fn main() -> ! {
 #[unsafe(export_name = "kernel_main")]
 // SAFETY: Kernel entry point.
 unsafe extern "C" fn main() -> ! {
+    #[inline(always)]
+    fn dbg_mark(ch: u32) {
+        #[cfg(feature = "rpi5")]
+        // SAFETY: Early debug marker write to Pi 5 debug UART10 data register.
+        unsafe {
+            (0x10_7D00_1000 as *mut u32).write_volatile(ch);
+        }
+    }
+
+    #[cfg(feature = "rpi5")]
+    // SAFETY: Early debug marker write to Pi 5 debug UART10 data register.
+    unsafe {
+        (0x10_7D00_1000 as *mut u32).write_volatile(0x37); // '7'
+    }
+
     // SAFETY: We are initializing the kernel subsystems in the correct order.
     kernel::init();
+
+    #[cfg(feature = "rpi5")]
+    // SAFETY: Early debug marker write to Pi 5 debug UART10 data register.
+    unsafe {
+        (0x10_7D00_1000 as *mut u32).write_volatile(0x38); // '8'
+    }
+    dbg_mark(0x39); // '9'
 
     info!("ARM64 kernel started");
 
     // Initialize per-CPU context for CPU 0
     kernel::arch::aarch64::cpu::init_current_cpu(0);
+    dbg_mark(0x41); // 'A'
 
     info!("About to enable interrupts...");
     // Enable interrupts
     kernel::arch::aarch64::Aarch64::enable_interrupts();
+    dbg_mark(0x42); // 'B'
 
     info!("Interrupts enabled");
 
-    {
+    if let Some(root_block_device) = BlockDevices::by_id(0) {
+        dbg_mark(0x43); // 'C'
         info!("mounting root filesystem");
-        // For now we assume the VirtIO block device is device 0.
-        // In a real system we might need to search for the correct device.
-        // On QEMU virt, the first virtio-blk device usually ends up as device 0 if it's the only one.
-        let root_block_device = BlockDevices::by_id(0).expect("should have block device with id 0");
         let root_block_device = ArcLockedBlockDevice(root_block_device);
-        vfs()
+        if vfs()
             .write()
             .mount(
                 ROOT,
-                VirtualExt2Fs::from(
-                    Ext2Fs::try_new(root_block_device).expect("should be able to create ext2fs"),
-                ),
+                VirtualExt2Fs::from(match Ext2Fs::try_new(root_block_device) {
+                    Ok(fs) => fs,
+                    Err(_) => {
+                        dbg_mark(0x65); // 'e'
+                        mcore::turn_idle();
+                    }
+                }),
             )
-            .expect("should be able to mount ext2fs at /");
-    }
+            .is_err()
+        {
+            dbg_mark(0x66); // 'f'
+            mcore::turn_idle();
+        }
+        dbg_mark(0x44); // 'D'
 
-    {
         info!("starting init process...");
-        let init_path = AbsolutePath::try_new("/bin/init").unwrap();
-        let _ = vfs().read().open(init_path).expect("should have /bin/init");
-        let proc = Process::create_from_executable(Process::root(), init_path).unwrap();
-        info!("started process pid={}", proc.pid());
+        let init_path = match AbsolutePath::try_new("/bin/init") {
+            Ok(p) => p,
+            Err(_) => {
+                dbg_mark(0x67); // 'g'
+                mcore::turn_idle();
+            }
+        };
+        if vfs().read().open(init_path).is_err() {
+            dbg_mark(0x68); // 'h'
+            mcore::turn_idle();
+        }
+        if Process::create_from_executable(Process::root(), init_path).is_err() {
+            dbg_mark(0x69); // 'i'
+            mcore::turn_idle();
+        }
+        dbg_mark(0x45); // 'E'
+    } else {
+        // Expected on Pi5 bring-up before a block driver is wired in.
+        dbg_mark(0x6e); // 'n'
     }
 
+    #[cfg(feature = "rpi5")]
+    {
+        // Forced scheduling probe:
+        // If timer/preemption is the blocker, this should still let a runnable init task run.
+        dbg_mark(0x53); // 'S'
+        let ctx = kernel::mcore::context::ExecutionContext::load();
+        kernel::arch::aarch64::Aarch64::disable_interrupts();
+        // SAFETY: We are in kernel context and intentionally forcing one scheduler pass
+        // to validate runnable task handoff.
+        unsafe {
+            ctx.scheduler_mut().reschedule();
+        }
+        kernel::arch::aarch64::Aarch64::enable_interrupts();
+        dbg_mark(0x59); // 'Y'
+    }
+
+    dbg_mark(0x46); // 'F'
     mcore::turn_idle()
 }
 
@@ -198,14 +253,20 @@ fn rust_panic(info: &PanicInfo) -> ! {
 
 #[cfg(not(test))]
 fn handle_panic(info: &PanicInfo) {
+    #[cfg(all(target_arch = "aarch64", feature = "rpi5"))]
+    // SAFETY: Panic-time debug marker write to Pi 5 debug UART10 data register.
+    unsafe {
+        (0xFFFF_8010_7D00_1000 as *mut u32).write_volatile(0x21); // '!'
+    }
+
     let location = info.location().unwrap();
-    error!(
+    kernel::serial_println!(
         "kernel panicked at {}:{}:{}:",
         location.file(),
         location.line(),
         location.column(),
     );
-    error!("{}", info.message());
+    kernel::serial_println!("{}", info.message());
 
     #[cfg(feature = "backtrace")]
     match kernel::backtrace::Backtrace::try_capture() {

@@ -173,7 +173,7 @@ pub fn pause() {
     }
     #[cfg(target_arch = "aarch64")]
     unsafe {
-        asm!("isb");
+        asm!("yield", options(nomem, nostack, preserves_flags));
     }
 }
 

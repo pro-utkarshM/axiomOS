@@ -18,6 +18,16 @@ pub mod phys;
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 pub mod virt;
 
+#[cfg(target_arch = "aarch64")]
+#[inline(always)]
+fn dbg_mark(ch: u32) {
+    #[cfg(feature = "rpi5")]
+    // SAFETY: Early debug marker write to Pi 5 debug UART10 data register.
+    unsafe {
+        (0x10_7D00_1000 as *mut u32).write_volatile(ch);
+    }
+}
+
 /// Convert a physical address to a virtual address using the Higher Half Direct Map (HHDM).
 ///
 /// # Panics
@@ -77,8 +87,11 @@ pub fn init() {
 pub fn init() {
     use crate::arch::aarch64::{mm, phys};
 
+    dbg_mark(0x72); // 'r'
     info!("Starting memory initialization...");
+    dbg_mark(0x52); // 'R'
     mm::init();
+    dbg_mark(0x73); // 's'
 
     // Stage 1 phys alloc already initialized in mm::init()
     let usable_physical_memory = phys::total_memory();
@@ -88,14 +101,17 @@ pub fn init() {
     );
 
     address_space::init();
+    dbg_mark(0x74); // 't'
     info!("Address space initialized");
 
     let address_space = AddressSpace::kernel();
 
     heap::init(address_space, usable_physical_memory);
+    dbg_mark(0x75); // 'u'
     info!("Heap initialized");
 
     virt::init();
+    dbg_mark(0x76); // 'v'
     info!("Virtual memory initialized");
 
     info!("memory initialized via arch::mm::init");
@@ -103,9 +119,11 @@ pub fn init() {
 
     // Initialize stage 2 physical allocator (requires heap)
     phys::init_stage2();
+    dbg_mark(0x77); // 'w'
     info!("Physical memory stage 2 initialized");
 
     // We need to call heap::init_stage2 if we want dynamic resizing.
     heap::init_stage2();
+    dbg_mark(0x78); // 'x'
     info!("Heap stage 2 initialized");
 }

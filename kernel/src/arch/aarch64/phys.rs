@@ -12,13 +12,27 @@ pub use crate::mem::phys::*;
 static mut BOOT_REGIONS: [crate::mem::phys::MemoryRegion; 8] =
     [crate::mem::phys::MemoryRegion { base: 0, length: 0 }; 8];
 
+#[inline(always)]
+fn dbg_mark(ch: u32) {
+    #[cfg(feature = "rpi5")]
+    // SAFETY: Early debug marker write to Pi 5 debug UART10 data register.
+    unsafe {
+        (0x10_7D00_1000 as *mut u32).write_volatile(ch);
+    }
+}
+
 /// Initialize stage 1 (bump allocator)
 pub fn init_stage1() {
+    dbg_mark(0x4b); // 'K'
     let info = dtb::info();
+    dbg_mark(0x4c); // 'L'
 
     // Register reserved regions BEFORE starting any allocations
     // Register DTB as reserved
+    dbg_mark(0x54); // 'T'
     crate::mem::phys::register_reserved_region(info.dtb_start as u64, info.dtb_size as u64);
+    dbg_mark(0x55); // 'U'
+    dbg_mark(0x4d); // 'M'
 
     // Register kernel image as reserved
     extern "C" {
@@ -29,6 +43,7 @@ pub fn init_stage1() {
     let kernel_start = &raw const __text_start as u64;
     let kernel_end = &raw const __bss_end as u64;
     crate::mem::phys::register_reserved_region(kernel_start, kernel_end - kernel_start);
+    dbg_mark(0x4e); // 'N'
 
     // Convert DTB regions to the generic MemoryRegion type without using Vec
     let mut count = 0;
@@ -44,11 +59,13 @@ pub fn init_stage1() {
             count += 1;
         }
     }
+    dbg_mark(0x4f); // 'O'
 
     // SAFETY: We only take the slice of initialized regions.
     let regions_static = unsafe { &BOOT_REGIONS[..count] };
 
     crate::mem::phys::init_stage1_aarch64(regions_static);
+    dbg_mark(0x50); // 'P'
 
     log::info!(
         "Physical memory stage 1 initialized: {} MB available",

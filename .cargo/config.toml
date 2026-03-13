@@ -18,6 +18,7 @@ rustflags = [
 
 [target.aarch64-unknown-none]
 rustflags = [
+    "-C", "link-arg=--image-base=0x100000000",
     "-C", "link-arg=-z",
     "-C", "link-arg=nostart-stop-gc",
     "-C", "force-frame-pointers=yes",
