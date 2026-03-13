@@ -44,11 +44,11 @@ Axiom boots directly on hardware with no underlying OS:
 
 | Approach | Latency | Footprint | Control | Complexity |
 |----------|---------|-----------|---------|------------|
-| Linux + eBPF | 10-100μs jitter | ~50MB | Limited | Lower |
-| RTOS + custom | <10μs | ~1MB | Partial | Medium |
-| Bare metal | <1μs deterministic | ~500KB | Total | Higher |
+| Linux + eBPF | ~2,000ns jitter | ~60MB (kernel) | Limited | Lower |
+| RTOS + custom | <10,000ns | ~1MB | Partial | Medium |
+| **Axiom (Pi5)** | **211ns (fixed)** | **~22MB** | **Total** | **Higher** |
 
-For robotics with sub-millisecond control loops, bare metal is required.
+For robotics with sub-millisecond control loops, bare metal is required. See [docs/benchmarks.md](docs/benchmarks.md) for detailed hardware measurements.
 
 ---
 
@@ -580,6 +580,7 @@ Email: utkarsh@kernex.sbs
 ---
 
 **Further reading:**
+- `docs/benchmarks.md` — Authoritative hardware benchmarks (Pi5) and Linux comparison
 - `docs/bpf.md` — eBPF internals and verification details
 - `docs/scheduler.md` — Task scheduling algorithm and work-stealing
 - `docs/memory.md` — Memory management and allocator design
