@@ -25,6 +25,7 @@ use crate::profile::{ActiveProfile, PhysicalProfile};
 
 // SAFETY: These functions are defined in the kernel and linked into the final binary.
 // They follow the C calling convention which matches the interpreter's expectations.
+// In host-based tests, these symbols are provided by the `helpers_stub` module in `mod.rs`.
 unsafe extern "C" {
     fn bpf_ktime_get_ns() -> u64;
     fn bpf_get_interrupt_latency_ns(ctx: *const BpfContext) -> u64;
@@ -278,10 +279,10 @@ impl<P: PhysicalProfile> Interpreter<P> {
                 2 => Ok(bpf_trace_printk(args[0] as *const u8, args[1] as u32) as u64),
 
                 // bpf_map_lookup_elem
-                3 => Ok(bpf_map_lookup_elem(args[0] as u32, args[1] as *const u8) as u64),
+                5 => Ok(bpf_map_lookup_elem(args[0] as u32, args[1] as *const u8) as u64),
 
                 // bpf_map_update_elem
-                4 => Ok(bpf_map_update_elem(
+                6 => Ok(bpf_map_update_elem(
                     args[0] as u32,
                     args[1] as *const u8,
                     args[2] as *const u8,
@@ -289,7 +290,7 @@ impl<P: PhysicalProfile> Interpreter<P> {
                 ) as u64),
 
                 // bpf_map_delete_elem
-                5 => Ok(bpf_map_delete_elem(args[0] as u32, args[1] as *const u8) as u64),
+                7 => Ok(bpf_map_delete_elem(args[0] as u32, args[1] as *const u8) as u64),
 
                 // bpf_ringbuf_output
                 6 => Ok(
@@ -618,111 +619,17 @@ enum InsnResult {
 }
 
 #[cfg(test)]
-#[allow(clippy::missing_safety_doc)]
-mod helpers_stub {
-    use core::sync::atomic::{AtomicU64, Ordering};
-
-    // Simple test map: single u64 value at key 0
-    static TEST_MAP_VALUE: AtomicU64 = AtomicU64::new(0);
-
-    // SAFETY: Test stub for BPF helper. Safe to be called from C/BPF context in tests.
-    #[unsafe(no_mangle)]
-    pub extern "C" fn bpf_ktime_get_ns() -> u64 {
-        0
-    }
-
-    // SAFETY: Test stub for BPF helper.
-    #[unsafe(no_mangle)]
-    pub extern "C" fn bpf_trace_printk(_fmt: *const u8, _len: u32) -> i32 {
-        0
-    }
-
-    // SAFETY: Test stub for BPF helper.
-    #[unsafe(no_mangle)]
-    pub extern "C" fn bpf_map_lookup_elem(_map_id: u32, _key: *const u8) -> *mut u8 {
-        // Return pointer to our test value
-        TEST_MAP_VALUE.as_ptr() as *mut u8
-    }
-
-    // SAFETY: Test stub for BPF helper.
-    #[unsafe(no_mangle)]
-    pub extern "C" fn bpf_map_update_elem(
-        _map_id: u32,
-        _key: *const u8,
-        value: *const u8,
-        _flags: u64,
-    ) -> i32 {
-        // Update test value from the 8-byte value pointer (handle null for tests)
-        if !value.is_null() {
-            // SAFETY: In tests, we assume valid pointers are passed to helpers.
-            let val = unsafe { *(value as *const u64) };
-            TEST_MAP_VALUE.store(val, Ordering::SeqCst);
-        }
-        0
-    }
-
-    // SAFETY: Test stub for BPF helper.
-    #[unsafe(no_mangle)]
-    pub extern "C" fn bpf_map_delete_elem(_map_id: u32, _key: *const u8) -> i32 {
-        TEST_MAP_VALUE.store(0, Ordering::SeqCst);
-        0
-    }
-
-    // SAFETY: Test stub for BPF helper.
-    #[unsafe(no_mangle)]
-    pub extern "C" fn bpf_ringbuf_output(
-        _map_id: u32,
-        _data: *const u8,
-        _size: u64,
-        _flags: u64,
-    ) -> i64 {
-        // Test stub: always succeed
-        0
-    }
-
-    // SAFETY: Test stub for BPF helper.
-    #[unsafe(no_mangle)]
-    pub extern "C" fn bpf_gpio_read(_pin: u32) -> i64 {
-        0
-    }
-
-    // SAFETY: Test stub for BPF helper.
-    #[unsafe(no_mangle)]
-    pub extern "C" fn bpf_gpio_write(_pin: u32, _value: u32) -> i64 {
-        0
-    }
-
-    // SAFETY: Test stub for BPF helper.
-    #[unsafe(no_mangle)]
-    pub extern "C" fn bpf_pwm_write(_pwm_id: u32, _channel: u32, _duty: u32) -> i64 {
-        0
-    }
-
-    // SAFETY: Test stub for BPF helper.
-    #[unsafe(no_mangle)]
-    pub extern "C" fn bpf_timeseries_push(_map_id: u32, _key: *const u8, _value: *const u8) -> i64 {
-        0
-    }
-
-    // SAFETY: Test stub for BPF helper.
-    #[unsafe(no_mangle)]
-    pub extern "C" fn bpf_motor_emergency_stop(_reason: u32) -> i64 {
-        0
-    }
-
-    pub fn get_test_map_value() -> u64 {
-        TEST_MAP_VALUE.load(Ordering::SeqCst)
-    }
-
-    pub fn reset_test_map() {
-        TEST_MAP_VALUE.store(0, Ordering::SeqCst);
-    }
-}
-
-#[cfg(test)]
 mod tests {
     use super::*;
     use crate::bytecode::program::{BpfProgType, ProgramBuilder};
+    use crate::execution::helpers_stub;
+
+    #[test]
+    fn ensure_stubs_linked() {
+        // Explicitly reference a stub to ensure the module and its no_mangle symbols
+        // are not optimized away by the linker during host tests.
+        assert_eq!(helpers_stub::bpf_ktime_get_ns(), 0);
+    }
 
     #[test]
     fn execute_simple_program() {
@@ -821,7 +728,7 @@ mod tests {
         let program = ProgramBuilder::<ActiveProfile>::new(BpfProgType::SocketFilter)
             .insn(BpfInsn::mov64_imm(1, 0)) // r1 = map_id (0)
             .insn(BpfInsn::mov64_imm(2, 0)) // r2 = key_ptr (dummy)
-            .insn(BpfInsn::call(3)) // r0 = bpf_map_lookup_elem(r1, r2)
+            .insn(BpfInsn::call(5)) // r0 = bpf_map_lookup_elem(r1, r2)
             .exit()
             .build()
             .expect("valid program");
@@ -849,7 +756,7 @@ mod tests {
             .insn(BpfInsn::mov64_imm(2, 0)) // r2 = key_ptr (dummy)
             .insn(BpfInsn::mov64_imm(3, 0)) // r3 = value_ptr (dummy)
             .insn(BpfInsn::mov64_imm(4, 0)) // r4 = flags (0)
-            .insn(BpfInsn::call(4)) // r0 = bpf_map_update_elem(r1, r2, r3, r4)
+            .insn(BpfInsn::call(6)) // r0 = bpf_map_update_elem(r1, r2, r3, r4)
             .exit()
             .build()
             .expect("valid program");
@@ -871,7 +778,7 @@ mod tests {
         let program = ProgramBuilder::<ActiveProfile>::new(BpfProgType::SocketFilter)
             .insn(BpfInsn::mov64_imm(1, 0)) // r1 = map_id (0)
             .insn(BpfInsn::mov64_imm(2, 0)) // r2 = key_ptr (dummy)
-            .insn(BpfInsn::call(5)) // r0 = bpf_map_delete_elem(r1, r2)
+            .insn(BpfInsn::call(7)) // r0 = bpf_map_delete_elem(r1, r2)
             .exit()
             .build()
             .expect("valid program");
@@ -903,5 +810,21 @@ mod tests {
         let result = interpreter.execute(&program, &ctx);
         // Helper stub returns 0
         assert_eq!(result, Ok(0));
+    }
+
+    #[test]
+    fn execute_latency_helper() {
+        let program = ProgramBuilder::<ActiveProfile>::new(BpfProgType::SocketFilter)
+            .insn(BpfInsn::call(12)) // r0 = bpf_get_interrupt_latency_ns(r1)
+            .exit()
+            .build()
+            .expect("valid program");
+
+        let interpreter = Interpreter::<ActiveProfile>::new();
+        let mut ctx = BpfContext::empty();
+        ctx.interrupt_latency_ns = 12345;
+
+        let result = interpreter.execute(&program, &ctx);
+        assert_eq!(result, Ok(12345));
     }
 }

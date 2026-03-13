@@ -18,6 +18,101 @@ extern crate alloc;
 
 mod interpreter;
 
+#[cfg(test)]
+#[allow(clippy::missing_safety_doc, improper_ctypes_definitions)]
+pub mod helpers_stub {
+    use super::BpfContext;
+    use core::sync::atomic::{AtomicU64, Ordering};
+
+    static TEST_MAP_VALUE: AtomicU64 = AtomicU64::new(0);
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn bpf_ktime_get_ns() -> u64 {
+        0
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn bpf_get_interrupt_latency_ns(ctx: *const BpfContext) -> u64 {
+        if ctx.is_null() {
+            return 0;
+        }
+        unsafe { (*ctx).interrupt_latency_ns }
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn bpf_trace_printk(_fmt: *const u8, _len: u32) -> i32 {
+        0
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn bpf_map_lookup_elem(_map_id: u32, _key: *const u8) -> *mut u8 {
+        TEST_MAP_VALUE.as_ptr() as *mut u8
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn bpf_map_update_elem(
+        _map_id: u32,
+        _key: *const u8,
+        value: *const u8,
+        _flags: u64,
+    ) -> i32 {
+        if !value.is_null() {
+            let val = unsafe { *(value as *const u64) };
+            TEST_MAP_VALUE.store(val, Ordering::SeqCst);
+        }
+        0
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn bpf_map_delete_elem(_map_id: u32, _key: *const u8) -> i32 {
+        TEST_MAP_VALUE.store(0, Ordering::SeqCst);
+        0
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn bpf_ringbuf_output(
+        _map_id: u32,
+        _data: *const u8,
+        _size: u64,
+        _flags: u64,
+    ) -> i64 {
+        0
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn bpf_gpio_read(_pin: u32) -> i64 {
+        0
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn bpf_gpio_write(_pin: u32, _value: u32) -> i64 {
+        0
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn bpf_pwm_write(_pwm_id: u32, _channel: u32, _duty: u32) -> i64 {
+        0
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn bpf_timeseries_push(_map_id: u32, _key: *const u8, _value: *const u8) -> i64 {
+        0
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn bpf_motor_emergency_stop(_reason: u32) -> i64 {
+        0
+    }
+
+    pub fn get_test_map_value() -> u64 {
+        TEST_MAP_VALUE.load(Ordering::SeqCst)
+    }
+
+    pub fn reset_test_map() {
+        TEST_MAP_VALUE.store(0, Ordering::SeqCst);
+    }
+}
+
 // JIT is only available for cloud profile
 #[cfg(all(feature = "cloud-profile", target_arch = "x86_64"))]
 pub mod jit;
@@ -260,6 +355,13 @@ impl HelperFunc {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ensure_stubs_linked() {
+        // Explicitly reference a stub to ensure the module and its no_mangle symbols
+        // are not optimized away by the linker during host tests.
+        assert_eq!(helpers_stub::bpf_ktime_get_ns(), 0);
+    }
 
     #[test]
     fn context_from_slice() {

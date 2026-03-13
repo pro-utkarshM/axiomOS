@@ -25,6 +25,12 @@ pub extern "C" fn bpf_ktime_get_ns() -> u64 {
 
 // SAFETY: Test stub for BPF helper.
 #[unsafe(no_mangle)]
+pub extern "C" fn bpf_get_interrupt_latency_ns(_ctx: *const BpfContext) -> u64 {
+    0
+}
+
+// SAFETY: Test stub for BPF helper.
+#[unsafe(no_mangle)]
 pub extern "C" fn bpf_trace_printk(_fmt: *const u8, _len: u32) -> i32 {
     0
 }
