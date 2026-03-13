@@ -51,6 +51,8 @@ SECTIONS
         __bss_end = .;
     } :data
 
+    __kernel_end = .;
+
     /* Discard unnecessary sections */
     /DISCARD/ : {
         *(.eh_frame*)

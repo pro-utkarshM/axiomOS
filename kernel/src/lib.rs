@@ -91,12 +91,6 @@ pub fn init() {
         hpet::init();
     }
 
-    #[cfg(target_arch = "x86_64")]
-    let init_start = {
-        use crate::hpet::hpet;
-        hpet().read().main_counter_value()
-    };
-
     #[cfg(target_arch = "aarch64")]
     {
         use arch::traits::Architecture;
@@ -170,46 +164,35 @@ pub fn init() {
 
     // Print benchmark metrics
     print_benchmark_metrics();
-
-    #[cfg(target_arch = "x86_64")]
-    {
-        use crate::hpet::hpet;
-        let init_end = hpet().read().main_counter_value();
-        let init_time_ns = init_end - init_start;
-        let init_time_ms = init_time_ns / 1_000_000;
-        info!("Kernel init completed in {} ms", init_time_ms);
-    }
 }
 
 fn print_benchmark_metrics() {
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     {
         use crate::mem::heap::Heap;
+        use crate::serial_println;
+        use crate::time::get_kernel_time_ns;
 
-        info!("");
-        info!("========================================");
-        info!("  AXIOM KERNEL METRICS");
-        info!("========================================");
+        // Symbols from linker script
+        extern "C" {
+            static __text_start: u8;
+            static __kernel_end: u8;
+        }
 
-        // Memory footprint
-        let heap_size = Heap::size();
-        let heap_used = Heap::used();
-        let heap_free = Heap::free();
+        let kernel_start = &raw const __text_start as u64;
+        let kernel_end = &raw const __kernel_end as u64;
+        let kernel_size_bytes = kernel_end - kernel_start;
 
-        info!(
-            "Heap total:          {} KB ({} MB)",
-            heap_size / 1024,
-            heap_size / 1024 / 1024
-        );
-        info!("Heap used:           {} KB", heap_used / 1024);
-        info!("Heap free:           {} KB", heap_free / 1024);
+        let boot_time_ms = get_kernel_time_ns() / 1_000_000;
+        let heap_used_kb = Heap::used() / 1024;
+        let kernel_image_mb = kernel_size_bytes / 1024 / 1024;
 
-        // Estimate total kernel memory (heap + kernel code/data)
-        // For now, we'll report heap usage as the dynamic component
-        info!("Kernel heap usage:   {} KB", heap_used / 1024);
-
-        info!("========================================");
-        info!("");
+        serial_println!("");
+        serial_println!("AXIOM KERNEL METRICS");
+        serial_println!("Boot to init: {} ms", boot_time_ms);
+        serial_println!("Kernel heap: {} KB", heap_used_kb);
+        serial_println!("Kernel image: {} MB", kernel_image_mb);
+        serial_println!("");
     }
 }
 
