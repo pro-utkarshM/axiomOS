@@ -131,7 +131,7 @@ pub extern "C" fn handle_irq(_ctx: &mut ExceptionContext) {
             dbg_mark(b't' as u32);
         }
 
-        handle_timer_interrupt();
+        handle_timer_interrupt(_ctx);
         // Signal end of interrupt for timer
         gic::end_of_interrupt(iar);
 
@@ -155,7 +155,7 @@ pub extern "C" fn handle_irq(_ctx: &mut ExceptionContext) {
 }
 
 /// Handle timer interrupt (without rescheduling)
-fn handle_timer_interrupt() {
+fn handle_timer_interrupt(ctx: &ExceptionContext) {
     // log::info!("Timer interrupt started");
     // Clear and reset timer for next interrupt
     clear_timer_interrupt();
@@ -168,9 +168,23 @@ fn handle_timer_interrupt() {
     // operations without deadlocking.
     if let Some(manager) = crate::BPF_MANAGER.get() {
         let programs = manager.lock().get_hook_programs(1);
-        let ctx = kernel_bpf::execution::BpfContext::empty();
+
+        // Calculate interrupt latency from vector entry to now
+        let mut bpf_ctx = kernel_bpf::execution::BpfContext::empty();
+        unsafe {
+            let now: u64;
+            core::arch::asm!("mrs {}, cntvct_el0", out(reg) now);
+            let latency_ticks = now.saturating_sub(ctx.vector_entry_timestamp);
+
+            // Convert ticks to nanoseconds: ns = ticks * 1,000,000,000 / freq
+            let freq: u64;
+            core::arch::asm!("mrs {}, cntfrq_el0", out(reg) freq);
+            bpf_ctx.interrupt_latency_ns =
+                (latency_ticks as u128 * 1_000_000_000 / freq as u128) as u64;
+        }
+
         for (prog_id, program) in &programs {
-            match crate::bpf::BpfManager::execute_program(program, &ctx) {
+            match crate::bpf::BpfManager::execute_program(program, &bpf_ctx) {
                 Ok(_res) => {}
                 Err(e) => log::error!("BPF Timer Hook [id={}] failed: {:?}", prog_id, e),
             }

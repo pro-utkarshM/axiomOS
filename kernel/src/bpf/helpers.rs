@@ -1,6 +1,6 @@
 use crate::time::get_kernel_time_ns;
 
-/// BPF helper: Get kernel time in nanoseconds
+/// BPF helper: Get current time in nanoseconds
 ///
 /// # Safety
 ///
@@ -9,6 +9,23 @@ use crate::time::get_kernel_time_ns;
 #[unsafe(no_mangle)]
 pub extern "C" fn bpf_ktime_get_ns() -> u64 {
     get_kernel_time_ns()
+}
+
+/// BPF helper: Get interrupt latency in nanoseconds.
+///
+/// This returns the time elapsed from the hardware interrupt entry to the
+/// current BPF execution point.
+///
+/// # Safety
+///
+/// This function expects the BPF context to be passed in R1 by the executor.
+#[unsafe(no_mangle)]
+pub extern "C" fn bpf_get_interrupt_latency_ns(ctx: *const kernel_bpf::execution::BpfContext) -> u64 {
+    if ctx.is_null() {
+        return 0;
+    }
+    // SAFETY: The executor guarantees that R1 points to a valid BpfContext.
+    unsafe { (*ctx).interrupt_latency_ns }
 }
 
 /// BPF helper: Read GPIO pin value

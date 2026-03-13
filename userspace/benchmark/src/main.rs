@@ -148,8 +148,10 @@ pub extern "C" fn _start() -> ! {
         exit(1);
     }
 
-    // BPF program that writes timestamp to ringbuf on each timer tick
-    // Uses bpf_ktime_get_ns (helper 1) and bpf_ringbuf_output (helper 6)
+    // BPF program that writes timestamp AND latency to ringbuf on each timer tick
+    // Uses bpf_ktime_get_ns (helper 1), bpf_get_interrupt_latency_ns (helper 12), and bpf_ringbuf_output (helper 6)
+    //
+    // Data format in ringbuf: [u64 timestamp, u64 latency_ns] (16 bytes)
     let timer_insns = [
         // Call bpf_ktime_get_ns
         BpfInsn {
@@ -163,10 +165,26 @@ pub extern "C" fn _start() -> ! {
         BpfInsn {
             code: 0x7b,
             dst_src: regs(10, 0),
+            off: -16,
+            imm: 0,
+        }, // *(u64*)(r10-16) = r0
+        // Call bpf_get_interrupt_latency_ns
+        // R1 should already be the context pointer (passed by interpreter)
+        BpfInsn {
+            code: 0x85,
+            dst_src: 0x00,
+            off: 0,
+            imm: 12,
+        }, // call helper 12 (bpf_get_interrupt_latency_ns)
+        // r0 now contains latency
+        // Store latency on stack
+        BpfInsn {
+            code: 0x7b,
+            dst_src: regs(10, 0),
             off: -8,
             imm: 0,
         }, // *(u64*)(r10-8) = r0
-        // Call bpf_ringbuf_output(map_id, &timestamp, 8, 0)
+        // Call bpf_ringbuf_output(map_id, &data, 16, 0)
         BpfInsn {
             code: 0xb7,
             dst_src: regs(1, 0),
@@ -183,14 +201,14 @@ pub extern "C" fn _start() -> ! {
             code: 0x07,
             dst_src: regs(2, 0),
             off: 0,
-            imm: -8,
-        }, // r2 += -8
+            imm: -16,
+        }, // r2 += -16
         BpfInsn {
             code: 0xb7,
             dst_src: regs(3, 0),
             off: 0,
-            imm: 8,
-        }, // r3 = 8
+            imm: 16,
+        }, // r3 = 16
         BpfInsn {
             code: 0xb7,
             dst_src: regs(4, 0),
@@ -246,6 +264,7 @@ pub extern "C" fn _start() -> ! {
     write(1, b"  Collecting 100 timer samples...\n");
 
     let mut timestamps = [0u64; 100];
+    let mut latencies = [0u64; 100];
     let mut collected = 0;
     let mut buf = [0u8; 64];
     let mut poll_attempts: u32 = 0;
@@ -266,12 +285,16 @@ pub extern "C" fn _start() -> ! {
         let poll_res = bpf(37, &poll_attr as *const _ as *const u8, attr_size);
         last_poll_res = poll_res;
 
-        if poll_res >= 8 {
-            // Parse timestamp
+        if poll_res >= 16 {
+            // Parse timestamp and latency
             let ts = u64::from_ne_bytes([
                 buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7],
             ]);
+            let lat = u64::from_ne_bytes([
+                buf[8], buf[9], buf[10], buf[11], buf[12], buf[13], buf[14], buf[15],
+            ]);
             timestamps[collected] = ts;
+            latencies[collected] = lat;
             collected += 1;
         } else if poll_res < 0 {
             poll_errors += 1;
@@ -324,6 +347,23 @@ pub extern "C" fn _start() -> ! {
 
     let avg_interval_us = total_interval_us / interval_count as u64;
 
+    // Calculate latency stats
+    let mut min_latency_ns = u64::MAX;
+    let mut max_latency_ns = 0u64;
+    let mut total_latency_ns = 0u64;
+
+    for i in 0..collected {
+        let lat = latencies[i];
+        if lat < min_latency_ns {
+            min_latency_ns = lat;
+        }
+        if lat > max_latency_ns {
+            max_latency_ns = lat;
+        }
+        total_latency_ns += lat;
+    }
+    let avg_latency_ns = total_latency_ns / collected as u64;
+
     write(1, b"\nTimer Interrupt Interval Summary:\n");
     write(1, b"  Samples: ");
     print_num(collected as u64);
@@ -337,6 +377,17 @@ pub extern "C" fn _start() -> ! {
     write(1, b"  Avg: ");
     print_num(avg_interval_us);
     write(1, b" us\n");
+
+    write(1, b"\nInterrupt Latency Summary (Hardware to BPF):\n");
+    write(1, b"  Min: ");
+    print_num(min_latency_ns);
+    write(1, b" ns\n");
+    write(1, b"  Max: ");
+    print_num(max_latency_ns);
+    write(1, b" ns\n");
+    write(1, b"  Avg: ");
+    print_num(avg_latency_ns);
+    write(1, b" ns\n");
     write(1, b"\n");
 
     // ================================================================
@@ -354,6 +405,11 @@ pub extern "C" fn _start() -> ! {
     print_num(avg_interval_us);
     write(1, b" us (avg of ");
     print_num(interval_count as u64);
+    write(1, b")\n");
+    write(1, b"Interrupt latency:   ");
+    print_num(avg_latency_ns);
+    write(1, b" ns (avg of ");
+    print_num(collected as u64);
     write(1, b")\n");
     write(1, b"========================================\n");
     write(1, b"\n");

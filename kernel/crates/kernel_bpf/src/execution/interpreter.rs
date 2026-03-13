@@ -27,6 +27,7 @@ use crate::profile::{ActiveProfile, PhysicalProfile};
 // They follow the C calling convention which matches the interpreter's expectations.
 unsafe extern "C" {
     fn bpf_ktime_get_ns() -> u64;
+    fn bpf_get_interrupt_latency_ns(ctx: *const BpfContext) -> u64;
     fn bpf_trace_printk(fmt: *const u8, size: u32) -> i32;
     fn bpf_map_lookup_elem(map_id: u32, key: *const u8) -> *mut u8;
     fn bpf_map_update_elem(map_id: u32, key: *const u8, value: *const u8, flags: u64) -> i32;
@@ -78,7 +79,7 @@ impl<P: PhysicalProfile> Interpreter<P> {
             }
 
             OpcodeClass::Jmp | OpcodeClass::Jmp32 => {
-                return self.execute_jmp(insn, regs, class == OpcodeClass::Jmp);
+                return self.execute_jmp(insn, regs, class == OpcodeClass::Jmp, ctx);
             }
 
             OpcodeClass::Ldx => {
@@ -170,12 +171,13 @@ impl<P: PhysicalProfile> Interpreter<P> {
         insn: &BpfInsn,
         regs: &mut RegisterFile,
         is_64bit: bool,
+        ctx: &BpfContext,
     ) -> Result<InsnResult, BpfError> {
         let jmp_op = JmpOp::from_opcode(insn.opcode).ok_or(BpfError::InvalidInstruction)?;
 
         // Handle call and exit
         if matches!(jmp_op, JmpOp::Call) {
-            return self.execute_call(insn, regs);
+            return self.execute_call(insn, regs, ctx);
         }
 
         if matches!(jmp_op, JmpOp::Exit) {
@@ -232,6 +234,7 @@ impl<P: PhysicalProfile> Interpreter<P> {
         &self,
         insn: &BpfInsn,
         regs: &mut RegisterFile,
+        ctx: &BpfContext,
     ) -> Result<InsnResult, BpfError> {
         let helper_id = insn.imm;
 
@@ -244,8 +247,8 @@ impl<P: PhysicalProfile> Interpreter<P> {
             regs.get(Register::R5),
         ];
 
-        // Execute helper (simplified - would need helper registry)
-        let result = self.call_helper(helper_id, args)?;
+        // Execute helper
+        let result = self.call_helper(helper_id, args, ctx)?;
 
         // Store result in R0
         regs.set(Register::R0, result);
@@ -254,7 +257,7 @@ impl<P: PhysicalProfile> Interpreter<P> {
     }
 
     /// Call a helper function.
-    fn call_helper(&self, helper_id: i32, args: [u64; 5]) -> Result<u64, BpfError> {
+    fn call_helper(&self, helper_id: i32, args: [u64; 5], ctx: &BpfContext) -> Result<u64, BpfError> {
         // SAFETY: Calling BPF helpers is inherently unsafe as they are extern "C" functions.
         // We rely on the BPF verifier (in a full implementation) to ensure arguments are valid.
         // In this interpreter, we assume arguments are reasonably well-formed or the helper handles invalid inputs.
@@ -262,6 +265,9 @@ impl<P: PhysicalProfile> Interpreter<P> {
             match helper_id {
                 // bpf_ktime_get_ns
                 1 => Ok(bpf_ktime_get_ns()),
+
+                // bpf_get_interrupt_latency_ns
+                12 => Ok(bpf_get_interrupt_latency_ns(ctx as *const BpfContext)),
 
                 // bpf_trace_printk
                 2 => Ok(bpf_trace_printk(args[0] as *const u8, args[1] as u32) as u64),

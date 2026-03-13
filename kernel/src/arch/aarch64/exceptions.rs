@@ -588,4 +588,8 @@ pub struct ExceptionContext {
     pub elr: u64,    // Exception link register
     pub spsr: u64,   // Saved program status register
     pub sp_el0: u64, // User stack pointer (saved from SP_EL0)
+
+    /// Timestamp captured at the very beginning of the exception vector entry.
+    /// Used for interrupt latency benchmarking.
+    pub vector_entry_timestamp: u64,
 }

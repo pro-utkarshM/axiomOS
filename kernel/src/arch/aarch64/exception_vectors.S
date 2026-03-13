@@ -30,9 +30,19 @@ irq_stack_top:
 .endm
 
 // Macro to save context
-// Allocates stack space and saves x0-x30, ELR_EL1, SPSR_EL1
+// Allocates stack space and saves x0-x30, ELR_EL1, SPSR_EL1, and captures vector_entry_timestamp.
 .macro save_context
-    sub     sp, sp, #272
+    // Allocate 288 bytes (aligned to 16)
+    // 31 GPRs (x0-x30) = 248 bytes
+    // ELR_EL1 + SPSR_EL1 = 16 bytes
+    // SP_EL0 = 8 bytes
+    // vector_entry_timestamp = 8 bytes
+    // Total = 280 bytes -> 288 for 16-byte alignment
+    sub     sp, sp, #288
+
+    // Capture hardware timestamp as early as possible
+    mrs     x9, cntvct_el0
+    str     x9, [sp, #272]
 
     stp     x0, x1, [sp, #0]
     stp     x2, x3, [sp, #16]
@@ -86,7 +96,7 @@ irq_stack_top:
     ldp     x2, x3, [sp, #16]
     ldp     x0, x1, [sp, #0]
 
-    add     sp, sp, #272
+    add     sp, sp, #288
 .endm
 
 // Macro to define a vector table entry

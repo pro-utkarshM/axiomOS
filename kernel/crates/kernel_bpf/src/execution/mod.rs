@@ -45,6 +45,8 @@ pub struct BpfContext {
     pub data_end: *const u8,
     /// Pointer to packet metadata
     pub data_meta: *const u8,
+    /// Interrupt latency in nanoseconds (time from IRQ entry to BPF execution)
+    pub interrupt_latency_ns: u64,
 }
 
 /// Context for syscall tracepoints.
@@ -70,6 +72,7 @@ impl BpfContext {
             data: core::ptr::null(),
             data_end: core::ptr::null(),
             data_meta: core::ptr::null(),
+            interrupt_latency_ns: 0,
         }
     }
 
@@ -80,6 +83,7 @@ impl BpfContext {
             // SAFETY: data is a valid slice, so adding its length to the pointer remains within the object.
             data_end: unsafe { data.as_ptr().add(data.len()) },
             data_meta: core::ptr::null(),
+            interrupt_latency_ns: 0,
         }
     }
 
@@ -221,6 +225,9 @@ pub enum HelperFunc {
 
     /// Get current comm (process name)
     GetCurrentComm = 11,
+
+    /// Get interrupt latency in nanoseconds
+    GetInterruptLatencyNs = 12,
 }
 
 impl HelperFunc {
@@ -238,7 +245,8 @@ impl HelperFunc {
             | Self::MapDeleteElem
             | Self::GetCurrentPidTgid
             | Self::GetCurrentUidGid
-            | Self::GetCurrentComm => true,
+            | Self::GetCurrentComm
+            | Self::GetInterruptLatencyNs => true,
 
             // Trace/debug helpers may be restricted in embedded
             Self::TracePrintk | Self::ProbeRead => {
