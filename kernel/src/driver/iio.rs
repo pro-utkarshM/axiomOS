@@ -181,7 +181,10 @@ pub fn init_simulated_device() {
 
         // Spawn simulation task.
         // On Pi 5 bring-up we skip this so it doesn't preempt init/benchmark startup.
-        #[cfg(any(target_arch = "x86_64", all(target_arch = "aarch64", not(feature = "rpi5"))))]
+        #[cfg(any(
+            target_arch = "x86_64",
+            all(target_arch = "aarch64", not(feature = "rpi5"))
+        ))]
         {
             let task =
                 Task::create_new(Process::root(), iio_simulation_task, core::ptr::null_mut())

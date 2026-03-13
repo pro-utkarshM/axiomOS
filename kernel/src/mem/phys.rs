@@ -61,7 +61,11 @@ fn dbg_mark(ch: u32) {
 fn allocator() -> &'static Mutex<MultiStageAllocator> {
     #[allow(static_mut_refs)]
     // SAFETY: Accessed during kernel init. Callers ensure allocator was initialized first.
-    unsafe { PHYS_ALLOC.as_ref().expect("physical allocator not initialized") }
+    unsafe {
+        PHYS_ALLOC
+            .as_ref()
+            .expect("physical allocator not initialized")
+    }
 }
 
 /// Zero-sized facade to the global physical memory allocator.
@@ -122,7 +126,7 @@ pub struct MemoryRegion {
 
 pub fn register_reserved_region(base: u64, length: u64) {
     dbg_mark(0x56); // 'V'
-    // SAFETY: Early boot is single-core while reserved regions are populated.
+                    // SAFETY: Early boot is single-core while reserved regions are populated.
     unsafe {
         dbg_mark(0x57); // 'W'
         RESERVED_REGIONS.push(MemoryRegion { base, length });

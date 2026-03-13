@@ -177,7 +177,12 @@ unsafe fn setup_kernel_page_tables(total_memory: usize) {
             | pte_flags::PXN
             | pte_flags::attr_index(mem::mair::DEVICE_NGNRE);
 
-        for &mmio_base in &[BCM2712_UART10_BASE, GICD_BASE, GICC_BASE, RP1_PERIPHERAL_BASE] {
+        for &mmio_base in &[
+            BCM2712_UART10_BASE,
+            GICD_BASE,
+            GICC_BASE,
+            RP1_PERIPHERAL_BASE,
+        ] {
             let l1_idx = mmio_base >> 30; // 1GB block index
             if l1_idx < 512 {
                 let phys_addr = l1_idx << 30;
@@ -282,7 +287,12 @@ pub fn create_user_address_space() -> Option<usize> {
         }
 
         #[cfg(all(feature = "virt", not(feature = "rpi5")))]
-        let _ = walker.map_range(0x0800_0000, 0x0800_0000, 0x20000, device_flags.to_pte_bits());
+        let _ = walker.map_range(
+            0x0800_0000,
+            0x0800_0000,
+            0x20000,
+            device_flags.to_pte_bits(),
+        );
 
         // VirtIO MMIO at 0x0a00_0000 (32 devices * 512 bytes = 16KB)
         let _ = walker.map_range(0x0a00_0000, 0x0a00_0000, 0x4000, device_flags.to_pte_bits());

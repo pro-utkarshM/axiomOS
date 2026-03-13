@@ -257,7 +257,12 @@ impl<P: PhysicalProfile> Interpreter<P> {
     }
 
     /// Call a helper function.
-    fn call_helper(&self, helper_id: i32, args: [u64; 5], ctx: &BpfContext) -> Result<u64, BpfError> {
+    fn call_helper(
+        &self,
+        helper_id: i32,
+        args: [u64; 5],
+        ctx: &BpfContext,
+    ) -> Result<u64, BpfError> {
         // SAFETY: Calling BPF helpers is inherently unsafe as they are extern "C" functions.
         // We rely on the BPF verifier (in a full implementation) to ensure arguments are valid.
         // In this interpreter, we assume arguments are reasonably well-formed or the helper handles invalid inputs.

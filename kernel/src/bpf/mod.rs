@@ -7,8 +7,7 @@ use alloc::vec::Vec;
 
 use kernel_bpf::bytecode::insn::BpfInsn;
 use kernel_bpf::bytecode::program::BpfProgram;
-use kernel_bpf::execution::Interpreter;
-use kernel_bpf::execution::{BpfContext, BpfError, BpfExecutor};
+use kernel_bpf::execution::{BpfContext, BpfError, BpfExecutor, Interpreter};
 use kernel_bpf::loader::BpfLoader;
 use kernel_bpf::maps::{ArrayMap, BpfMap, HashMap as BpfHashMap, RingBufMap, TimeSeriesMap};
 use kernel_bpf::profile::{ActiveProfile, PhysicalProfile};

@@ -136,15 +136,13 @@ unsafe extern "C" fn main() -> ! {
             .write()
             .mount(
                 ROOT,
-                VirtualExt2Fs::from(
-                    match Ext2Fs::try_new(root_block_device) {
-                        Ok(fs) => fs,
-                        Err(_) => {
-                            dbg_mark(0x65); // 'e'
-                            mcore::turn_idle();
-                        }
-                    },
-                ),
+                VirtualExt2Fs::from(match Ext2Fs::try_new(root_block_device) {
+                    Ok(fs) => fs,
+                    Err(_) => {
+                        dbg_mark(0x65); // 'e'
+                        mcore::turn_idle();
+                    }
+                }),
             )
             .is_err()
         {

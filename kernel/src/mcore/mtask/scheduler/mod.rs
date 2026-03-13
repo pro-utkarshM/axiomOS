@@ -20,11 +20,11 @@ use crate::arch::aarch64::Aarch64 as Arch;
 use crate::arch::traits::Architecture;
 #[cfg(target_arch = "x86_64")]
 use crate::mcore::context::ExecutionContext;
+#[cfg(all(target_arch = "aarch64", feature = "rpi5"))]
+use crate::mcore::mtask::process::Process;
 use crate::mcore::mtask::scheduler::global::GlobalTaskQueue;
 use crate::mcore::mtask::scheduler::switch::switch_impl;
 use crate::mcore::mtask::task::Task;
-#[cfg(all(target_arch = "aarch64", feature = "rpi5"))]
-use crate::mcore::mtask::process::Process;
 
 pub mod cleanup;
 pub mod global;

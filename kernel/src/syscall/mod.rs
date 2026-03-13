@@ -641,6 +641,7 @@ fn dispatch_sys_nanosleep(req: usize, _rem: usize) -> Result<usize, Errno> {
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 fn dispatch_sys_spawn(path_ptr: usize, path_len: usize) -> Result<usize, Errno> {
     use kernel_abi::{ENAMETOOLONG, ENOMEM};
+
     use crate::mcore::mtask::process::CreateProcessError;
     use crate::mcore::mtask::task::StackAllocationError;
 
@@ -676,7 +677,9 @@ fn dispatch_sys_spawn(path_ptr: usize, path_len: usize) -> Result<usize, Errno> 
             dbg_mark(b'v' as u32);
             return Err(ENOMEM);
         }
-        Err(CreateProcessError::StackAllocationError(StackAllocationError::OutOfPhysicalMemory)) => {
+        Err(CreateProcessError::StackAllocationError(
+            StackAllocationError::OutOfPhysicalMemory,
+        )) => {
             #[cfg(feature = "rpi5")]
             dbg_mark(b'f' as u32);
             return Err(ENOMEM);

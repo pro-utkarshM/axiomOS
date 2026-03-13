@@ -76,10 +76,10 @@ pub unsafe extern "C" fn _start(dtb_addr: usize) -> ! {
 
     // Parse device tree to get memory information
     dbg_mark(0x34); // '4'
-    // SAFETY: dtb_addr is guaranteed to be a valid physical address by the bootloader protocol.
+                    // SAFETY: dtb_addr is guaranteed to be a valid physical address by the bootloader protocol.
     if let Err(e) = unsafe { super::dtb::parse(dtb_addr) } {
         dbg_mark(0x45); // 'E'
-        // Log error but continue - we can fall back to hardcoded values
+                        // Log error but continue - we can fall back to hardcoded values
         log::warn!("Failed to parse DTB: {}", e);
     }
     dbg_mark(0x35); // '5'

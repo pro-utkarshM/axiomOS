@@ -242,11 +242,7 @@ impl PageTableWalker {
 
         // Ensure the write is visible to the MMU and subsequent instruction fetches
         unsafe {
-            core::arch::asm!(
-                "dsb ishst",
-                "isb",
-                options(nostack, preserves_flags)
-            );
+            core::arch::asm!("dsb ishst", "isb", options(nostack, preserves_flags));
         }
 
         Ok(())

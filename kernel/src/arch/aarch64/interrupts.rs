@@ -20,9 +20,10 @@
 //! The RP1's GPIO Bank 0 generates internal IRQ 0, which routes through
 //! the RP1's interrupt controller to one of these PCIe lines.
 
-use super::gic;
 #[cfg(feature = "rpi5")]
 use core::sync::atomic::{AtomicBool, Ordering};
+
+use super::gic;
 
 /// Non-secure physical timer IRQ number (PPI 14 = IRQ 30)
 const TIMER_IRQ: u32 = gic::irq::TIMER_PHYS;
