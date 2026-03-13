@@ -40,6 +40,30 @@ pub mod helpers_stub {
     }
 
     #[unsafe(no_mangle)]
+    pub extern "C" fn bpf_get_boot_time_ms(ctx: *const BpfContext) -> u64 {
+        if ctx.is_null() {
+            return 0;
+        }
+        unsafe { (*ctx).boot_time_ms }
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn bpf_get_kernel_heap_kb(ctx: *const BpfContext) -> u64 {
+        if ctx.is_null() {
+            return 0;
+        }
+        unsafe { (*ctx).kernel_heap_kb }
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "C" fn bpf_get_kernel_image_mb(ctx: *const BpfContext) -> u64 {
+        if ctx.is_null() {
+            return 0;
+        }
+        unsafe { (*ctx).kernel_image_mb }
+    }
+
+    #[unsafe(no_mangle)]
     pub extern "C" fn bpf_trace_printk(_fmt: *const u8, _len: u32) -> i32 {
         0
     }
@@ -142,6 +166,12 @@ pub struct BpfContext {
     pub data_meta: *const u8,
     /// Interrupt latency in nanoseconds (time from IRQ entry to BPF execution)
     pub interrupt_latency_ns: u64,
+    /// Boot time in milliseconds (kernel start to init)
+    pub boot_time_ms: u64,
+    /// Kernel heap usage in KB
+    pub kernel_heap_kb: u64,
+    /// Kernel image size in MB
+    pub kernel_image_mb: u64,
 }
 
 /// Context for syscall tracepoints.
@@ -168,6 +198,9 @@ impl BpfContext {
             data_end: core::ptr::null(),
             data_meta: core::ptr::null(),
             interrupt_latency_ns: 0,
+            boot_time_ms: 0,
+            kernel_heap_kb: 0,
+            kernel_image_mb: 0,
         }
     }
 
@@ -179,6 +212,9 @@ impl BpfContext {
             data_end: unsafe { data.as_ptr().add(data.len()) },
             data_meta: core::ptr::null(),
             interrupt_latency_ns: 0,
+            boot_time_ms: 0,
+            kernel_heap_kb: 0,
+            kernel_image_mb: 0,
         }
     }
 
@@ -327,6 +363,15 @@ pub enum HelperFunc {
     /// Get interrupt latency in nanoseconds
     GetInterruptLatencyNs = 13,
 
+    /// Get boot time in milliseconds
+    GetBootTimeMs = 15,
+
+    /// Get kernel heap usage in KB
+    GetKernelHeapKb = 16,
+
+    /// Get kernel image size in MB
+    GetKernelImageMb = 17,
+
     /// Probe read
     ProbeRead = 14,
 
@@ -362,6 +407,9 @@ impl HelperFunc {
             | Self::GetCurrentUidGid
             | Self::GetCurrentComm
             | Self::GetInterruptLatencyNs
+            | Self::GetBootTimeMs
+            | Self::GetKernelHeapKb
+            | Self::GetKernelImageMb
             | Self::GpioRead
             | Self::GpioWrite
             | Self::MotorEmergencyStop

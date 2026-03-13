@@ -172,6 +172,14 @@ fn handle_timer_interrupt(ctx: &ExceptionContext) {
 
         // Calculate interrupt latency from vector entry to now
         let mut bpf_ctx = kernel_bpf::execution::BpfContext::empty();
+
+        // Include kernel metrics if available
+        if let Some(metrics) = crate::BOOT_METRICS.get() {
+            bpf_ctx.boot_time_ms = metrics.boot_time_ms;
+            bpf_ctx.kernel_heap_kb = metrics.kernel_heap_kb;
+            bpf_ctx.kernel_image_mb = metrics.kernel_image_mb;
+        }
+
         unsafe {
             let now: u64;
             core::arch::asm!("mrs {}, cntvct_el0", out(reg) now);

@@ -29,6 +29,9 @@ use crate::profile::{ActiveProfile, PhysicalProfile};
 unsafe extern "C" {
     fn bpf_ktime_get_ns() -> u64;
     fn bpf_get_interrupt_latency_ns(ctx: *const BpfContext) -> u64;
+    fn bpf_get_boot_time_ms(ctx: *const BpfContext) -> u64;
+    fn bpf_get_kernel_heap_kb(ctx: *const BpfContext) -> u64;
+    fn bpf_get_kernel_image_mb(ctx: *const BpfContext) -> u64;
     fn bpf_trace_printk(fmt: *const u8, size: u32) -> i32;
     fn bpf_map_lookup_elem(map_id: u32, key: *const u8) -> *mut u8;
     fn bpf_map_update_elem(map_id: u32, key: *const u8, value: *const u8, flags: u64) -> i32;
@@ -274,6 +277,15 @@ impl<P: PhysicalProfile> Interpreter<P> {
 
                 // bpf_get_interrupt_latency_ns
                 13 => Ok(bpf_get_interrupt_latency_ns(ctx as *const BpfContext)),
+
+                // bpf_get_boot_time_ms
+                15 => Ok(bpf_get_boot_time_ms(ctx as *const BpfContext)),
+
+                // bpf_get_kernel_heap_kb
+                16 => Ok(bpf_get_kernel_heap_kb(ctx as *const BpfContext)),
+
+                // bpf_get_kernel_image_mb
+                17 => Ok(bpf_get_kernel_image_mb(ctx as *const BpfContext)),
 
                 // bpf_trace_printk
                 2 => Ok(bpf_trace_printk(args[0] as *const u8, args[1] as u32) as u64),

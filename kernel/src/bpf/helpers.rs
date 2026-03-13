@@ -33,6 +33,36 @@ pub extern "C" fn bpf_get_interrupt_latency_ns(
     unsafe { (*ctx).interrupt_latency_ns }
 }
 
+/// BPF helper: Get boot time in milliseconds.
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn bpf_get_boot_time_ms(ctx: *const kernel_bpf::execution::BpfContext) -> u64 {
+    if ctx.is_null() {
+        return 0;
+    }
+    unsafe { (*ctx).boot_time_ms }
+}
+
+/// BPF helper: Get kernel heap usage in KB.
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn bpf_get_kernel_heap_kb(ctx: *const kernel_bpf::execution::BpfContext) -> u64 {
+    if ctx.is_null() {
+        return 0;
+    }
+    unsafe { (*ctx).kernel_heap_kb }
+}
+
+/// BPF helper: Get kernel image size in MB.
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+#[unsafe(no_mangle)]
+pub extern "C" fn bpf_get_kernel_image_mb(ctx: *const kernel_bpf::execution::BpfContext) -> u64 {
+    if ctx.is_null() {
+        return 0;
+    }
+    unsafe { (*ctx).kernel_image_mb }
+}
+
 /// BPF helper: Read GPIO pin value
 ///
 /// Returns 1 if pin is high, 0 if low, -1 on error (invalid pin).

@@ -53,7 +53,17 @@ pub mod sse;
 pub mod syscall;
 pub mod time;
 
-static BOOT_TIME_SECONDS: OnceCell<u64> = OnceCell::uninit();
+pub static BOOT_TIME_SECONDS: OnceCell<u64> = OnceCell::uninit();
+
+/// Kernel boot metrics for userspace reporting
+#[derive(Debug, Clone, Copy)]
+pub struct KernelBootMetrics {
+    pub boot_time_ms: u64,
+    pub kernel_heap_kb: u64,
+    pub kernel_image_mb: u64,
+}
+
+pub static BOOT_METRICS: OnceCell<KernelBootMetrics> = OnceCell::uninit();
 pub static BPF_MANAGER: OnceCell<Mutex<bpf::BpfManager>> = OnceCell::uninit();
 
 #[inline(always)]
@@ -186,6 +196,14 @@ fn print_benchmark_metrics() {
         let boot_time_ms = get_kernel_time_ns() / 1_000_000;
         let heap_used_kb = Heap::used() / 1024;
         let kernel_image_mb = kernel_size_bytes / 1024 / 1024;
+
+        // Store metrics for BPF context
+        let metrics = KernelBootMetrics {
+            boot_time_ms,
+            kernel_heap_kb: heap_used_kb as u64,
+            kernel_image_mb,
+        };
+        let _ = BOOT_METRICS.try_init_once(|| metrics);
 
         serial_println!("");
         serial_println!("AXIOM KERNEL METRICS");

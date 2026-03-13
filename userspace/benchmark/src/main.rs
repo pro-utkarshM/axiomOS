@@ -148,91 +148,125 @@ pub extern "C" fn _start() -> ! {
         exit(1);
     }
 
-    // BPF program that writes timestamp AND latency to ringbuf on each timer tick
-    // Uses bpf_ktime_get_ns (helper 1), bpf_get_interrupt_latency_ns (helper 12), and bpf_ringbuf_output (helper 6)
+    // BPF program that writes timestamp, latency, boot time, heap, and image size to ringbuf
     //
-    // Data format in ringbuf: [u64 timestamp, u64 latency_ns] (16 bytes)
+    // Data format in ringbuf:
+    // [u64 timestamp, u64 latency_ns, u64 boot_time_ms, u64 heap_kb, u64 image_mb] (40 bytes)
     let timer_insns = [
-        // Call bpf_ktime_get_ns
+        // 1. Get timestamp (helper 1)
         BpfInsn {
             code: 0x85,
             dst_src: 0x00,
             off: 0,
             imm: 1,
-        }, // call helper 1
-        // r0 now contains timestamp
-        // Store timestamp on stack
+        },
+        BpfInsn {
+            code: 0x7b,
+            dst_src: regs(10, 0),
+            off: -40,
+            imm: 0,
+        }, // *(u64*)(r10-40) = r0
+        // 2. Get interrupt latency (helper 13)
+        BpfInsn {
+            code: 0x85,
+            dst_src: 0x00,
+            off: 0,
+            imm: 13,
+        },
+        BpfInsn {
+            code: 0x7b,
+            dst_src: regs(10, 0),
+            off: -32,
+            imm: 0,
+        }, // *(u64*)(r10-32) = r0
+        // 3. Get boot time (helper 15)
+        BpfInsn {
+            code: 0x85,
+            dst_src: 0x00,
+            off: 0,
+            imm: 15,
+        },
+        BpfInsn {
+            code: 0x7b,
+            dst_src: regs(10, 0),
+            off: -24,
+            imm: 0,
+        }, // *(u64*)(r10-24) = r0
+        // 4. Get heap usage (helper 16)
+        BpfInsn {
+            code: 0x85,
+            dst_src: 0x00,
+            off: 0,
+            imm: 16,
+        },
         BpfInsn {
             code: 0x7b,
             dst_src: regs(10, 0),
             off: -16,
             imm: 0,
         }, // *(u64*)(r10-16) = r0
-        // Call bpf_get_interrupt_latency_ns
-        // R1 should already be the context pointer (passed by interpreter)
+        // 5. Get image size (helper 17)
         BpfInsn {
             code: 0x85,
             dst_src: 0x00,
             off: 0,
-            imm: 13,
-        }, // call helper 13 (bpf_get_interrupt_latency_ns)
-        // r0 now contains latency
-        // Store latency on stack
+            imm: 17,
+        },
         BpfInsn {
             code: 0x7b,
             dst_src: regs(10, 0),
             off: -8,
             imm: 0,
         }, // *(u64*)(r10-8) = r0
-        // Call bpf_ringbuf_output(map_id, &data, 16, 0)
+        // 6. Call bpf_ringbuf_output(map_id, &data, 40, 0)
         BpfInsn {
             code: 0xb7,
             dst_src: regs(1, 0),
             off: 0,
             imm: ringbuf_map_id,
-        }, // r1 = map_id
+        },
         BpfInsn {
             code: 0xbf,
             dst_src: regs(2, 10),
             off: 0,
             imm: 0,
-        }, // r2 = r10
+        },
         BpfInsn {
             code: 0x07,
             dst_src: regs(2, 0),
             off: 0,
-            imm: -16,
-        }, // r2 += -16
+            imm: -40,
+        },
         BpfInsn {
             code: 0xb7,
             dst_src: regs(3, 0),
             off: 0,
-            imm: 16,
-        }, // r3 = 16
+            imm: 40,
+        },
         BpfInsn {
             code: 0xb7,
             dst_src: regs(4, 0),
             off: 0,
             imm: 0,
-        }, // r4 = 0
+        },
         BpfInsn {
             code: 0x85,
             dst_src: 0x00,
             off: 0,
             imm: 8,
-        }, // call bpf_ringbuf_output (helper 8)
+        },
         BpfInsn {
             code: 0xb7,
             dst_src: regs(0, 0),
             off: 0,
             imm: 0,
-        }, // r0 = 0
+        },
         BpfInsn {
             code: 0x95,
             dst_src: 0x00,
             off: 0,
             imm: 0,
-        }, // exit
+        },
     ];
 
     let timer_load_attr = kernel_abi::BpfAttr {
@@ -265,6 +299,9 @@ pub extern "C" fn _start() -> ! {
 
     let mut timestamps = [0u64; 100];
     let mut latencies = [0u64; 100];
+    let mut boot_time_ms = 0u64;
+    let mut kernel_heap_kb = 0u64;
+    let mut kernel_image_mb = 0u64;
     let mut collected = 0;
     let mut buf = [0u8; 64];
     let mut poll_attempts: u32 = 0;
@@ -285,14 +322,24 @@ pub extern "C" fn _start() -> ! {
         let poll_res = bpf(37, &poll_attr as *const _ as *const u8, attr_size);
         last_poll_res = poll_res;
 
-        if poll_res >= 16 {
-            // Parse timestamp and latency
+        if poll_res >= 40 {
+            // Parse timestamp, latency, and kernel metrics
             let ts = u64::from_ne_bytes([
                 buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7],
             ]);
             let lat = u64::from_ne_bytes([
                 buf[8], buf[9], buf[10], buf[11], buf[12], buf[13], buf[14], buf[15],
             ]);
+            boot_time_ms = u64::from_ne_bytes([
+                buf[16], buf[17], buf[18], buf[19], buf[20], buf[21], buf[22], buf[23],
+            ]);
+            kernel_heap_kb = u64::from_ne_bytes([
+                buf[24], buf[25], buf[26], buf[27], buf[28], buf[29], buf[30], buf[31],
+            ]);
+            kernel_image_mb = u64::from_ne_bytes([
+                buf[32], buf[33], buf[34], buf[35], buf[36], buf[37], buf[38], buf[39],
+            ]);
+
             timestamps[collected] = ts;
             latencies[collected] = lat;
             collected += 1;
@@ -398,8 +445,15 @@ pub extern "C" fn _start() -> ! {
     write(1, b"========================================\n");
     write(1, b"  BENCHMARK SUMMARY\n");
     write(1, b"========================================\n");
-    write(1, b"Boot to init:        [see kernel log]\n");
-    write(1, b"Kernel memory:       [see kernel log]\n");
+    write(1, b"Boot to init:        ");
+    print_num(boot_time_ms);
+    write(1, b" ms\n");
+    write(1, b"Kernel heap:         ");
+    print_num(kernel_heap_kb);
+    write(1, b" KB\n");
+    write(1, b"Kernel image:        ");
+    print_num(kernel_image_mb);
+    write(1, b" MB\n");
     write(1, b"BPF load time:       ");
     print_num(avg_us);
     write(1, b" us (avg of 10)\n");
