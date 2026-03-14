@@ -5,11 +5,11 @@ A bare-metal Rust kernel with runtime-programmable behavior through verified eBP
 Axiom targets robotics and embedded systems where kernel logic must evolve without reflashing firmware. Instead of recompiling to change kernel behavior, verified programs are loaded and attached to kernel hooks at runtime.
 
 **Repository structure:**
-- `kernel/` — core kernel implementation
+- `kernel/src` — core kernel implementation
+- `kernel/crates` — modular kernel subsystems (BPF, VFS, etc.)
 - `userspace/` — userspace programs and libraries
-- `bpf/` — eBPF runtime and verifier
-- `drivers/` — hardware drivers (VirtIO, RPi5, etc.)
-- `build/` — build system and tooling
+- `scripts/` — build system and deployment tools
+- `docs/` — architectural documentation and benchmarks
 
 ---
 
@@ -97,7 +97,7 @@ BPF_PROG(gpio_handler, struct gpio_event *event) {
 
 **Verification guarantees:**
 - Bounded execution (no infinite loops)
-- Constrained stack usage (512 bytes)
+- Constrained stack usage (up to 512KB depending on profile)
 - Validated memory access (no arbitrary pointers)
 - Termination proof (static analysis of control flow)
 
@@ -108,11 +108,11 @@ BPF_PROG(gpio_handler, struct gpio_event *event) {
 **Profile selection:**
 ```rust
 // Compile-time selection via sealed traits
-#[cfg(feature = "embedded")]
-type BpfProfile = profiles::Embedded;  // 512B stack, interpreter only
+#[cfg(feature = "embedded-profile")]
+type BpfProfile = profile::EmbeddedProfile;  // 8KB stack, interpreter only
 
-#[cfg(feature = "cloud")]
-type BpfProfile = profiles::Cloud;  // 4KB stack, JIT enabled
+#[cfg(feature = "cloud-profile")]
+type BpfProfile = profile::CloudProfile;  // 512KB stack, JIT enabled
 ```
 
 ---
@@ -166,38 +166,43 @@ graph TB
 
 ```rust
 struct Process {
-    pid: Pid,
-    address_space: VirtualAddressSpace,
-    file_table: FileDescriptorTable,
-    tasks: Vec<TaskId>,  // Multiple execution contexts
+    pid: ProcessId,
+    name: String,
+    address_space: RwLock<Option<AddressSpace>>,
+    file_descriptors: RwLock<BTreeMap<FdNum, FileDescriptor>>,
+    // Tasks reference the process via Arc<Process>
 }
 
 struct Task {
     tid: TaskId,
-    registers: SavedContext,
-    stack: VirtualAddress,
-    parent_process: Pid,
+    process: Arc<Process>,
+    last_stack_ptr: Pin<Box<usize>>,
+    kstack: Option<HigherHalfStack>,
+    ustack: RwLock<Option<LowerHalfAllocation<Writable>>>,
 }
 ```
 
 **Why separate:** Traditional UNIX model conflates resource container (process) with execution context (thread). Separation simplifies:
-- Multithreading (multiple tasks, one address space)
-- Migration (move task to different CPU without moving process)
+- Multithreading (multiple tasks referencing one process)
 - Resource accounting (process-level, not per-thread)
+- Memory isolation (tasks within a process share an address space)
 
 ### Scheduler
 
-**Per-CPU run queues with work stealing:**
+**Global run queue:**
+The current implementation uses a single global MPSC (Multiple Producer, Single Consumer) queue for task scheduling across all CPUs.
+
 ```
-CPU 0: [T1, T4, T7]
-CPU 1: [T2, T5]     ← steals T7 from CPU 0 if idle
-CPU 2: [T3, T6, T8]
+Global Queue: [T1, T4, T7, T2, T5, T3, T6, T8]
+CPU 0: Pop → T1
+CPU 1: Pop → T4
+CPU 2: Pop → T7
 ```
 
-**Preemption:** Timer interrupts (1ms quantum, configurable)
+**Preemption:** Timer interrupts (1ms quantum, configurable via APIC/GIC)
 **Cooperation:** `sched_yield()` syscall
 
-**Priority inversion handling:** Priority inheritance protocol (task inherits priority of highest-priority waiter).
+**Priority inversion handling:** Priority inheritance protocol (planned).
 
 ---
 
@@ -310,25 +315,31 @@ fn verify_program(bytecode: &[u8]) -> Result<(), VerifyError> {
 
 ### Physical Memory
 
-**Frame allocator:** Bitmap-based, O(1) allocation:
+**Frame allocator:** Sparse state-based tracking with `first_free` optimization.
+
 ```rust
-struct FrameAllocator {
-    bitmap: [u64; NUM_FRAMES / 64],  // 1 bit per 4KB frame
-    next_free: AtomicUsize,
+pub struct PhysicalMemoryManager {
+    regions: Vec<MemoryRegion>,
+    first_free: Option<RegionFrameIndex>,
 }
 
-impl FrameAllocator {
-    fn alloc(&mut self) -> Option<PhysicalFrame> {
-        // Find first zero bit, set it, return frame
-    }
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum FrameState {
+    Unusable,
+    Allocated,
+    Free,
 }
 ```
+
+- **Stage 1:** Early bump allocator for boot-time structures.
+- **Stage 2:** Sparse manager tracking usable RAM regions.
+- **Optimization:** `first_free` pointer reduces search latency for free frames.
 
 ### Virtual Memory
 
 **Per-process address spaces:**
 ```
-Userspace:   0x0000_0000_0000 - 0x0000_7FFF_FFFF (128GB)
+Userspace:   0x0000_0000_0000 - 0x0000_7FFF_FFFF_FFFF (128TB on x86_64)
 Kernel:      0xFFFF_8000_0000 - 0xFFFF_FFFF_FFFF (higher half)
 ```
 
@@ -337,17 +348,18 @@ Kernel:      0xFFFF_8000_0000 - 0xFFFF_FFFF_FFFF (higher half)
 PML4 → PDPT → PD → PT → 4KB page
 ```
 
-**TLB shootdown:** Cross-CPU invalidation via IPI when unmapping shared pages.
+**TLB shootdown:** Cross-CPU invalidation via IPI (Inter-Processor Interrupts).
 
 ### Kernel Heap
 
-**Allocator:** Linked-list (first-fit), 16-byte alignment:
+**Allocator:** `linked-list-allocator` (first-fit), with dynamic sizing based on available RAM.
+
 ```rust
 #[global_allocator]
 static ALLOCATOR: LockedHeap = LockedHeap::empty();
 
-// Usage:
-let buf = Box::new([0u8; 1024]);  // Allocated from kernel heap
+// Allocated from kernel heap:
+let buf = Box::new([0u8; 1024]); 
 ```
 
 ---
@@ -356,18 +368,20 @@ let buf = Box::new([0u8; 1024]);  // Allocated from kernel heap
 
 **Portability via traits:**
 ```rust
-trait Architecture {
+pub trait Architecture {
     fn early_init();
+    fn init();
     fn enable_interrupts();
     fn disable_interrupts();
-    fn context_switch(old: &mut Context, new: &Context);
-    fn halt() -> !;
+    fn are_interrupts_enabled() -> bool;
+    fn wait_for_interrupt();
+    fn shutdown() -> !;
+    fn reboot() -> !;
 }
 
 // Per-arch implementations:
-impl Architecture for x86_64::X86_64 { ... }
-impl Architecture for aarch64::AArch64 { ... }
-impl Architecture for riscv::RiscV64 { ... }
+impl Architecture for aarch64::Aarch64 { ... }
+impl Architecture for riscv64::Riscv64 { ... }
 ```
 
 **Conditional compilation:**
@@ -400,43 +414,41 @@ fn handle_interrupt(irq: u32) {
 - **Timer:** ARM Generic Timer
 - **Devices:**
   - VirtIO (QEMU)
-  - RP1 peripherals (Pi 5): GPIO, UART, PWM, SPI, I2C
+  - RP1 peripherals (Pi 5): GPIO, UART, PWM
 - **Boot:** Device tree
 
 ### RISC-V
-- **Status:** Experimental
-- **Target:** QEMU virt only
-- **Interrupt controller:** PLIC
-- **Limitations:** No eBPF JIT, basic drivers
+- **Status:** Minimal Boot Only
+- **Target:** QEMU virt
+- **Current Support:** Logging, dummy allocator
+- **Planned:** MMU, PLIC, scheduler, JIT
 
 ---
 
 ## Filesystem
 
-**Root filesystem:** ext2, built at compile-time
+**Root filesystem:** ext2, built and embedded during compilation.
 ```bash
-# Build system generates ext2 image with userspace programs
-scripts/make-rootfs.sh
-→ rootfs.ext2 (embedded in kernel or loaded from storage)
+# Build system embeds the rootfs image into the kernel binary
+./scripts/build-rpi5.sh
+→ kernel8.img (includes embedded ext2 rootfs)
 ```
 
 **VFS layer:**
 ```rust
-trait Filesystem {
-    fn open(&self, path: &Path) -> Result<FileHandle>;
-    fn read(&self, handle: FileHandle, buf: &mut [u8]) -> Result<usize>;
+trait FileSystem {
+    fn open(&mut self, path: &AbsolutePath) -> Result<FsHandle, OpenError>;
+    fn read(&mut self, handle: FsHandle, buf: &mut [u8], offset: usize) -> Result<usize, ReadError>;
     // ...
 }
 
-impl Filesystem for Ext2 { ... }
-impl Filesystem for TmpFS { ... }  // Future
+impl FileSystem for VirtualExt2Fs { ... }
 ```
 
 **Mount points:**
 ```
 / → ext2 (root)
 /dev → DevFS (devices)
-/proc → ProcFS (planned)
 ```
 
 ---
@@ -444,49 +456,18 @@ impl Filesystem for TmpFS { ... }  // Future
 ## Build System
 
 **Requirements:**
-- Rust nightly (2024-01-01 or later)
+- Rust nightly
 - `cargo`
 - QEMU (for testing)
-- cross-compilation targets
+- cross-compilation targets (`x86_64-unknown-none`, `aarch64-unknown-none`)
 
 **Quick start:**
 ```bash
-# Install targets
-rustup target add x86_64-unknown-none
-rustup target add aarch64-unknown-none
+# Build and run in QEMU (x86_64)
+cargo run
 
-# Build and run in QEMU
-cargo run  # Defaults to x86_64
-
-# Architecture-specific
-cargo run --target x86_64-unknown-none
-cargo run --target aarch64-unknown-none
-```
-
-**Raspberry Pi 5:**
-```bash
-# Build kernel + devicetree
+# RPi5 Build
 ./scripts/build-rpi5.sh
-→ output: kernel8.img, bcm2712-rpi-5-b.dtb
-
-# Deploy to SD card (requires formatted card)
-./scripts/deploy-rpi5.sh /dev/sdX
-
-# Boot process:
-# 1. GPU firmware loads kernel8.img
-# 2. Kernel parses DTB for hardware config
-# 3. Initializes RP1 peripherals
-# 4. Boots to userspace
-```
-
-**Debug build:**
-```bash
-cargo build --target x86_64-unknown-none
-qemu-system-x86_64 -kernel target/.../axiom -s -S  # Wait for GDB
-gdb target/.../axiom
-(gdb) target remote :1234
-(gdb) break kmain
-(gdb) continue
 ```
 
 ---
@@ -514,17 +495,19 @@ gdb target/.../axiom
 - [x] RPi5 GPIO (RP1 controller)
 - [x] RPi5 UART (PL011)
 - [x] RPi5 PWM
+- [ ] RPi5 SPI / I2C (planned)
 - [ ] USB (planned)
 - [ ] DMA (partial)
 
 **Userspace:**
-- [x] Basic C library (syscall wrappers)
+- [x] Basic syscall wrappers
 - [x] Shell (`/bin/sh`)
 - [x] Utilities (`ls`, `cat`, `echo`)
 - [ ] POSIX compatibility (partial)
 
 **RISC-V:**
 - [x] Boot on QEMU virt
+- [ ] MMU + Paging
 - [ ] SMP support
 - [ ] eBPF JIT
 - [ ] Real hardware testing
@@ -581,7 +564,7 @@ Email: utkarsh@kernex.sbs
 
 **Further reading:**
 - `docs/benchmarks.md` — Authoritative hardware benchmarks (Pi5) and Linux comparison
-- `docs/bpf.md` — eBPF internals and verification details
-- `docs/scheduler.md` — Task scheduling algorithm and work-stealing
-- `docs/memory.md` — Memory management and allocator design
-- `docs/porting.md` — How to port to new architectures
+- `kernel/crates/kernel_bpf/docs/ARCHITECTURE.md` — eBPF runtime architecture
+- `kernel/crates/kernel_bpf/docs/SCHEDULING.md` — eBPF program scheduling
+- `kernel/crates/kernel_bpf/docs/VERIFICATION.md` — BPF verification algorithm
+- `kernel/crates/kernel_bpf/docs/PROFILES.md` — BPF physical reality profiles
