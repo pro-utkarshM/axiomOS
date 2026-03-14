@@ -552,7 +552,7 @@ This is experimental research code. Contributions welcome, especially:
 
 ## License
 
-Dual-licensed under MIT and Apache 2.0.
+Triple-licensed under MIT, Apache 2.0, and MPL 2.0.
 
 ## Author
 
