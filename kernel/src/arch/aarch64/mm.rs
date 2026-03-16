@@ -165,11 +165,10 @@ unsafe fn setup_kernel_page_tables(total_memory: usize) {
     #[cfg(feature = "rpi5")]
     {
         use crate::arch::aarch64::platform::rpi5::memory_map::{
-            BCM2712_UART10_BASE, GICC_BASE, GICD_BASE, RP1_PERIPHERAL_BASE,
+            BCM2712_UART10_BASE_PHYS, GICC_BASE_PHYS, GICD_BASE_PHYS, RP1_PERIPHERAL_BASE_PHYS,
         };
 
         // Keep Pi 5 high MMIO apertures accessible after MMU-on.
-        // Without this, post-MMU debug UART writes can fault immediately.
         let mmio_flags = pte_flags::VALID
             | pte_flags::AF
             | pte_flags::SH_INNER
@@ -177,13 +176,13 @@ unsafe fn setup_kernel_page_tables(total_memory: usize) {
             | pte_flags::PXN
             | pte_flags::attr_index(mem::mair::DEVICE_NGNRE);
 
-        for &mmio_base in &[
-            BCM2712_UART10_BASE,
-            GICD_BASE,
-            GICC_BASE,
-            RP1_PERIPHERAL_BASE,
+        for &phys_base in &[
+            BCM2712_UART10_BASE_PHYS,
+            GICD_BASE_PHYS,
+            GICC_BASE_PHYS,
+            RP1_PERIPHERAL_BASE_PHYS,
         ] {
-            let l1_idx = mmio_base >> 30; // 1GB block index
+            let l1_idx = phys_base >> 30; // 1GB block index
             if l1_idx < 512 {
                 let phys_addr = l1_idx << 30;
                 *boot_tables.l1_low.entry_mut(l1_idx) =
@@ -275,15 +274,32 @@ pub fn create_user_address_space() -> Option<usize> {
         // Pi 5 debug connector UART10 (BCM2712 PL011) used by serial/log paths.
         // This MMIO must remain visible while TTBR0 is switched for process-AS operations.
         #[cfg(feature = "rpi5")]
-        let _ = walker.map_page(0x10_7D00_1000, 0x10_7D00_1000, device_flags.to_pte_bits());
+        {
+            use crate::arch::aarch64::platform::rpi5::memory_map::BCM2712_UART10_BASE_PHYS;
+            let _ = walker.map_page(
+                BCM2712_UART10_BASE_PHYS,
+                BCM2712_UART10_BASE_PHYS,
+                device_flags.to_pte_bits(),
+            );
+        }
 
         #[cfg(feature = "rpi5")]
         {
-            use crate::arch::aarch64::platform::rpi5::memory_map::{GICC_BASE, GICD_BASE};
+            use crate::arch::aarch64::platform::rpi5::memory_map::{GICC_BASE_PHYS, GICD_BASE_PHYS};
 
             // Keep the Pi 5 GIC distributor + CPU interface visible while TTBR0 is active.
-            let _ = walker.map_range(GICD_BASE, GICD_BASE, 0x20000, device_flags.to_pte_bits());
-            let _ = walker.map_range(GICC_BASE, GICC_BASE, 0x20000, device_flags.to_pte_bits());
+            let _ = walker.map_range(
+                GICD_BASE_PHYS,
+                GICD_BASE_PHYS,
+                0x20000,
+                device_flags.to_pte_bits(),
+            );
+            let _ = walker.map_range(
+                GICC_BASE_PHYS,
+                GICC_BASE_PHYS,
+                0x20000,
+                device_flags.to_pte_bits(),
+            );
         }
 
         #[cfg(all(feature = "virt", not(feature = "rpi5")))]
