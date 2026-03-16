@@ -9,7 +9,7 @@ use bitflags::bitflags;
 
 use super::mem::{
     mair, phys_to_virt, pte_flags, ENTRIES_PER_TABLE, L0_SHIFT, L1_SHIFT, L2_SHIFT, L3_SHIFT,
-    PAGE_SIZE,
+    L1_BLOCK_SIZE, L2_BLOCK_SIZE, PAGE_SIZE,
 };
 use super::phys::{self};
 
@@ -241,6 +241,56 @@ impl PageTableWalker {
         *entry = PageTableEntry::page(phys, flags);
 
         // Ensure the write is visible to the MMU and subsequent instruction fetches
+        unsafe {
+            core::arch::asm!("dsb ishst", "isb", options(nostack, preserves_flags));
+        }
+
+        Ok(())
+    }
+
+    /// Map a 1GB block (L1 entry)
+    pub fn map_l1_block(&mut self, virt: usize, phys: usize, flags: u64) -> Result<(), &'static str> {
+        if virt & (L1_BLOCK_SIZE - 1) != 0 || phys & (L1_BLOCK_SIZE - 1) != 0 {
+            return Err("Address not aligned to 1GB boundary");
+        }
+
+        let indices = va_to_indices(virt);
+        let l0 = unsafe { &mut *self.root };
+        let l1_ptr = Self::get_or_create_table_ptr(self.root, indices[0])?;
+        let l1 = unsafe { &mut *l1_ptr };
+
+        let entry = l1.entry_mut(indices[1]);
+        if entry.is_valid() {
+            return Err("L1 entry already mapped");
+        }
+
+        *entry = PageTableEntry::block(phys, flags);
+
+        unsafe {
+            core::arch::asm!("dsb ishst", "isb", options(nostack, preserves_flags));
+        }
+
+        Ok(())
+    }
+
+    /// Map a 2MB block (L2 entry)
+    pub fn map_l2_block(&mut self, virt: usize, phys: usize, flags: u64) -> Result<(), &'static str> {
+        if virt & (L2_BLOCK_SIZE - 1) != 0 || phys & (L2_BLOCK_SIZE - 1) != 0 {
+            return Err("Address not aligned to 2MB boundary");
+        }
+
+        let indices = va_to_indices(virt);
+        let l1_ptr = Self::get_or_create_table_ptr(self.root, indices[0])?;
+        let l2_ptr = Self::get_or_create_table_ptr(l1_ptr, indices[1])?;
+        let l2 = unsafe { &mut *l2_ptr };
+
+        let entry = l2.entry_mut(indices[2]);
+        if entry.is_valid() {
+            return Err("L2 entry already mapped");
+        }
+
+        *entry = PageTableEntry::block(phys, flags);
+
         unsafe {
             core::arch::asm!("dsb ishst", "isb", options(nostack, preserves_flags));
         }

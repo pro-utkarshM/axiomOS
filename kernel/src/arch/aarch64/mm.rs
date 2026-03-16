@@ -275,18 +275,18 @@ pub fn create_user_address_space() -> Option<usize> {
         );
 
         // UART (PL011) at 0x0900_0000
-        let _ = walker.map_page(0x0900_0000, 0x0900_0000, device_flags.to_pte_bits());
+        walker.map_page(0x0900_0000, 0x0900_0000, device_flags.to_pte_bits()).ok()?;
 
         // Pi 5 debug connector UART10 (BCM2712 PL011) used by serial/log paths.
         // This MMIO must remain visible while TTBR0 is switched for process-AS operations.
         #[cfg(feature = "rpi5")]
         {
             use crate::arch::aarch64::platform::rpi5::memory_map::BCM2712_UART10_BASE_PHYS;
-            let _ = walker.map_page(
+            walker.map_page(
                 BCM2712_UART10_BASE_PHYS,
                 BCM2712_UART10_BASE_PHYS,
                 device_flags.to_pte_bits(),
-            );
+            ).ok()?;
         }
 
         #[cfg(feature = "rpi5")]
@@ -296,39 +296,38 @@ pub fn create_user_address_space() -> Option<usize> {
             };
 
             // Keep the Pi 5 GIC distributor + CPU interface visible while TTBR0 is active.
-            let _ = walker.map_range(
+            walker.map_range(
                 GICD_BASE_PHYS,
                 GICD_BASE_PHYS,
                 0x20000,
                 device_flags.to_pte_bits(),
-            );
-            let _ = walker.map_range(
+            ).ok()?;
+            walker.map_range(
                 GICC_BASE_PHYS,
                 GICC_BASE_PHYS,
                 0x20000,
                 device_flags.to_pte_bits(),
-            );
+            ).ok()?;
 
-            // Map RP1 peripheral range (1GB aperture)
-            // This contains GPIO, PWM, I2C, etc.
-            let _ = walker.map_range(
+            // Map RP1 peripheral range using an efficient 1GB block mapping.
+            // This replaces the previous 4KiB page-by-page mapping of the full range.
+            walker.map_l1_block(
                 RP1_PERIPHERAL_BASE_PHYS,
                 RP1_PERIPHERAL_BASE_PHYS,
-                0x4000_0000, // 1GB
                 device_flags.to_pte_bits(),
-            );
+            ).ok()?;
         }
 
         #[cfg(all(feature = "virt", not(feature = "rpi5")))]
-        let _ = walker.map_range(
+        walker.map_range(
             0x0800_0000,
             0x0800_0000,
             0x20000,
             device_flags.to_pte_bits(),
-        );
+        ).ok()?;
 
         // VirtIO MMIO at 0x0a00_0000 (32 devices * 512 bytes = 16KB)
-        let _ = walker.map_range(0x0a00_0000, 0x0a00_0000, 0x4000, device_flags.to_pte_bits());
+        walker.map_range(0x0a00_0000, 0x0a00_0000, 0x4000, device_flags.to_pte_bits()).ok()?;
 
         // Note: We leave the rest of 0-1GB unmapped so userspace can use it.
     }
