@@ -300,21 +300,12 @@ pub fn create_user_address_space() -> Option<usize> {
             };
 
             // Keep the Pi 5 GIC distributor + CPU interface visible while TTBR0 is active.
+            // These apertures overlap (GICC is 0x1000 above GICD), so we map them as one contiguous range.
+            let gic_start = GICD_BASE_PHYS;
+            let gic_end = GICC_BASE_PHYS + 0x20000;
+            let gic_size = gic_end - gic_start;
             walker
-                .map_range(
-                    GICD_BASE_PHYS,
-                    GICD_BASE_PHYS,
-                    0x20000,
-                    device_flags.to_pte_bits(),
-                )
-                .ok()?;
-            walker
-                .map_range(
-                    GICC_BASE_PHYS,
-                    GICC_BASE_PHYS,
-                    0x20000,
-                    device_flags.to_pte_bits(),
-                )
+                .map_range(gic_start, gic_start, gic_size, device_flags.to_pte_bits())
                 .ok()?;
 
             // Map RP1 peripheral range using an efficient 1GB block mapping.

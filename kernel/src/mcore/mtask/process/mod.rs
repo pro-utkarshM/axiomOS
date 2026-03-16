@@ -884,10 +884,7 @@ extern "C" fn trampoline(_arg: *mut c_void) {
             #[cfg(all(target_arch = "aarch64", feature = "rpi5"))]
             dbg_mark(b'Q' as u32);
 
-            crate::arch::aarch64::context::enter_userspace(
-                code_ptr,
-                ustack_rsp.as_u64() as usize,
-            );
+            crate::arch::aarch64::context::enter_userspace(code_ptr, ustack_rsp.as_u64() as usize);
         }
     }
 }
