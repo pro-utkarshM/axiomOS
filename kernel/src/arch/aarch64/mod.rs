@@ -21,9 +21,10 @@ pub struct Aarch64;
 fn dbg_mark(ch: u32) {
     #[cfg(feature = "rpi5")]
     // SAFETY: Early debug marker write to Pi 5 debug UART10 data register.
-    // Uses the virtual address from memory_map.
+    // ALWAYS use the physical address here so it works both before and after MMU is enabled
+    // (requires the address to be identity mapped in the page tables).
     unsafe {
-        (platform::rpi5::memory_map::BCM2712_UART10_BASE as *mut u32).write_volatile(ch);
+        (platform::rpi5::memory_map::BCM2712_UART10_BASE_PHYS as *mut u32).write_volatile(ch);
     }
 }
 

@@ -185,10 +185,16 @@ unsafe fn setup_kernel_page_tables(total_memory: usize) {
             let l1_idx = phys_base >> 30; // 1GB block index
             if l1_idx < 512 {
                 let phys_addr = l1_idx << 30;
+                // Map in identity region
                 *boot_tables.l1_low.entry_mut(l1_idx) =
                     paging::PageTableEntry::block(phys_addr, mmio_flags);
-                *boot_tables.l1_high.entry_mut(l1_idx) =
-                    paging::PageTableEntry::block(phys_addr, mmio_flags);
+
+                // Map in higher-half region ONLY if it doesn't conflict with kernel RAM (index 0)
+                // Pi 5 RAM starts at 0x0, so kernel is in index 0.
+                if l1_idx > 0 {
+                    *boot_tables.l1_high.entry_mut(l1_idx) =
+                        paging::PageTableEntry::block(phys_addr, mmio_flags);
+                }
             }
         }
     }
@@ -285,7 +291,9 @@ pub fn create_user_address_space() -> Option<usize> {
 
         #[cfg(feature = "rpi5")]
         {
-            use crate::arch::aarch64::platform::rpi5::memory_map::{GICC_BASE_PHYS, GICD_BASE_PHYS};
+            use crate::arch::aarch64::platform::rpi5::memory_map::{
+                GICC_BASE_PHYS, GICD_BASE_PHYS, RP1_PERIPHERAL_BASE_PHYS,
+            };
 
             // Keep the Pi 5 GIC distributor + CPU interface visible while TTBR0 is active.
             let _ = walker.map_range(
@@ -298,6 +306,15 @@ pub fn create_user_address_space() -> Option<usize> {
                 GICC_BASE_PHYS,
                 GICC_BASE_PHYS,
                 0x20000,
+                device_flags.to_pte_bits(),
+            );
+
+            // Map RP1 peripheral range (1GB aperture)
+            // This contains GPIO, PWM, I2C, etc.
+            let _ = walker.map_range(
+                RP1_PERIPHERAL_BASE_PHYS,
+                RP1_PERIPHERAL_BASE_PHYS,
+                0x4000_0000, // 1GB
                 device_flags.to_pte_bits(),
             );
         }
