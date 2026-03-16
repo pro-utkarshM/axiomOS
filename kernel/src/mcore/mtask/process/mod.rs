@@ -885,7 +885,7 @@ extern "C" fn trampoline(_arg: *mut c_void) {
             dbg_mark(b'Q' as u32);
 
             crate::arch::aarch64::context::enter_userspace(
-                code_ptr as usize,
+                code_ptr,
                 ustack_rsp.as_u64() as usize,
             );
         }
