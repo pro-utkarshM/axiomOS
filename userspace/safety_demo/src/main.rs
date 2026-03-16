@@ -293,7 +293,7 @@ pub extern "C" fn _start() -> ! {
     //   - This entire path is in kernel interrupt context
     //   - ZERO userspace dependency
     //
-    // Trigger the limit switch on GPIO 22 to verify.
+    // Trigger the limit switch on GPIO 17 to verify.
     // ---------------------------------------------------------
     print("[4/4] Safety interlock ARMED.\n");
     print("\n");
