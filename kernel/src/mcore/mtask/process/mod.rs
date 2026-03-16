@@ -29,6 +29,8 @@ use x86_64::structures::idt::InterruptStackFrameValue;
 
 use crate::arch::{PageSize, Size4KiB, VirtAddr};
 use crate::file::{vfs, OpenFileDescription};
+#[cfg(feature = "rpi5")]
+use crate::dbg_mark;
 use crate::mcore::context::ExecutionContext;
 use crate::mcore::mtask::process::fd::{FdNum, FileDescriptor, FileDescriptorFlags};
 use crate::mcore::mtask::process::mem::MemoryRegions;
@@ -90,10 +92,10 @@ static TRAMPOLINE_TTBR0_STAGE_SENT: AtomicBool = AtomicBool::new(false);
 
 #[cfg(all(target_arch = "aarch64", feature = "rpi5"))]
 #[inline(always)]
-fn dbg_mark(ch: u32) {
+fn dbg_mark(_ch: u32) {
     // SAFETY: Write to Pi 5 debug UART10 data register through higher-half alias.
     unsafe {
-        (0xFFFF_8010_7D00_1000 as *mut u32).write_volatile(ch);
+        (0xFFFF_8010_7D00_1000 as *mut u32).write_volatile(_ch);
     }
 }
 
