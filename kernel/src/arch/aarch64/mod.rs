@@ -21,8 +21,9 @@ pub struct Aarch64;
 fn dbg_mark(ch: u32) {
     #[cfg(feature = "rpi5")]
     // SAFETY: Early debug marker write to Pi 5 debug UART10 data register.
+    // Uses the virtual address from memory_map.
     unsafe {
-        (0x10_7D00_1000 as *mut u32).write_volatile(ch);
+        (platform::rpi5::memory_map::BCM2712_UART10_BASE as *mut u32).write_volatile(ch);
     }
 }
 
