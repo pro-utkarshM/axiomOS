@@ -90,15 +90,6 @@ static TRAMPOLINE_ENTER_USER_STAGE_SENT: AtomicBool = AtomicBool::new(false);
 #[cfg(all(target_arch = "aarch64", feature = "rpi5"))]
 static TRAMPOLINE_TTBR0_STAGE_SENT: AtomicBool = AtomicBool::new(false);
 
-#[cfg(all(target_arch = "aarch64", feature = "rpi5"))]
-#[inline(always)]
-fn dbg_mark(_ch: u32) {
-    // SAFETY: Write to Pi 5 debug UART10 data register through higher-half alias.
-    unsafe {
-        (0xFFFF_8010_7D00_1000 as *mut u32).write_volatile(_ch);
-    }
-}
-
 #[cfg(target_arch = "aarch64")]
 #[inline(always)]
 fn with_process_address_space_active<T, F>(process: &Arc<Process>, f: F) -> T

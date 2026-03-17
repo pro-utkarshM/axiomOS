@@ -8,15 +8,15 @@ use minilib::write;
 pub extern "C" fn _start() -> ! {
     write(1, b"=== Axiom eBPF Init ===\n");
 
-    // Spawn safety_demo for hardware verification
-    write(1, b"Spawning /bin/safety_demo...\n");
-    let pid = minilib::spawn("/bin/safety_demo");
+    // Spawn benchmark for Pi5 performance measurement
+    write(1, b"Spawning /bin/benchmark...\n");
+    let pid = minilib::spawn("/bin/benchmark");
     if pid < 0 {
-        write(1, b"Failed to spawn safety_demo, errno=");
+        write(1, b"Failed to spawn benchmark, errno=");
         print_num((-pid) as u64);
         write(1, b"\n");
     } else {
-        write(1, b"Spawned safety_demo with PID: ");
+        write(1, b"Spawned benchmark with PID: ");
         print_num(pid as u64);
         write(1, b"\n");
     }

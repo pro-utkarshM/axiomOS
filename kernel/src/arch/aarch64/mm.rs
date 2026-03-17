@@ -133,6 +133,7 @@ unsafe fn setup_kernel_page_tables(total_memory: usize) {
         let phys_addr = i << 30; // 1GB per entry
 
         // L1 block descriptor for 1GB mapping
+        #[allow(unused_mut)]
         let mut block_flags = pte_flags::VALID | pte_flags::AF | pte_flags::SH_INNER;
 
         // QEMU virt memory map:

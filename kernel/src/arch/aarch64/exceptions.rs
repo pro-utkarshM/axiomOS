@@ -187,6 +187,7 @@ pub extern "C" fn handle_sync_exception(ctx: &mut ExceptionContext) {
     let esr: u64;
     let elr: u64;
     let far: u64;
+    #[allow(unused_variables)]
     let spsr: u64;
 
     // SAFETY: Reading exception registers (ESR, ELR, FAR) is safe in an exception handler.
