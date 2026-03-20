@@ -1059,6 +1059,7 @@ dependencies = [
  "ovmf-prebuilt",
  "pwm_demo",
  "safety_demo",
+ "sys_exit_demo",
  "syscall_demo",
  "timeseries_demo",
 ]
@@ -1479,6 +1480,14 @@ dependencies = [
  "proc-macro2",
  "quote",
  "unicode-ident",
+]
+
+[[package]]
+name = "sys_exit_demo"
+version = "0.1.0"
+dependencies = [
+ "kernel_abi",
+ "minilib",
 ]
 
 [[package]]
