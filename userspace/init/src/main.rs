@@ -7,7 +7,7 @@ use minilib::write;
 #[unsafe(no_mangle)]
 pub extern "C" fn _start() -> ! {
     write(1, b"=== Axiom eBPF Init ===\n");
-    spawn_demo("/bin/sys_exit_demo");
+    spawn_demo("/bin/sched_switch_demo");
 
     loop {
         minilib::pause();

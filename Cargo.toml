@@ -18,6 +18,7 @@ timeseries_demo_x86 = { package = "timeseries_demo", path = "userspace/timeserie
 iio_demo_x86 = { package = "iio_demo", path = "userspace/iio_demo", artifact = "bin", target = "x86_64-unknown-none", optional = true }
 syscall_demo_x86 = { package = "syscall_demo", path = "userspace/syscall_demo", artifact = "bin", target = "x86_64-unknown-none", optional = true }
 sys_exit_demo_x86 = { package = "sys_exit_demo", path = "userspace/sys_exit_demo", artifact = "bin", target = "x86_64-unknown-none", optional = true }
+sched_switch_demo_x86 = { package = "sched_switch_demo", path = "userspace/sched_switch_demo", artifact = "bin", target = "x86_64-unknown-none", optional = true }
 file_io_demo_x86 = { package = "file_io_demo", path = "userspace/file_io_demo", artifact = "bin", target = "x86_64-unknown-none", optional = true }
 safety_demo_x86 = { package = "safety_demo", path = "userspace/safety_demo", artifact = "bin", target = "x86_64-unknown-none", optional = true }
 fork_test_x86 = { package = "fork_test", path = "userspace/fork_test", artifact = "bin", target = "x86_64-unknown-none", optional = true }
@@ -33,6 +34,7 @@ timeseries_demo_aarch64 = { package = "timeseries_demo", path = "userspace/times
 iio_demo_aarch64 = { package = "iio_demo", path = "userspace/iio_demo", artifact = "bin", target = "aarch64-unknown-none", optional = true }
 syscall_demo_aarch64 = { package = "syscall_demo", path = "userspace/syscall_demo", artifact = "bin", target = "aarch64-unknown-none", optional = true }
 sys_exit_demo_aarch64 = { package = "sys_exit_demo", path = "userspace/sys_exit_demo", artifact = "bin", target = "aarch64-unknown-none", optional = true }
+sched_switch_demo_aarch64 = { package = "sched_switch_demo", path = "userspace/sched_switch_demo", artifact = "bin", target = "aarch64-unknown-none", optional = true }
 file_io_demo_aarch64 = { package = "file_io_demo", path = "userspace/file_io_demo", artifact = "bin", target = "aarch64-unknown-none", optional = true }
 safety_demo_aarch64 = { package = "safety_demo", path = "userspace/safety_demo", artifact = "bin", target = "aarch64-unknown-none", optional = true }
 fork_test_aarch64 = { package = "fork_test", path = "userspace/fork_test", artifact = "bin", target = "aarch64-unknown-none", optional = true }
@@ -50,6 +52,7 @@ x86_64_deps = [
   "dep:iio_demo_x86",
   "dep:syscall_demo_x86",
   "dep:sys_exit_demo_x86",
+  "dep:sched_switch_demo_x86",
   "dep:file_io_demo_x86",
   "dep:safety_demo_x86",
   "dep:fork_test_x86",
@@ -65,6 +68,7 @@ aarch64_deps = [
   "dep:iio_demo_aarch64",
   "dep:syscall_demo_aarch64",
   "dep:sys_exit_demo_aarch64",
+  "dep:sched_switch_demo_aarch64",
   "dep:file_io_demo_aarch64",
   "dep:safety_demo_aarch64",
   "dep:fork_test_aarch64",
@@ -100,6 +104,7 @@ members = [
   "userspace/iio_demo",
   "userspace/syscall_demo",
   "userspace/sys_exit_demo",
+  "userspace/sched_switch_demo",
   "userspace/file_io_demo",
   "userspace/safety_demo",
   "userspace/fork_test",
