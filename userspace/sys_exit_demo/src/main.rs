@@ -153,9 +153,11 @@ pub extern "C" fn _start() -> ! {
             seen += 1;
             write(1, b"  Event #");
             print_num(seen as u64);
-            write(1, b": syscall=");
+            write(1, b": ");
+            print_syscall_name(event.syscall_nr as usize);
+            write(1, b" (");
             print_num(event.syscall_nr);
-            write(1, b" result=");
+            write(1, b") result=");
             print_i64(event.result);
             write(1, b" raw=");
             print_hex16(&ringbuf_buf);
@@ -319,6 +321,10 @@ fn reverse(buf: &mut [u8; 20], len: usize) {
         buf.swap(i, len - 1 - i);
         i += 1;
     }
+}
+
+fn print_syscall_name(n: usize) {
+    write(1, kernel_abi::syscall_name(n).as_bytes());
 }
 
 fn print_hex16(buf: &[u8; 32]) {
