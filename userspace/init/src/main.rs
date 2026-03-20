@@ -7,19 +7,7 @@ use minilib::write;
 #[unsafe(no_mangle)]
 pub extern "C" fn _start() -> ! {
     write(1, b"=== Axiom eBPF Init ===\n");
-
-    // Spawn safety_demo for hardware verification
-    write(1, b"Spawning /bin/safety_demo...\n");
-    let pid = minilib::spawn("/bin/safety_demo");
-    if pid < 0 {
-        write(1, b"Failed to spawn safety_demo, errno=");
-        print_num((-pid) as u64);
-        write(1, b"\n");
-    } else {
-        write(1, b"Spawned safety_demo with PID: ");
-        print_num(pid as u64);
-        write(1, b"\n");
-    }
+    spawn_demo("/bin/sys_exit_demo");
 
     loop {
         minilib::pause();
@@ -253,6 +241,23 @@ pub extern "C" fn _start() -> ! {
             minilib::pause();
         }
     */
+}
+
+fn spawn_demo(path: &str) {
+    write(1, b"Spawning ");
+    write(1, path.as_bytes());
+    write(1, b"...\n");
+
+    let pid = minilib::spawn(path);
+    if pid < 0 {
+        write(1, b"Failed to spawn demo, errno=");
+        print_num((-pid) as u64);
+        write(1, b"\n");
+    } else {
+        write(1, b"Spawned PID: ");
+        print_num(pid as u64);
+        write(1, b"\n");
+    }
 }
 
 fn print_num(mut n: u64) {
