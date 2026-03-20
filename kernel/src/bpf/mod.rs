@@ -10,7 +10,9 @@ use kernel_bpf::bytecode::program::BpfProgram;
 use kernel_bpf::execution::{BpfContext, BpfError, BpfExecutor, Interpreter};
 use kernel_bpf::loader::BpfLoader;
 use kernel_bpf::maps::{ArrayMap, BpfMap, HashMap as BpfHashMap, RingBufMap, TimeSeriesMap};
-use kernel_bpf::profile::{ActiveProfile, PhysicalProfile};
+use kernel_bpf::profile::ActiveProfile;
+#[cfg(target_arch = "aarch64")]
+use kernel_bpf::profile::PhysicalProfile;
 
 pub const ATTACH_TYPE_TIMER: u32 = 1;
 pub const ATTACH_TYPE_GPIO: u32 = 2;
