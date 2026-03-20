@@ -181,6 +181,104 @@ For each hook type, define:
 - Each hook has a clearly defined context shape
 - Hook semantics are clear enough that demos and benchmarks can target them directly
 
+### Current Hook Contract
+
+The runtime hook model is now explicit enough to describe directly from the implementation.
+
+Supported attach types in the kernel today:
+
+- `timer` = attach type `1`
+- `gpio` = attach type `2`
+- `pwm` = attach type `3`
+- `iio` = attach type `4`
+- `sys_enter` = attach type `5`
+- `sys_exit` = attach type `6`
+- `sched_switch` = attach type `7`
+
+The kernel currently executes attached programs in attachment order for a given attach type.
+Multiple programs may attach to the same hook type.
+
+Execution model:
+
+- The BPF VM passes a pointer to `BpfContext` in `R1`
+- Hook-specific payload is exposed through `BpfContext.data`
+- `BpfContext.data_end` bounds the payload range
+- Programs are expected to load `ctx.data` first and then read the hook payload from that pointer
+
+The common wrapper context is:
+
+```c
+struct BpfContext {
+    const u8 *data;
+    const u8 *data_end;
+    const u8 *data_meta;
+    u64 interrupt_latency_ns;
+    u64 boot_time_ms;
+    u64 kernel_heap_kb;
+    u64 kernel_image_mb;
+};
+```
+
+Hook payloads currently implemented:
+
+`sys_enter`
+
+- Fires at syscall dispatcher entry before syscall execution
+- Attach type: `5`
+- Context:
+
+```c
+struct SyscallTraceContext {
+    u64 syscall_nr;
+    u64 arg1;
+    u64 arg2;
+    u64 arg3;
+    u64 arg4;
+    u64 arg5;
+    u64 arg6;
+};
+```
+
+`sys_exit`
+
+- Fires in the syscall dispatcher after the syscall result is computed
+- Attach type: `6`
+- Context:
+
+```c
+struct SyscallExitContext {
+    u64 syscall_nr;
+    i64 result;
+};
+```
+
+`sched_switch`
+
+- Fires in the live scheduler path during `reschedule()` before the low-level context switch
+- Attach type: `7`
+- Context:
+
+```c
+struct SchedSwitchContext {
+    u64 cpu_id;
+    u64 prev_pid;
+    u64 prev_tid;
+    u64 next_pid;
+    u64 next_tid;
+};
+```
+
+Current semantics:
+
+- `sys_enter`, `sys_exit`, and `sched_switch` are observe-only
+- Programs may emit trace output, update maps, and write ring buffer events
+- Programs do not currently modify syscall results, deny syscalls, or override scheduling decisions
+- Program failure is logged and does not change the kernel decision path
+
+This is enough for the current thesis claim:
+
+`runtime-loaded verified program -> live kernel hook -> ring buffer -> userspace-visible effect`
+
 ---
 
 ## Phase 2: Finish Live Scheduler Hooks
