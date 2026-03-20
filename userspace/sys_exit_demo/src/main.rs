@@ -4,15 +4,13 @@
 use core::panic::PanicInfo;
 
 use kernel_abi::{BpfAttr, BPF_MAP_CREATE, BPF_PROG_ATTACH, BPF_PROG_LOAD, BPF_RINGBUF_POLL};
-use minilib::{bpf, exit, getcwd, msleep, write};
+use minilib::{bpf, close, dup, exit, getcwd, msleep, pipe, write};
 
 const BPF_MAP_TYPE_RINGBUF: u32 = 27;
-const HELPER_RINGBUF_OUTPUT: i32 = 6;
+const HELPER_RINGBUF_OUTPUT: i32 = 8;
 const ATTACH_TYPE_SYS_EXIT: u32 = 6;
-const SYS_GETCWD: i32 = 35;
 
 const SYSCALL_EXIT_CONTEXT_SIZE: usize = 16;
-const SYSCALL_NR_OFFSET: i16 = 0;
 
 #[repr(C)]
 struct BpfInsn {
@@ -62,7 +60,7 @@ pub extern "C" fn _start() -> ! {
     print_num(ringbuf_map_id as u64);
     write(1, b")\n");
 
-    write(1, b"[2/4] Loading sys_exit filter program... ");
+    write(1, b"[2/4] Loading sys_exit trace program... ");
     let insns = build_program(ringbuf_map_id);
     let load_attr = BpfAttr {
         prog_type: 1,
@@ -100,21 +98,42 @@ pub extern "C" fn _start() -> ! {
     }
     write(1, b"OK\n");
 
-    write(
-        1,
-        b"[4/4] Triggering getcwd syscalls and polling events...\n",
-    );
+    write(1, b"[4/4] Triggering syscalls and polling events...\n");
     let mut cwd_buf = [0u8; 64];
-    for _ in 0..2 {
-        let rc = getcwd(&mut cwd_buf);
-        write(1, b"  getcwd returned ");
-        print_i32(rc);
-        write(1, b"\n");
+    let getcwd_rc = getcwd(&mut cwd_buf);
+    write(1, b"  getcwd returned ");
+    print_i32(getcwd_rc);
+    write(1, b"\n");
+
+    let dup_rc = dup(1);
+    write(1, b"  dup(1) returned ");
+    print_i32(dup_rc);
+    write(1, b"\n");
+    if dup_rc >= 0 {
+        let _ = close(dup_rc);
+    }
+
+    let close_rc = close(999);
+    write(1, b"  close(999) returned ");
+    print_i32(close_rc);
+    write(1, b"\n");
+
+    let mut pipefd = [0i32; 2];
+    let pipe_rc = pipe(pipefd.as_mut_ptr());
+    write(1, b"  pipe() returned ");
+    print_i32(pipe_rc);
+    write(1, b"\n");
+    if pipe_rc == 0 {
+        let _ = close(pipefd[0]);
+        let _ = close(pipefd[1]);
     }
 
     let mut ringbuf_buf = [0u8; 32];
     let mut seen = 0u32;
-    while seen < 2 {
+    let mut polls = 0u32;
+    const MAX_POLLS: u32 = 100;
+    while polls < MAX_POLLS && seen < 8 {
+        polls += 1;
         let poll_attr = BpfAttr {
             map_fd: ringbuf_map_id as u32,
             key: ringbuf_buf.as_mut_ptr() as u64,
@@ -136,6 +155,8 @@ pub extern "C" fn _start() -> ! {
             print_num(event.syscall_nr);
             write(1, b" result=");
             print_i64(event.result);
+            write(1, b" raw=");
+            print_hex16(&ringbuf_buf);
             write(1, b"\n");
         } else if poll_res < 0 {
             write(1, b"  ringbuf poll failed\n");
@@ -145,14 +166,25 @@ pub extern "C" fn _start() -> ! {
         }
     }
 
+    write(1, b"\nPoll summary: polls=");
+    print_num(polls as u64);
+    write(1, b" events=");
+    print_num(seen as u64);
+    write(1, b"\n");
+
+    if seen == 0 {
+        write(1, b"No sys_exit events received before timeout.\n");
+        exit(2);
+    }
+
     write(
         1,
-        b"\nPipeline proven: runtime attach -> sys_exit -> ringbuf -> userspace\n",
+        b"Pipeline proven: runtime attach -> sys_exit -> ringbuf -> userspace\n",
     );
     exit(0);
 }
 
-fn build_program(ringbuf_map_id: i32) -> [BpfInsn; 12] {
+fn build_program(ringbuf_map_id: i32) -> [BpfInsn; 9] {
     [
         BpfInsn {
             code: 0xbf,
@@ -161,16 +193,10 @@ fn build_program(ringbuf_map_id: i32) -> [BpfInsn; 12] {
             imm: 0,
         },
         BpfInsn {
-            code: 0x61,
-            dst_src: regs(0, 1),
-            off: SYSCALL_NR_OFFSET,
+            code: 0x79,
+            dst_src: regs(6, 1),
+            off: 0,
             imm: 0,
-        },
-        BpfInsn {
-            code: 0x55,
-            dst_src: regs(0, 0),
-            off: 7,
-            imm: SYS_GETCWD,
         },
         BpfInsn {
             code: 0xb7,
@@ -201,18 +227,6 @@ fn build_program(ringbuf_map_id: i32) -> [BpfInsn; 12] {
             dst_src: 0x00,
             off: 0,
             imm: HELPER_RINGBUF_OUTPUT,
-        },
-        BpfInsn {
-            code: 0xb7,
-            dst_src: regs(0, 0),
-            off: 0,
-            imm: 1,
-        },
-        BpfInsn {
-            code: 0x95,
-            dst_src: 0x00,
-            off: 0,
-            imm: 0,
         },
         BpfInsn {
             code: 0xb7,
@@ -278,5 +292,20 @@ fn reverse(buf: &mut [u8; 20], len: usize) {
     while i < len / 2 {
         buf.swap(i, len - 1 - i);
         i += 1;
+    }
+}
+
+fn print_hex16(buf: &[u8; 32]) {
+    for byte in buf.iter().take(16) {
+        let hi = byte >> 4;
+        let lo = byte & 0x0f;
+        write(1, &[hex_digit(hi), hex_digit(lo)]);
+    }
+}
+
+const fn hex_digit(n: u8) -> u8 {
+    match n {
+        0..=9 => b'0' + n,
+        _ => b'a' + (n - 10),
     }
 }

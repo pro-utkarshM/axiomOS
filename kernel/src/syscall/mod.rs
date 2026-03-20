@@ -207,6 +207,15 @@ pub fn dispatch_syscall(
             result: result as i64,
         };
         let ctx = kernel_bpf::execution::BpfContext::from_struct(&exit_ctx);
+        if let Some(manager) = crate::BPF_MANAGER.get() {
+            let attached = manager
+                .lock()
+                .get_hook_programs(crate::bpf::ATTACH_TYPE_SYS_EXIT)
+                .len();
+            if attached != 0 {
+                trace!("sys_exit dispatch: syscall={n} attached_programs={attached}");
+            }
+        }
         let _ = crate::bpf::BpfManager::run_hook_programs(
             crate::bpf::ATTACH_TYPE_SYS_EXIT,
             &ctx,
