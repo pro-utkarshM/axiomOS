@@ -90,9 +90,8 @@ pub fn dispatch_syscall(
         syscall_name(n)
     );
 
-    // Run BPF hooks (AttachType::Syscall = 2) at syscall entry
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
-    if let Some(manager) = crate::BPF_MANAGER.get() {
+    {
         use kernel_bpf::execution::SyscallTraceContext;
 
         let trace_ctx = SyscallTraceContext {
@@ -104,33 +103,12 @@ pub fn dispatch_syscall(
             arg5: arg5 as u64,
             arg6: arg6 as u64,
         };
-
-        // SAFETY: We are creating a slice from a stack-allocated struct.
-        // The slice is only used within this scope to create the BpfContext.
-        let slice = unsafe {
-            core::slice::from_raw_parts(
-                &trace_ctx as *const _ as *const u8,
-                core::mem::size_of::<SyscallTraceContext>(),
-            )
-        };
-
-        let ctx = kernel_bpf::execution::BpfContext::from_slice(slice);
-
-        // Lock-free pattern: clone programs and release lock BEFORE execution
-        // so that BPF helpers can re-acquire the lock without deadlocking.
-        let programs = manager
-            .lock()
-            .get_hook_programs(crate::bpf::ATTACH_TYPE_SYSCALL);
-        for (prog_id, program) in &programs {
-            match crate::bpf::BpfManager::execute_program(program, &ctx) {
-                Ok(res) => {
-                    if res != 0 {
-                        log::info!("Syscall Trace [id={}] syscall_nr: {}", prog_id, res);
-                    }
-                }
-                Err(e) => log::error!("Syscall BPF Hook [id={}] failed: {:?}", prog_id, e),
-            }
-        }
+        let ctx = kernel_bpf::execution::BpfContext::from_struct(&trace_ctx);
+        let _ = crate::bpf::BpfManager::run_hook_programs(
+            crate::bpf::ATTACH_TYPE_SYS_ENTER,
+            &ctx,
+            "sys_enter",
+        );
     }
 
     let result: Result<usize, Errno> = match n {
@@ -209,7 +187,7 @@ pub fn dispatch_syscall(
         }
     };
 
-    match result {
+    let result = match result {
         Ok(ret) => {
             trace!("syscall {} ({n}) returned {ret}", syscall_name(n));
             ret as isize
@@ -218,7 +196,25 @@ pub fn dispatch_syscall(
             error!("syscall {} ({n}) failed with error: {e:?}", syscall_name(n));
             Into::<isize>::into(e).neg()
         }
+    };
+
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    {
+        use kernel_bpf::execution::SyscallExitContext;
+
+        let exit_ctx = SyscallExitContext {
+            syscall_nr: n as u64,
+            result: result as i64,
+        };
+        let ctx = kernel_bpf::execution::BpfContext::from_struct(&exit_ctx);
+        let _ = crate::bpf::BpfManager::run_hook_programs(
+            crate::bpf::ATTACH_TYPE_SYS_EXIT,
+            &ctx,
+            "sys_exit",
+        );
     }
+
+    result
 }
 
 /// Create a slice from a raw pointer and length.

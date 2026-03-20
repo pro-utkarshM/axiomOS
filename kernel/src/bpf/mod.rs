@@ -19,6 +19,9 @@ pub const ATTACH_TYPE_GPIO: u32 = 2;
 pub const ATTACH_TYPE_PWM: u32 = 3;
 pub const ATTACH_TYPE_IIO: u32 = 4;
 pub const ATTACH_TYPE_SYSCALL: u32 = 5;
+pub const ATTACH_TYPE_SYS_ENTER: u32 = ATTACH_TYPE_SYSCALL;
+pub const ATTACH_TYPE_SYS_EXIT: u32 = 6;
+pub const ATTACH_TYPE_SCHED_SWITCH: u32 = 7;
 
 pub struct BpfManager {
     programs: Vec<BpfProgram<ActiveProfile>>,
@@ -162,6 +165,33 @@ impl BpfManager {
             }
         }
         result
+    }
+
+    pub fn run_hook_programs(
+        attach_type: u32,
+        ctx: &BpfContext,
+        hook_name: &str,
+    ) -> Result<usize, BpfError> {
+        let Some(manager) = crate::BPF_MANAGER.get() else {
+            return Ok(0);
+        };
+
+        let programs = manager.lock().get_hook_programs(attach_type);
+        for (prog_id, program) in &programs {
+            match Self::execute_program(program, ctx) {
+                Ok(res) => {
+                    if res != 0 {
+                        log::info!("{hook_name} BPF Hook [id={prog_id}] returned: {res}");
+                    }
+                }
+                Err(e) => {
+                    log::error!("{hook_name} BPF Hook [id={prog_id}] failed: {:?}", e);
+                    return Err(e);
+                }
+            }
+        }
+
+        Ok(programs.len())
     }
 
     pub fn execute_hooks(&self, attach_type: u32, ctx: &BpfContext) {
