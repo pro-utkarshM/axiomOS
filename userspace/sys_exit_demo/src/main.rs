@@ -9,6 +9,8 @@ use minilib::{bpf, close, dup, exit, getcwd, msleep, pipe, write};
 const BPF_MAP_TYPE_RINGBUF: u32 = 27;
 const HELPER_RINGBUF_OUTPUT: i32 = 8;
 const ATTACH_TYPE_SYS_EXIT: u32 = 6;
+const SYS_WRITE: i32 = 37;
+const SYS_BPF: i32 = 50;
 
 const SYSCALL_EXIT_CONTEXT_SIZE: usize = 16;
 
@@ -184,7 +186,7 @@ pub extern "C" fn _start() -> ! {
     exit(0);
 }
 
-fn build_program(ringbuf_map_id: i32) -> [BpfInsn; 9] {
+fn build_program(ringbuf_map_id: i32) -> [BpfInsn; 13] {
     [
         BpfInsn {
             code: 0xbf,
@@ -197,6 +199,24 @@ fn build_program(ringbuf_map_id: i32) -> [BpfInsn; 9] {
             dst_src: regs(6, 1),
             off: 0,
             imm: 0,
+        },
+        BpfInsn {
+            code: 0x79,
+            dst_src: regs(7, 6),
+            off: 0,
+            imm: 0,
+        },
+        BpfInsn {
+            code: 0x15,
+            dst_src: regs(7, 0),
+            off: 6,
+            imm: SYS_WRITE,
+        },
+        BpfInsn {
+            code: 0x15,
+            dst_src: regs(7, 0),
+            off: 5,
+            imm: SYS_BPF,
         },
         BpfInsn {
             code: 0xb7,
@@ -227,6 +247,12 @@ fn build_program(ringbuf_map_id: i32) -> [BpfInsn; 9] {
             dst_src: 0x00,
             off: 0,
             imm: HELPER_RINGBUF_OUTPUT,
+        },
+        BpfInsn {
+            code: 0xb7,
+            dst_src: regs(0, 0),
+            off: 0,
+            imm: 0,
         },
         BpfInsn {
             code: 0xb7,
