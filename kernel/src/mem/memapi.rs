@@ -256,16 +256,6 @@ impl<T: AllocationType> LowerHalfAllocation<T> {
 
         if T::fork_requires_cow() {
             let cow_flags = T::fork_mapping_flags();
-            log::info!(
-                "fork lower-half COW: pid={} -> pid={} start={:#x} mapped_start={:#x} len={:#x} pages={} flags={:?}",
-                self.process.pid().as_u64(),
-                new_process.pid().as_u64(),
-                self.start.as_u64(),
-                self.inner.mapped_segment.start.as_u64(),
-                self.inner.mapped_segment.len,
-                page_count,
-                cow_flags
-            );
             self.process
                 .with_address_space(|as_| {
                     as_.remap_range::<Size4KiB, _>(&self.inner.mapped_segment, |_| cow_flags)
