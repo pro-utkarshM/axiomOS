@@ -30,6 +30,8 @@ bitflags! {
         const HUGE_PAGE = 0;
         /// Custom bit to mark this as a device mapping (Device-nGnRE)
         const MMIO_DEVICE = 1 << 62;
+        /// Software-defined bit used to mark a userspace page as copy-on-write.
+        const COPY_ON_WRITE = 1 << 55;
     }
 }
 
@@ -88,6 +90,10 @@ impl PageTableFlags {
         // Check for Device-nGnRE attribute (Index 1)
         if (bits >> 2) & 0x7 == mair::DEVICE_NGNRE as u64 {
             flags |= PageTableFlags::MMIO_DEVICE;
+        }
+
+        if bits & PageTableFlags::COPY_ON_WRITE.bits() != 0 {
+            flags |= PageTableFlags::COPY_ON_WRITE;
         }
 
         flags
