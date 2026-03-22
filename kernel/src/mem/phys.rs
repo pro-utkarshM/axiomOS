@@ -54,7 +54,7 @@ static mut RESERVED_REGIONS: ReservedRegions = ReservedRegions::new();
 
 struct FrameRefCountRegion {
     base: u64,
-    counts: Vec<u32>,
+    counts: Vec<u8>,
 }
 
 impl FrameRefCountRegion {
@@ -97,7 +97,7 @@ impl FrameRefCounts {
         Self { regions }
     }
 
-    fn locate_mut(&mut self, addr: u64) -> Option<(&mut u32, u64)> {
+    fn locate_mut(&mut self, addr: u64) -> Option<(&mut u8, u64)> {
         for region in &mut self.regions {
             if let Some(index) = region.frame_index(addr) {
                 return Some((&mut region.counts[index], region.base));
@@ -110,7 +110,7 @@ impl FrameRefCounts {
     fn locate(&self, addr: u64) -> Option<u32> {
         for region in &self.regions {
             if let Some(index) = region.frame_index(addr) {
-                return Some(region.counts[index]);
+                return Some(region.counts[index] as u32);
             }
         }
 
@@ -129,7 +129,7 @@ impl FrameRefCounts {
             .locate_mut(addr)
             .unwrap_or_else(|| panic!("frame refcount missing for {addr:#x}"));
         *count = count.saturating_add(1);
-        *count
+        u32::from(*count)
     }
 
     fn release(&mut self, addr: u64) -> Option<u32> {
@@ -140,7 +140,7 @@ impl FrameRefCounts {
         }
 
         *count -= 1;
-        Some(*count)
+        Some(u32::from(*count))
     }
 
     fn count(&self, addr: u64) -> Option<u32> {

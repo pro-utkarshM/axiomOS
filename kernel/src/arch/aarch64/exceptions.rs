@@ -381,6 +381,27 @@ fn try_handle_copy_on_write_fault(far: u64, is_write: bool) -> Result<bool, &'st
         .with_address_space(|as_| as_.translate_page_flags(page_vaddr))
         .ok_or("fault page not mapped")?;
 
+    #[cfg(feature = "rpi5")]
+    {
+        let old_frame =
+            crate::arch::types::PhysFrame::<crate::arch::types::Size4KiB>::containing_address(phys);
+        let refs = crate::mem::phys::PhysicalMemory::frame_ref_count(old_frame).unwrap_or(0);
+        dbg_mark(b'P' as u32); // page VA
+        dbg_hex_u64(page_vaddr.as_u64());
+        dbg_mark(b'F' as u32); // decoded flags bits
+        dbg_hex_u64(flags.bits());
+        dbg_mark(b'C' as u32); // COW present
+        dbg_mark(
+            if flags.contains(crate::arch::types::PageTableFlags::COPY_ON_WRITE) {
+                b'1' as u32
+            } else {
+                b'0' as u32
+            },
+        );
+        dbg_mark(b'N' as u32); // refcount
+        dbg_hex_u32(refs);
+    }
+
     if !flags.contains(crate::arch::types::PageTableFlags::COPY_ON_WRITE) {
         return Ok(false);
     }
@@ -393,6 +414,8 @@ fn try_handle_copy_on_write_fault(far: u64, is_write: bool) -> Result<bool, &'st
         crate::arch::types::PhysFrame::<crate::arch::types::Size4KiB>::containing_address(phys);
 
     if crate::mem::phys::PhysicalMemory::frame_ref_count(old_frame) == Some(1) {
+        #[cfg(feature = "rpi5")]
+        dbg_mark(b'H' as u32); // upgraded in place
         current_process
             .with_address_space(|as_| as_.remap(page, |_| writable_flags))
             .map_err(|_| "failed to upgrade COW page in place")?;
@@ -419,7 +442,78 @@ fn try_handle_copy_on_write_fault(far: u64, is_write: bool) -> Result<bool, &'st
 
     crate::mem::phys::PhysicalMemory::deallocate_frame(old_frame);
 
+    #[cfg(feature = "rpi5")]
+    dbg_mark(b'h' as u32); // copied private page
+
     Ok(true)
+}
+
+#[cfg(feature = "rpi5")]
+fn dbg_fault_page_state_uart(far: u64) {
+    let current_process = crate::mcore::context::ExecutionContext::load().current_process();
+    let page_vaddr = crate::arch::types::VirtAddr::new(far).align_down(4096);
+
+    match current_process.with_address_space(|as_| as_.translate_page_flags(page_vaddr)) {
+        Some((phys, flags)) => {
+            let frame =
+                crate::arch::types::PhysFrame::<crate::arch::types::Size4KiB>::containing_address(
+                    phys,
+                );
+            let refs = crate::mem::phys::PhysicalMemory::frame_ref_count(frame).unwrap_or(0);
+            dbg_mark(b'p' as u32);
+            dbg_hex_u64(page_vaddr.as_u64());
+            dbg_mark(b'f' as u32);
+            dbg_hex_u64(flags.bits());
+            dbg_mark(b'c' as u32);
+            dbg_mark(
+                if flags.contains(crate::arch::types::PageTableFlags::COPY_ON_WRITE) {
+                    b'1' as u32
+                } else {
+                    b'0' as u32
+                },
+            );
+            dbg_mark(b'n' as u32);
+            dbg_hex_u32(refs);
+        }
+        None => {
+            dbg_mark(b'p' as u32);
+            dbg_hex_u64(page_vaddr.as_u64());
+            dbg_mark(b'M' as u32); // not mapped
+        }
+    }
+}
+
+#[cfg(not(feature = "rpi5"))]
+fn dbg_fault_page_state_uart(_far: u64) {}
+
+fn log_user_fault_page_state(far: u64) {
+    let current_process = crate::mcore::context::ExecutionContext::load().current_process();
+    let page_vaddr = crate::arch::types::VirtAddr::new(far).align_down(4096);
+
+    match current_process.with_address_space(|as_| as_.translate_page_flags(page_vaddr)) {
+        Some((phys, flags)) => {
+            let frame =
+                crate::arch::types::PhysFrame::<crate::arch::types::Size4KiB>::containing_address(
+                    phys,
+                );
+            let refs = crate::mem::phys::PhysicalMemory::frame_ref_count(frame).unwrap_or(0);
+            log::error!(
+                "user fault page state: pid={} page={:#x} phys={:#x} flags={:?} refs={}",
+                current_process.pid().as_u64(),
+                page_vaddr.as_u64(),
+                phys.as_u64(),
+                flags,
+                refs
+            );
+        }
+        None => {
+            log::error!(
+                "user fault page state: pid={} page={:#x} not mapped",
+                current_process.pid().as_u64(),
+                page_vaddr.as_u64()
+            );
+        }
+    }
 }
 
 fn handle_data_abort(elr: u64, far: u64, iss: u64) {
@@ -485,6 +579,9 @@ fn handle_data_abort(elr: u64, far: u64, iss: u64) {
                     elr, far, is_write
                 );
             } else {
+                dbg_fault_page_state_uart(far);
+                log_user_fault_page_state(far);
+
                 match try_handle_copy_on_write_fault(far, is_write) {
                     Ok(true) => return,
                     Ok(false) => {}
