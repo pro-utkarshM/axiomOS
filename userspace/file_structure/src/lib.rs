@@ -15,6 +15,8 @@ pub const STRUCTURE: Dir<'static> = Dir::new(
                 File::new("syscall_demo", Kind::Executable),
                 File::new("sys_exit_demo", Kind::Executable),
                 File::new("sched_switch_demo", Kind::Executable),
+                File::new("sched_switch_export_demo", Kind::Executable),
+                File::new("sched_switch_bridge_demo", Kind::Executable),
                 File::new("file_io_demo", Kind::Executable),
                 File::new("safety_demo", Kind::Executable),
                 File::new("fork_test", Kind::Executable),

@@ -84,6 +84,10 @@ struct Args {
     /// Verbose output
     #[arg(short, long)]
     verbose: bool,
+
+    /// Event payload kind expected in the ring buffer
+    #[arg(long, default_value = "legacy", value_enum)]
+    event_kind: EventKindArg,
 }
 
 #[derive(ValueEnum, Clone, Debug)]
@@ -91,6 +95,14 @@ enum FormatArg {
     Json,
     JsonLines,
     Text,
+}
+
+#[derive(ValueEnum, Clone, Debug)]
+enum EventKindArg {
+    /// Parse events using the legacy EventHeader-discriminated format
+    Legacy,
+    /// Parse raw live scheduler switch events
+    SchedSwitch,
 }
 
 impl From<FormatArg> for OutputFormat {
@@ -108,14 +120,20 @@ struct Bridge {
     publisher: Box<dyn EventPublisher>,
     poll_interval: Duration,
     running: Arc<AtomicBool>,
+    event_kind: EventKindArg,
 }
 
 impl Bridge {
-    fn new(publisher: Box<dyn EventPublisher>, poll_interval: Duration) -> Self {
+    fn new(
+        publisher: Box<dyn EventPublisher>,
+        poll_interval: Duration,
+        event_kind: EventKindArg,
+    ) -> Self {
         Self {
             publisher,
             poll_interval,
             running: Arc::new(AtomicBool::new(true)),
+            event_kind,
         }
     }
 
@@ -130,7 +148,12 @@ impl Bridge {
 
             // Poll for events
             for data in consumer.poll() {
-                match RkEvent::from_bytes(&data) {
+                let parsed = match self.event_kind {
+                    EventKindArg::Legacy => RkEvent::from_bytes(&data),
+                    EventKindArg::SchedSwitch => RkEvent::from_sched_switch_bytes(&data),
+                };
+
+                match parsed {
                     Ok(event) => {
                         if let Err(e) = self.publisher.publish(&event) {
                             log::warn!("Failed to publish event: {}", e);
@@ -254,6 +277,7 @@ async fn main() -> Result<()> {
     log::info!("rk-to-ros starting");
     log::info!("Map path: {:?}", args.map);
     log::info!("Topic: {}", args.topic);
+    log::info!("Event kind: {:?}", args.event_kind);
 
     // Create publisher configuration
     let config = PublisherConfig {
@@ -274,7 +298,11 @@ async fn main() -> Result<()> {
     };
 
     // Create bridge
-    let bridge = Bridge::new(publisher, Duration::from_millis(args.poll_interval));
+    let bridge = Bridge::new(
+        publisher,
+        Duration::from_millis(args.poll_interval),
+        args.event_kind.clone(),
+    );
 
     // Set up signal handler for graceful shutdown
     let running = bridge.running();

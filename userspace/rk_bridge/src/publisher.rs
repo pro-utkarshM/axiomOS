@@ -194,6 +194,12 @@ impl StdoutPublisher {
                     ts, e.series_id, e.value, e.tag
                 )
             }
+            RkEvent::SchedSwitch(e) => {
+                format!(
+                    "{}SCHED_SWITCH: cpu={} prev(pid={}, tid={}) -> next(pid={}, tid={})",
+                    ts, e.cpu_id, e.prev_pid, e.prev_tid, e.next_pid, e.next_tid
+                )
+            }
             RkEvent::Trace(e) => {
                 format!("{}TRACE: {}", ts, e.message)
             }
@@ -418,7 +424,7 @@ impl EventPublisher for MultiPublisher {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::event::{EventHeader, ImuEvent};
+    use crate::event::{EventHeader, ImuEvent, SchedSwitchEvent};
 
     fn make_test_event() -> RkEvent {
         RkEvent::Imu(ImuEvent {
@@ -473,5 +479,27 @@ mod tests {
         let config = PublisherConfig::default();
         assert_eq!(config.topic, "/rk/events");
         assert_eq!(config.rate_limit, 0);
+    }
+
+    #[test]
+    fn test_stdout_publisher_format_sched_switch_text() {
+        let config = PublisherConfig {
+            format: OutputFormat::Text,
+            include_timestamps: false,
+            ..Default::default()
+        };
+        let publisher = StdoutPublisher::new(config);
+        let event = RkEvent::SchedSwitch(SchedSwitchEvent {
+            cpu_id: 0,
+            prev_pid: 2,
+            prev_tid: 4,
+            next_pid: 3,
+            next_tid: 5,
+        });
+
+        let formatted = publisher.format_event(&event).unwrap();
+        assert!(formatted.contains("SCHED_SWITCH"));
+        assert!(formatted.contains("prev(pid=2, tid=4)"));
+        assert!(formatted.contains("next(pid=3, tid=5)"));
     }
 }

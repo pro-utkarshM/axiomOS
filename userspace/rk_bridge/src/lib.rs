@@ -40,7 +40,7 @@ pub mod event;
 pub mod publisher;
 pub mod ringbuf;
 
-pub use event::{EventHeader, ImuEvent, MotorEvent, RkEvent, SafetyEvent};
+pub use event::{EventHeader, ImuEvent, MotorEvent, RkEvent, SafetyEvent, SchedSwitchEvent};
 pub use publisher::{EventPublisher, PublisherConfig, RosPublisher, StdoutPublisher};
 pub use ringbuf::{RingBufConsumer, RingBufError};
 
