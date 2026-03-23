@@ -32,11 +32,9 @@ What is already working in the repository:
 
 What is not yet complete enough for the thesis:
 
-- Scheduler hooks are not yet wired into live scheduling events
-- Syscall hooks are not yet modeled as a complete interface with explicit entry and exit semantics
-- The runtime hook model is still coarse and inconsistent across subsystems
-- GPIO/PWM demos are present, but the main proof should be framed around live kernel behavior changes
+- `rk-bridge` is not yet connected to live kernel event sources
 - `rk-bridge` ROS2 publishing is still placeholder code behind a feature flag
+- The final demo flow is not yet packaged as one clean, repeatable no-reboot path
 - Kernel heap at init is above the proposal target
 
 ---
@@ -420,6 +418,75 @@ Use scheduler or syscall as the first core thesis demo.
 Use `rk-bridge` and ROS2 topics as the presentation layer for that demo once live hook events are feeding the ring buffer.
 Use GPIO/PWM as the second robotics-flavored demo once the core hook model is complete.
 
+### Current validated state
+
+The kernel-side proof path is now in place and validated on RPi5 hardware.
+
+What is already proven:
+
+- `sys_enter`, `sys_exit`, and `sched_switch` are live runtime hook points
+- `sys_exit` can drive ring-buffer output to userspace without reboot
+- `sched_switch` can drive ring-buffer output to userspace without reboot
+- AArch64 `fork()`/child return was repaired enough to support real scheduler demo workloads
+
+This means the remaining Phase 4 bottleneck is no longer kernel hook bring-up.
+It is event export, bridge integration, and demo presentation.
+
+### Phase 4 execution strategy
+
+Phase 4 will proceed in two passes.
+
+The short-term goal is to finish the strongest honest demo path as quickly as possible.
+The long-term goal is to converge on the cleaner durable architecture.
+
+#### Pass 1: Pragmatic bridge path
+
+The first pass will use the kernel and syscall surface that already exists today.
+
+Implementation plan:
+
+- add `rk_bridge --map-id`
+- add `sched_switch_demo --export-only`
+- let the demo create the ring buffer, attach the program, print the map ID, and stay alive
+- let `rk_bridge` consume live ring-buffer events by map ID and publish them to stdout first
+
+The proof target for this pass is:
+
+`runtime-loaded verified program -> live sched_switch hook -> ring buffer -> rk_bridge stdout`
+
+Why we are doing this:
+
+- the current kernel does not yet expose pinned BPF objects as a stable consumable userspace interface
+- `sched_switch_demo` currently owns a private ring buffer map and polls it itself
+- `rk_bridge` can now parse live `sched_switch` payloads, but it still needs an event export path that matches the kernel that exists today
+- using transient map IDs is the fastest honest way to finish the bridge proof without pretending pinned-object infrastructure already exists
+
+This is a proof-oriented interim transport, not the final architecture.
+
+#### Pass 2: Durable bridge architecture
+
+The second pass will replace the pragmatic transport with the cleaner long-term interface.
+
+Implementation plan:
+
+- implement `BPF_OBJ_PIN`
+- implement `BPF_OBJ_GET`
+- implement the required object info/query path for bridge discovery
+- expose ring buffer maps as stable kernel objects
+- update `rk_bridge` to consume pinned paths instead of transient map IDs
+- replace placeholder ROS2 publication with real `/rk/*` topic publication
+
+The final target for this pass is:
+
+`runtime-loaded verified program -> live sched_switch/sys_exit hook -> pinned ring buffer -> rk_bridge -> /rk/* ROS2 topic`
+
+Why this is the right longer-run architecture:
+
+- pinned objects are stable across process boundaries
+- the bridge becomes a real consumer instead of a demo-only peer process
+- the system aligns better with established BPF object lifecycle patterns
+- ROS2 publication becomes a presentation layer over a stable kernel event interface, not a special-case demo path
+
 ### Validity constraint
 
 The demo is only valid when the event source is a live kernel hook.
@@ -438,6 +505,13 @@ That means:
 - Demo runs on RPi5
 - Demo requires no reboot between “before” and “after”
 - A reviewer can understand the change immediately from output alone
+- Pass 1 done:
+  - live kernel scheduler events reach `rk_bridge` through `--map-id`
+  - stdout output is clean enough to demonstrate the end-to-end path
+- Pass 2 done:
+  - pinned-object event export exists
+  - `rk_bridge` consumes stable named kernel objects
+  - real ROS2 topic publication works from the live kernel event stream
 
 ---
 
