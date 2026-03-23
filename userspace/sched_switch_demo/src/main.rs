@@ -4,7 +4,7 @@
 use core::panic::PanicInfo;
 
 use kernel_abi::{BpfAttr, BPF_MAP_CREATE, BPF_PROG_ATTACH, BPF_PROG_LOAD, BPF_RINGBUF_POLL};
-use minilib::{bpf, exit, msleep, spawn, waitpid, write};
+use minilib::{bpf, exit, msleep, spawn, write};
 
 const BPF_MAP_TYPE_RINGBUF: u32 = 27;
 const HELPER_RINGBUF_OUTPUT: i32 = 8;
@@ -103,11 +103,14 @@ pub extern "C" fn _start() -> ! {
 
     write(
         1,
-        b"[4/4] Running workload, then collecting scheduler events...\n",
+        b"[4/4] Launching workload, then collecting scheduler events...\n",
     );
-    run_workload("/bin/fork_test");
-    run_workload("/bin/fork_test");
-    run_workload("/bin/syscall_demo");
+    launch_workload("/bin/fork_test");
+    msleep(50);
+    launch_workload("/bin/fork_test");
+    msleep(50);
+    launch_workload("/bin/syscall_demo");
+    msleep(150);
 
     write(1, b"\nCollecting sched_switch events...\n");
 
@@ -230,8 +233,8 @@ fn build_program(ringbuf_map_id: i32) -> [BpfInsn; 9] {
     ]
 }
 
-fn run_workload(path: &str) {
-    write(1, b"  run ");
+fn launch_workload(path: &str) {
+    write(1, b"  launch ");
     write(1, path.as_bytes());
     write(1, b" -> pid=");
     let pid = spawn(path);
@@ -242,16 +245,6 @@ fn run_workload(path: &str) {
     }
 
     print_i32(pid);
-
-    let mut status = 0i32;
-    let waited = waitpid(pid, &mut status as *mut i32, 0);
-    if waited != pid {
-        write(1, b" (waitpid failed)\n");
-        exit(1);
-    }
-
-    write(1, b" exit=");
-    print_i32((status >> 8) & 0xff);
     write(1, b"\n");
 }
 
