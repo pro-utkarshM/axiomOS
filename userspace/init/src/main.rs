@@ -3,11 +3,16 @@
 
 use minilib::write;
 
+const DEFAULT_DEMO: &str = "/bin/sched_switch_demo";
+
 // SAFETY: Entry point for the init process, called by the kernel/loader.
 #[unsafe(no_mangle)]
 pub extern "C" fn _start() -> ! {
     write(1, b"=== Axiom eBPF Init ===\n");
-    spawn_demo("/bin/sched_switch_demo");
+    write(1, b"Phase 4 demo boot: ");
+    write(1, DEFAULT_DEMO.as_bytes());
+    write(1, b"\n");
+    spawn_demo(DEFAULT_DEMO);
 
     loop {
         minilib::pause();
