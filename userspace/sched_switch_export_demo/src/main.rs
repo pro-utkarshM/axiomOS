@@ -4,13 +4,13 @@
 use core::panic::PanicInfo;
 
 use kernel_abi::{BpfAttr, BPF_MAP_CREATE, BPF_PROG_ATTACH, BPF_PROG_LOAD};
-use minilib::{bpf, close, exit, open, write, O_CREAT, O_WRONLY};
+use minilib::{bpf, debug_syscall, exit, write};
 
 const BPF_MAP_TYPE_RINGBUF: u32 = 27;
 const HELPER_RINGBUF_OUTPUT: i32 = 8;
 const ATTACH_TYPE_SCHED_SWITCH: u32 = 7;
 const SCHED_SWITCH_CONTEXT_SIZE: usize = 40;
-const MAP_ID_PATH: &str = "/var/tmp/sched_switch.mapid";
+const DEBUG_OP_SET_EXPORTED_RINGBUF_MAP_ID: usize = 1;
 
 #[repr(C)]
 struct BpfInsn {
@@ -92,10 +92,8 @@ pub extern "C" fn _start() -> ! {
     }
     write(1, b"OK\n");
 
-    write(1, b"[4/4] Exporting ringbuf map id to ");
-    write(1, MAP_ID_PATH.as_bytes());
-    write(1, b"... ");
-    if write_map_id_file(ringbuf_map_id).is_err() {
+    write(1, b"[4/4] Exporting ringbuf map id via debug syscall... ");
+    if debug_syscall(DEBUG_OP_SET_EXPORTED_RINGBUF_MAP_ID, ringbuf_map_id as usize) != 0 {
         write(1, b"FAILED\n");
         exit(1);
     }
@@ -164,55 +162,6 @@ fn build_program(ringbuf_map_id: i32) -> [BpfInsn; 9] {
             imm: 0,
         },
     ]
-}
-
-fn write_map_id_file(map_id: i32) -> Result<(), ()> {
-    let fd = open(MAP_ID_PATH, O_CREAT | O_WRONLY, 0o644);
-    if fd < 0 {
-        return Err(());
-    }
-
-    let mut buf = [0u8; 24];
-    let len = encode_i32_line(map_id, &mut buf);
-    let wrote = write(fd, &buf[..len]);
-    let _ = close(fd);
-
-    if wrote == len as i32 { Ok(()) } else { Err(()) }
-}
-
-fn encode_i32_line(value: i32, buf: &mut [u8; 24]) -> usize {
-    let mut idx = 0usize;
-    if value < 0 {
-        buf[idx] = b'-';
-        idx += 1;
-        idx + encode_u64(value.wrapping_neg() as u64, &mut buf[idx..])
-    } else {
-        idx + encode_u64(value as u64, &mut buf[idx..])
-    }
-}
-
-fn encode_u64(mut n: u64, buf: &mut [u8]) -> usize {
-    if n == 0 {
-        buf[0] = b'0';
-        buf[1] = b'\n';
-        return 2;
-    }
-
-    let mut scratch = [0u8; 20];
-    let mut len = 0usize;
-    while n > 0 {
-        scratch[len] = b'0' + (n % 10) as u8;
-        n /= 10;
-        len += 1;
-    }
-
-    let mut i = 0usize;
-    while i < len {
-        buf[i] = scratch[len - 1 - i];
-        i += 1;
-    }
-    buf[len] = b'\n';
-    len + 1
 }
 
 const fn regs(dst: u8, src: u8) -> u8 {

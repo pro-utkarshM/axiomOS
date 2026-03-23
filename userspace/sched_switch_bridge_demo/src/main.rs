@@ -4,9 +4,9 @@
 use core::panic::PanicInfo;
 
 use kernel_abi::{BpfAttr, BPF_RINGBUF_POLL};
-use minilib::{bpf, close, exit, msleep, open, read, spawn, write, O_RDONLY};
+use minilib::{bpf, debug_syscall, exit, msleep, spawn, write};
 
-const MAP_ID_PATH: &str = "/var/tmp/sched_switch.mapid";
+const DEBUG_OP_GET_EXPORTED_RINGBUF_MAP_ID: usize = 2;
 const SCHED_SWITCH_CONTEXT_SIZE: usize = 40;
 
 #[repr(C)]
@@ -30,10 +30,10 @@ pub extern "C" fn _start() -> ! {
     write(1, b"  map-id consumer -> live scheduler events\n");
     write(1, b"========================================\n\n");
 
-    write(1, b"[1/3] Reading exported map id... ");
-    let ringbuf_map_id = match read_map_id_file() {
-        Ok(id) => id,
-        Err(_) => {
+    write(1, b"[1/3] Reading exported map id via debug syscall... ");
+    let ringbuf_map_id = match read_exported_map_id() {
+        Some(id) => id,
+        None => {
             write(1, b"FAILED\n");
             write(1, b"  run /bin/sched_switch_export_demo first\n");
             exit(1);
@@ -113,50 +113,13 @@ pub extern "C" fn _start() -> ! {
     exit(0);
 }
 
-fn read_map_id_file() -> Result<i32, ()> {
-    let fd = open(MAP_ID_PATH, O_RDONLY, 0);
-    if fd < 0 {
-        return Err(());
+fn read_exported_map_id() -> Option<i32> {
+    let value = debug_syscall(DEBUG_OP_GET_EXPORTED_RINGBUF_MAP_ID, 0);
+    if value < 0 {
+        None
+    } else {
+        Some(value as i32)
     }
-
-    let mut buf = [0u8; 24];
-    let n = read(fd, &mut buf);
-    let _ = close(fd);
-    if n <= 0 {
-        return Err(());
-    }
-
-    parse_i32_ascii(&buf[..n as usize]).ok_or(())
-}
-
-fn parse_i32_ascii(buf: &[u8]) -> Option<i32> {
-    let mut idx = 0usize;
-    let mut negative = false;
-    if idx < buf.len() && buf[idx] == b'-' {
-        negative = true;
-        idx += 1;
-    }
-
-    let mut seen_digit = false;
-    let mut value = 0i32;
-    while idx < buf.len() {
-        let ch = buf[idx];
-        if ch == b'\n' {
-            break;
-        }
-        if !ch.is_ascii_digit() {
-            return None;
-        }
-        seen_digit = true;
-        value = value.checked_mul(10)?.checked_add((ch - b'0') as i32)?;
-        idx += 1;
-    }
-
-    if !seen_digit {
-        return None;
-    }
-
-    if negative { Some(-value) } else { Some(value) }
 }
 
 fn launch_workload(path: &str) {

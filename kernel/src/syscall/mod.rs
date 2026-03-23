@@ -3,6 +3,7 @@ use core::ops::Neg;
 use core::slice::{from_raw_parts, from_raw_parts_mut};
 #[cfg(feature = "rpi5")]
 use core::sync::atomic::{AtomicBool, Ordering};
+use core::sync::atomic::{AtomicU32, Ordering as AtomicOrdering};
 
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 use access::KernelAccess;
@@ -62,6 +63,10 @@ use crate::arch::UserContext;
 static WRITE_MARKER_SENT: AtomicBool = AtomicBool::new(false);
 #[cfg(feature = "rpi5")]
 static BPF_MARKER_SENT: AtomicBool = AtomicBool::new(false);
+static EXPORTED_RINGBUF_MAP_ID: AtomicU32 = AtomicU32::new(u32::MAX);
+
+const DEBUG_OP_SET_EXPORTED_RINGBUF_MAP_ID: usize = 1;
+const DEBUG_OP_GET_EXPORTED_RINGBUF_MAP_ID: usize = 2;
 
 #[cfg(feature = "rpi5")]
 #[inline(always)]
@@ -179,6 +184,7 @@ pub fn dispatch_syscall(
         kernel_abi::SYS_FORK => dispatch_sys_fork(ctx),
         kernel_abi::SYS_EXECVE => dispatch_sys_execve(ctx, arg1, arg2, arg3),
         kernel_abi::SYS_WAITPID => dispatch_sys_waitpid(arg1, arg2, arg3),
+        kernel_abi::SYS_DEBUG => dispatch_sys_debug(arg1, arg2),
         _ => {
             error!("unimplemented syscall: {} ({n})", syscall_name(n));
             loop {
@@ -224,6 +230,25 @@ pub fn dispatch_syscall(
     }
 
     result
+}
+
+fn dispatch_sys_debug(op: usize, value: usize) -> Result<usize, Errno> {
+    match op {
+        DEBUG_OP_SET_EXPORTED_RINGBUF_MAP_ID => {
+            let map_id = u32::try_from(value).map_err(|_| EINVAL)?;
+            EXPORTED_RINGBUF_MAP_ID.store(map_id, AtomicOrdering::Relaxed);
+            Ok(0)
+        }
+        DEBUG_OP_GET_EXPORTED_RINGBUF_MAP_ID => {
+            let map_id = EXPORTED_RINGBUF_MAP_ID.load(AtomicOrdering::Relaxed);
+            if map_id == u32::MAX {
+                Err(EINVAL)
+            } else {
+                Ok(map_id as usize)
+            }
+        }
+        _ => Err(EINVAL),
+    }
 }
 
 /// Create a slice from a raw pointer and length.
