@@ -32,9 +32,9 @@ What is already working in the repository:
 
 What is not yet complete enough for the thesis:
 
-- `rk-bridge` is not yet connected to live kernel event sources
+- `rk-bridge` is not yet connected to live kernel event sources through a stable exported object interface
 - `rk-bridge` ROS2 publishing is still placeholder code behind a feature flag
-- The final demo flow is not yet packaged as one clean, repeatable no-reboot path
+- The final durable bridge/export interface is not yet packaged
 - Kernel heap at init is above the proposal target
 
 ---
@@ -427,6 +427,7 @@ What is already proven:
 - `sys_enter`, `sys_exit`, and `sched_switch` are live runtime hook points
 - `sys_exit` can drive ring-buffer output to userspace without reboot
 - `sched_switch` can drive ring-buffer output to userspace without reboot
+- `sched_switch` can export live events to a second userspace consumer in the same boot using a kernel-held exported map ID
 - AArch64 `fork()`/child return was repaired enough to support real scheduler demo workloads
 
 This means the remaining Phase 4 bottleneck is no longer kernel hook bring-up.
@@ -439,29 +440,38 @@ Phase 4 will proceed in two passes.
 The short-term goal is to finish the strongest honest demo path as quickly as possible.
 The long-term goal is to converge on the cleaner durable architecture.
 
-#### Pass 1: Pragmatic bridge path
+#### Pass 1: Pragmatic in-kernel handoff path
 
-The first pass will use the kernel and syscall surface that already exists today.
+The first pass uses the kernel and syscall surface that already exists today, without pretending that pinned object export or host-side bridge consumption already exists.
 
 Implementation plan:
 
-- add `rk_bridge --map-id`
-- add `sched_switch_demo --export-only`
-- let the demo create the ring buffer, attach the program, print the map ID, and stay alive
-- let `rk_bridge` consume live ring-buffer events by map ID and publish them to stdout first
+- add a small export producer: `sched_switch_export_demo`
+- add a second userspace consumer: `sched_switch_bridge_demo`
+- let the export demo create the ring buffer, attach the program, and export the live map ID into a kernel-held handoff slot
+- let the bridge demo read that exported map ID in the same boot and consume live ring-buffer events through `BPF_RINGBUF_POLL`
 
 The proof target for this pass is:
 
-`runtime-loaded verified program -> live sched_switch hook -> ring buffer -> rk_bridge stdout`
+`runtime-loaded verified program -> live sched_switch hook -> shared exported map id -> second userspace consumer`
 
 Why we are doing this:
 
 - the current kernel does not yet expose pinned BPF objects as a stable consumable userspace interface
-- `sched_switch_demo` currently owns a private ring buffer map and polls it itself
-- `rk_bridge` can now parse live `sched_switch` payloads, but it still needs an event export path that matches the kernel that exists today
-- using transient map IDs is the fastest honest way to finish the bridge proof without pretending pinned-object infrastructure already exists
+- the root ext2 image is not writable, so file-based handoff is the wrong dependency
+- host-side `rk_bridge` is a standalone `std` tool, while the live ring-buffer polling surface that exists today is an Axiom in-kernel syscall path
+- a kernel-held exported map ID is the smallest honest transport that matches the system as built today
+- this proves cross-process event export on the running kernel without waiting for pinned-object infrastructure
 
 This is a proof-oriented interim transport, not the final architecture.
+
+Current status:
+
+- Pass 1 is complete and validated on RPi5 hardware
+- the validated sequence is:
+  `sched_switch_export_demo -> SYS_DEBUG handoff -> sched_switch_bridge_demo`
+- the proven output line is:
+  `Pipeline proven: runtime attach -> sched_switch -> shared map-id -> bridge consumer`
 
 #### Pass 2: Durable bridge architecture
 
@@ -506,8 +516,9 @@ That means:
 - Demo requires no reboot between “before” and “after”
 - A reviewer can understand the change immediately from output alone
 - Pass 1 done:
-  - live kernel scheduler events reach `rk_bridge` through `--map-id`
-  - stdout output is clean enough to demonstrate the end-to-end path
+  - live kernel scheduler events reach a second userspace consumer in the same boot
+  - the handoff mechanism is kernel-owned and requires no reboot or reflashing between producer and consumer
+  - output is clean enough to demonstrate the end-to-end path on hardware
 - Pass 2 done:
   - pinned-object event export exists
   - `rk_bridge` consumes stable named kernel objects
