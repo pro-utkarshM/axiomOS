@@ -3,10 +3,10 @@
 
 use core::panic::PanicInfo;
 
-use kernel_abi::{BpfAttr, BPF_RINGBUF_POLL};
-use minilib::{bpf, debug_syscall, exit, msleep, spawn, write};
+use kernel_abi::{BpfAttr, BPF_OBJ_GET, BPF_RINGBUF_POLL};
+use minilib::{bpf, exit, msleep, spawn, write};
 
-const DEBUG_OP_GET_EXPORTED_RINGBUF_MAP_ID: usize = 2;
+const PINNED_RINGBUF_PATH: &[u8] = b"/sys/fs/bpf/maps/sched_switch_events\0";
 const SCHED_SWITCH_CONTEXT_SIZE: usize = 40;
 
 #[repr(C)]
@@ -27,11 +27,11 @@ fn panic(_info: &PanicInfo) -> ! {
 pub extern "C" fn _start() -> ! {
     write(1, b"\n========================================\n");
     write(1, b"  Axiom sched_switch Bridge Demo\n");
-    write(1, b"  map-id consumer -> live scheduler events\n");
+    write(1, b"  pinned-object consumer -> live scheduler events\n");
     write(1, b"========================================\n\n");
 
-    write(1, b"[1/3] Reading exported map id via debug syscall... ");
-    let ringbuf_map_id = match read_exported_map_id() {
+    write(1, b"[1/3] Opening pinned ringbuf object... ");
+    let ringbuf_map_id = match get_pinned_map_id() {
         Some(id) => id,
         None => {
             write(1, b"FAILED\n");
@@ -108,13 +108,22 @@ pub extern "C" fn _start() -> ! {
 
     write(
         1,
-        b"Pipeline proven: runtime attach -> sched_switch -> shared map-id -> bridge consumer\n",
+        b"Pipeline proven: runtime attach -> sched_switch -> pinned object -> bridge consumer\n",
     );
     exit(0);
 }
 
-fn read_exported_map_id() -> Option<i32> {
-    let value = debug_syscall(DEBUG_OP_GET_EXPORTED_RINGBUF_MAP_ID, 0);
+fn get_pinned_map_id() -> Option<i32> {
+    let attr = BpfAttr {
+        pathname: PINNED_RINGBUF_PATH.as_ptr() as u64,
+        path_len: PINNED_RINGBUF_PATH.len() as u32,
+        ..Default::default()
+    };
+    let value = bpf(
+        BPF_OBJ_GET as i32,
+        &attr as *const BpfAttr as *const u8,
+        core::mem::size_of::<BpfAttr>() as i32,
+    );
     if value < 0 {
         None
     } else {

@@ -3,14 +3,14 @@
 
 use core::panic::PanicInfo;
 
-use kernel_abi::{BpfAttr, BPF_MAP_CREATE, BPF_PROG_ATTACH, BPF_PROG_LOAD};
-use minilib::{bpf, debug_syscall, exit, write};
+use kernel_abi::{BpfAttr, BPF_MAP_CREATE, BPF_OBJ_PIN, BPF_PROG_ATTACH, BPF_PROG_LOAD};
+use minilib::{bpf, exit, write};
 
 const BPF_MAP_TYPE_RINGBUF: u32 = 27;
 const HELPER_RINGBUF_OUTPUT: i32 = 8;
 const ATTACH_TYPE_SCHED_SWITCH: u32 = 7;
 const SCHED_SWITCH_CONTEXT_SIZE: usize = 40;
-const DEBUG_OP_SET_EXPORTED_RINGBUF_MAP_ID: usize = 1;
+const PINNED_RINGBUF_PATH: &[u8] = b"/sys/fs/bpf/maps/sched_switch_events\0";
 
 #[repr(C)]
 struct BpfInsn {
@@ -29,7 +29,7 @@ fn panic(_info: &PanicInfo) -> ! {
 pub extern "C" fn _start() -> ! {
     write(1, b"\n========================================\n");
     write(1, b"  Axiom sched_switch Export Demo\n");
-    write(1, b"  Runtime attach + shared map-id export\n");
+    write(1, b"  Runtime attach + pinned object export\n");
     write(1, b"========================================\n\n");
 
     let attr_size = core::mem::size_of::<BpfAttr>() as i32;
@@ -92,16 +92,27 @@ pub extern "C" fn _start() -> ! {
     }
     write(1, b"OK\n");
 
-    write(1, b"[4/4] Exporting ringbuf map id via debug syscall... ");
-    if debug_syscall(DEBUG_OP_SET_EXPORTED_RINGBUF_MAP_ID, ringbuf_map_id as usize) != 0 {
+    write(1, b"[4/4] Pinning ringbuf map object... ");
+    let pin_attr = BpfAttr {
+        map_fd: ringbuf_map_id as u32,
+        pathname: PINNED_RINGBUF_PATH.as_ptr() as u64,
+        path_len: PINNED_RINGBUF_PATH.len() as u32,
+        ..Default::default()
+    };
+    let pin_res = bpf(
+        BPF_OBJ_PIN as i32,
+        &pin_attr as *const BpfAttr as *const u8,
+        attr_size,
+    );
+    if pin_res != 0 {
         write(1, b"FAILED\n");
         exit(1);
     }
     write(1, b"OK\n\n");
 
     write(1, b"Next step:\n");
-    write(1, b"  run /bin/sched_switch_bridge_demo to consume live events\n");
-    write(1, b"  this process can now exit; hook and map stay live in-kernel\n");
+    write(1, b"  run /bin/sched_switch_bridge_demo to consume the pinned object\n");
+    write(1, b"  this process can now exit; hook and pinned map stay live in-kernel\n");
     exit(0);
 }
 

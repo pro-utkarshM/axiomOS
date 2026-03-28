@@ -3,8 +3,10 @@ pub mod jit_memory;
 
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
+use alloc::string::String;
 use alloc::vec::Vec;
 
+use kernel_abi::{BpfObjectInfo, BPF_OBJECT_KIND_MAP};
 use kernel_bpf::bytecode::insn::BpfInsn;
 use kernel_bpf::bytecode::program::BpfProgram;
 use kernel_bpf::execution::{BpfContext, BpfError, BpfExecutor, Interpreter};
@@ -27,6 +29,7 @@ pub struct BpfManager {
     programs: Vec<BpfProgram<ActiveProfile>>,
     attachments: BTreeMap<u32, Vec<u32>>,
     maps: Vec<Box<dyn BpfMap<ActiveProfile>>>,
+    pinned_maps: BTreeMap<String, u32>,
 }
 
 impl Default for BpfManager {
@@ -41,6 +44,7 @@ impl BpfManager {
             programs: Vec::new(),
             attachments: BTreeMap::new(),
             maps: Vec::new(),
+            pinned_maps: BTreeMap::new(),
         }
     }
 
@@ -308,6 +312,31 @@ impl BpfManager {
 
     pub fn get_map_def(&self, map_id: u32) -> Option<&kernel_bpf::maps::MapDef> {
         self.maps.get(map_id as usize).map(|m| m.def())
+    }
+
+    pub fn pin_map(&mut self, path: String, map_id: u32) -> Result<(), BpfError> {
+        if self.maps.get(map_id as usize).is_none() {
+            return Err(BpfError::NotLoaded);
+        }
+
+        self.pinned_maps.insert(path, map_id);
+        Ok(())
+    }
+
+    pub fn get_pinned_map(&self, path: &str) -> Option<u32> {
+        self.pinned_maps.get(path).copied()
+    }
+
+    pub fn get_map_info(&self, map_id: u32) -> Option<BpfObjectInfo> {
+        let def = self.get_map_def(map_id)?;
+        Some(BpfObjectInfo {
+            id: map_id,
+            object_kind: BPF_OBJECT_KIND_MAP,
+            map_type: def.map_type as u32,
+            key_size: def.key_size,
+            value_size: def.value_size,
+            max_entries: def.max_entries,
+        })
     }
 
     /// Poll for the next event from a ring buffer map.
