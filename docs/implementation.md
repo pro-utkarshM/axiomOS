@@ -428,6 +428,7 @@ What is already proven:
 - `sys_exit` can drive ring-buffer output to userspace without reboot
 - `sched_switch` can drive ring-buffer output to userspace without reboot
 - `sched_switch` can export live events to a second userspace consumer in the same boot using a kernel-held exported map ID
+- `sched_switch` can now export live events to a second userspace consumer through a pinned BPF map object on RPi5 hardware
 - AArch64 `fork()`/child return was repaired enough to support real scheduler demo workloads
 
 This means the remaining Phase 4 bottleneck is no longer kernel hook bring-up.
@@ -475,7 +476,7 @@ Current status:
 
 #### Pass 2: Durable bridge architecture
 
-The second pass will replace the pragmatic transport with the cleaner long-term interface.
+The second pass replaces the pragmatic transport with the cleaner long-term interface.
 
 Implementation plan:
 
@@ -496,6 +497,15 @@ Why this is the right longer-run architecture:
 - the bridge becomes a real consumer instead of a demo-only peer process
 - the system aligns better with established BPF object lifecycle patterns
 - ROS2 publication becomes a presentation layer over a stable kernel event interface, not a special-case demo path
+
+Current status:
+
+- Pass 2A is complete and validated on RPi5 hardware for map objects
+- the validated sequence is:
+  `sched_switch_export_demo -> BPF_OBJ_PIN -> sched_switch_bridge_demo -> BPF_OBJ_GET`
+- the proven output line is:
+  `Pipeline proven: runtime attach -> sched_switch -> pinned object -> bridge consumer`
+- the remaining Pass 2 work is bridge integration and real ROS2 publication, not kernel-side pinned map bring-up
 
 ### Validity constraint
 
