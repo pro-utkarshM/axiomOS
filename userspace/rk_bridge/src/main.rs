@@ -1,19 +1,19 @@
-//! rk-to-ros: Bridge rkBPF kernel events to ROS2 topics
+//! rk-to-ros: Bridge rkBPF kernel events to stdout or ROS2 topics
 //!
-//! This CLI tool reads events from rkBPF ring buffers and publishes them
-//! to ROS2 topics for integration with the robotics ecosystem.
+//! This CLI tool resolves pinned rkBPF ring buffer objects through the Axiom
+//! `sys_bpf` interface and publishes events to stdout or ROS2.
 //!
 //! # Usage
 //!
 //! ```bash
-//! # Bridge events to stdout (for testing)
-//! rk-to-ros --map /sys/fs/bpf/maps/events --stdout
+//! # Bridge live scheduler events to stdout
+//! rk-to-ros --stdout --format text
 //!
-//! # Bridge events to a ROS2 topic
-//! rk-to-ros --map /sys/fs/bpf/maps/imu_events --topic /rk/imu
+//! # Bridge a different pinned object path
+//! rk-to-ros --map /sys/fs/bpf/maps/imu_events --event-kind legacy --stdout
 //!
 //! # With rate limiting
-//! rk-to-ros --map /sys/fs/bpf/maps/motor_events --topic /rk/motor --rate-limit 1000
+//! rk-to-ros --topic /rk/sched_switch --rate-limit 1000
 //! ```
 
 use anyhow::{Context, Result};
@@ -33,24 +33,24 @@ use tokio::time::interval;
 #[command(name = "rk-to-ros")]
 #[command(author = "rkBPF Team")]
 #[command(version = "0.1.0")]
-#[command(about = "Bridge rkBPF kernel events to ROS2 topics")]
+#[command(about = "Bridge pinned rkBPF kernel events to stdout or ROS2 topics")]
 #[command(long_about = r#"
-rk-to-ros bridges events from rkBPF ring buffers to ROS2 topics,
-enabling unified observability of kernel and userspace events.
+rk-to-ros opens pinned rkBPF ring buffer objects through the Axiom BPF syscall
+surface and forwards their events to stdout or ROS2 topics.
 
 Examples:
-  # Bridge IMU events to ROS2
-  rk-to-ros --map /sys/fs/bpf/maps/imu_events --topic /rk/imu
+  # Bridge the proven sched_switch pinned object to stdout
+  rk-to-ros --stdout --format text
 
-  # Output to stdout for debugging
-  rk-to-ros --map /sys/fs/bpf/maps/events --stdout --format text
+  # Bridge a different pinned object path using the legacy event parser
+  rk-to-ros --map /sys/fs/bpf/maps/events --event-kind legacy --stdout --format text
 
-  # With rate limiting (max 1000 events/sec)
-  rk-to-ros --map /sys/fs/bpf/maps/motor --topic /rk/motor --rate-limit 1000
+  # Publish scheduler events to a ROS2 topic
+  rk-to-ros --topic /rk/sched_switch
 "#)]
 struct Args {
     /// Path to the pinned rkBPF ring buffer map
-    #[arg(short, long)]
+    #[arg(short, long, default_value = "/sys/fs/bpf/maps/sched_switch_events")]
     map: PathBuf,
 
     /// ROS2 topic to publish events to
@@ -86,7 +86,7 @@ struct Args {
     verbose: bool,
 
     /// Event payload kind expected in the ring buffer
-    #[arg(long, default_value = "legacy", value_enum)]
+    #[arg(long, default_value = "sched-switch", value_enum)]
     event_kind: EventKindArg,
 }
 
@@ -138,16 +138,22 @@ impl Bridge {
     }
 
     /// Run the bridge with a real ring buffer.
-    async fn run_with_ringbuf(&self, consumer: RingBufConsumer) -> Result<()> {
+    async fn run_with_ringbuf(&self, mut consumer: RingBufConsumer) -> Result<()> {
         let mut interval = interval(self.poll_interval);
 
         log::info!("Starting bridge, poll interval: {:?}", self.poll_interval);
+        log::info!(
+            "Opened pinned map fd={} type={} max_entries={}",
+            consumer.map_fd(),
+            consumer.info().map_type,
+            consumer.info().max_entries
+        );
 
         while self.running.load(Ordering::Relaxed) {
             interval.tick().await;
 
             // Poll for events
-            for data in consumer.poll() {
+            for data in consumer.poll()? {
                 let parsed = match self.event_kind {
                     EventKindArg::Legacy => RkEvent::from_bytes(&data),
                     EventKindArg::SchedSwitch => RkEvent::from_sched_switch_bytes(&data),
