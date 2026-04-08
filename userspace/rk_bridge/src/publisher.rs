@@ -378,9 +378,8 @@ impl RosPublisher {
     fn encode_event_message(&self, event: &RkEvent) -> Result<String, PublishError> {
         let payload = serde_json::to_string(event)
             .map_err(|e| PublishError::Serialization(e.to_string()))?;
-        let escaped = serde_json::to_string(&payload)
-            .map_err(|e| PublishError::Serialization(e.to_string()))?;
-        Ok(format!("{{data: {escaped}}}"))
+        serde_json::to_string(&serde_json::json!({ "data": payload }))
+            .map_err(|e| PublishError::Serialization(e.to_string()))
     }
 }
 
@@ -658,8 +657,8 @@ mod tests {
         };
 
         let message = publisher.encode_event_message(&make_test_event()).unwrap();
-        assert!(message.starts_with("{data: "));
-        assert!(message.contains("\\\"Imu\\\""));
+        assert!(message.starts_with('{'));
+        assert!(message.contains("\"data\":\"{\\\"Imu\\\""));
         assert!(message.ends_with('}'));
     }
 }
