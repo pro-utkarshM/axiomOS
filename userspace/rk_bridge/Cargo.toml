@@ -10,7 +10,7 @@ license = "MIT"
 
 [features]
 default = []
-# Enable actual ROS2 integration (requires rclrs)
+# Enable actual ROS2 integration via the `ros2` CLI on the host.
 ros2 = []
 
 [dependencies]

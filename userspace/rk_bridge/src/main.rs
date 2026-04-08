@@ -53,7 +53,8 @@ struct Args {
     #[arg(short, long, default_value = "/sys/fs/bpf/maps/sched_switch_events")]
     map: PathBuf,
 
-    /// ROS2 topic to publish events to
+    /// ROS2 topic to publish events to. With the default `/rk/events`, ROS2 mode
+    /// routes events to stable per-event topics such as `/rk/sched_switch`.
     #[arg(short, long, default_value = "/rk/events")]
     topic: String,
 
@@ -300,7 +301,7 @@ async fn main() -> Result<()> {
         Box::new(StdoutPublisher::new(config))
     } else {
         log::info!("Using ROS2 publisher for topic: {}", args.topic);
-        Box::new(RosPublisher::new(config))
+        Box::new(RosPublisher::new(config)?)
     };
 
     // Create bridge
