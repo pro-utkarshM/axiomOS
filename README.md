@@ -9,7 +9,7 @@ Axiom targets robotics and embedded systems where kernel logic must evolve witho
 - `kernel/crates` — modular kernel subsystems (BPF, VFS, etc.)
 - `userspace/` — userspace programs and libraries
 - `scripts/` — build system and deployment tools
-- `docs/` — architectural documentation and benchmarks
+- `docs/` — architectural documentation and benchmarks or you can visit [docs](https://deepwiki.com/pro-utkarshM/axiom-ebpf)
 
 ---
 
