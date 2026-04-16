@@ -3,25 +3,33 @@ pub mod jit_memory;
 
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
+use alloc::string::String;
 use alloc::vec::Vec;
 
+use kernel_abi::{BpfObjectInfo, BPF_OBJECT_KIND_MAP};
 use kernel_bpf::bytecode::insn::BpfInsn;
 use kernel_bpf::bytecode::program::BpfProgram;
 use kernel_bpf::execution::{BpfContext, BpfError, BpfExecutor, Interpreter};
 use kernel_bpf::loader::BpfLoader;
 use kernel_bpf::maps::{ArrayMap, BpfMap, HashMap as BpfHashMap, RingBufMap, TimeSeriesMap};
-use kernel_bpf::profile::{ActiveProfile, PhysicalProfile};
+use kernel_bpf::profile::ActiveProfile;
+#[cfg(target_arch = "aarch64")]
+use kernel_bpf::profile::PhysicalProfile;
 
 pub const ATTACH_TYPE_TIMER: u32 = 1;
 pub const ATTACH_TYPE_GPIO: u32 = 2;
 pub const ATTACH_TYPE_PWM: u32 = 3;
 pub const ATTACH_TYPE_IIO: u32 = 4;
 pub const ATTACH_TYPE_SYSCALL: u32 = 5;
+pub const ATTACH_TYPE_SYS_ENTER: u32 = ATTACH_TYPE_SYSCALL;
+pub const ATTACH_TYPE_SYS_EXIT: u32 = 6;
+pub const ATTACH_TYPE_SCHED_SWITCH: u32 = 7;
 
 pub struct BpfManager {
     programs: Vec<BpfProgram<ActiveProfile>>,
     attachments: BTreeMap<u32, Vec<u32>>,
     maps: Vec<Box<dyn BpfMap<ActiveProfile>>>,
+    pinned_maps: BTreeMap<String, u32>,
 }
 
 impl Default for BpfManager {
@@ -36,6 +44,7 @@ impl BpfManager {
             programs: Vec::new(),
             attachments: BTreeMap::new(),
             maps: Vec::new(),
+            pinned_maps: BTreeMap::new(),
         }
     }
 
@@ -162,6 +171,33 @@ impl BpfManager {
         result
     }
 
+    pub fn run_hook_programs(
+        attach_type: u32,
+        ctx: &BpfContext,
+        hook_name: &str,
+    ) -> Result<usize, BpfError> {
+        let Some(manager) = crate::BPF_MANAGER.get() else {
+            return Ok(0);
+        };
+
+        let programs = manager.lock().get_hook_programs(attach_type);
+        for (prog_id, program) in &programs {
+            match Self::execute_program(program, ctx) {
+                Ok(res) => {
+                    if res != 0 {
+                        log::info!("{hook_name} BPF Hook [id={prog_id}] returned: {res}");
+                    }
+                }
+                Err(e) => {
+                    log::error!("{hook_name} BPF Hook [id={prog_id}] failed: {:?}", e);
+                    return Err(e);
+                }
+            }
+        }
+
+        Ok(programs.len())
+    }
+
     pub fn execute_hooks(&self, attach_type: u32, ctx: &BpfContext) {
         if let Some(progs) = self.attachments.get(&attach_type) {
             for prog_id in progs {
@@ -276,6 +312,31 @@ impl BpfManager {
 
     pub fn get_map_def(&self, map_id: u32) -> Option<&kernel_bpf::maps::MapDef> {
         self.maps.get(map_id as usize).map(|m| m.def())
+    }
+
+    pub fn pin_map(&mut self, path: String, map_id: u32) -> Result<(), BpfError> {
+        if self.maps.get(map_id as usize).is_none() {
+            return Err(BpfError::NotLoaded);
+        }
+
+        self.pinned_maps.insert(path, map_id);
+        Ok(())
+    }
+
+    pub fn get_pinned_map(&self, path: &str) -> Option<u32> {
+        self.pinned_maps.get(path).copied()
+    }
+
+    pub fn get_map_info(&self, map_id: u32) -> Option<BpfObjectInfo> {
+        let def = self.get_map_def(map_id)?;
+        Some(BpfObjectInfo {
+            id: map_id,
+            object_kind: BPF_OBJECT_KIND_MAP,
+            map_type: def.map_type as u32,
+            key_size: def.key_size,
+            value_size: def.value_size,
+            max_entries: def.max_entries,
+        })
     }
 
     /// Poll for the next event from a ring buffer map.

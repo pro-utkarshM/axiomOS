@@ -1,19 +1,19 @@
-//! rk-to-ros: Bridge rkBPF kernel events to ROS2 topics
+//! rk-to-ros: Bridge rkBPF kernel events to stdout or ROS2 topics
 //!
-//! This CLI tool reads events from rkBPF ring buffers and publishes them
-//! to ROS2 topics for integration with the robotics ecosystem.
+//! This CLI tool resolves pinned rkBPF ring buffer objects through the Axiom
+//! `sys_bpf` interface and publishes events to stdout or ROS2.
 //!
 //! # Usage
 //!
 //! ```bash
-//! # Bridge events to stdout (for testing)
-//! rk-to-ros --map /sys/fs/bpf/maps/events --stdout
+//! # Bridge live scheduler events to stdout
+//! rk-to-ros --stdout --format text
 //!
-//! # Bridge events to a ROS2 topic
-//! rk-to-ros --map /sys/fs/bpf/maps/imu_events --topic /rk/imu
+//! # Bridge a different pinned object path
+//! rk-to-ros --map /sys/fs/bpf/maps/imu_events --event-kind legacy --stdout
 //!
 //! # With rate limiting
-//! rk-to-ros --map /sys/fs/bpf/maps/motor_events --topic /rk/motor --rate-limit 1000
+//! rk-to-ros --topic /rk/sched_switch --rate-limit 1000
 //! ```
 
 use anyhow::{Context, Result};
@@ -33,27 +33,28 @@ use tokio::time::interval;
 #[command(name = "rk-to-ros")]
 #[command(author = "rkBPF Team")]
 #[command(version = "0.1.0")]
-#[command(about = "Bridge rkBPF kernel events to ROS2 topics")]
+#[command(about = "Bridge pinned rkBPF kernel events to stdout or ROS2 topics")]
 #[command(long_about = r#"
-rk-to-ros bridges events from rkBPF ring buffers to ROS2 topics,
-enabling unified observability of kernel and userspace events.
+rk-to-ros opens pinned rkBPF ring buffer objects through the Axiom BPF syscall
+surface and forwards their events to stdout or ROS2 topics.
 
 Examples:
-  # Bridge IMU events to ROS2
-  rk-to-ros --map /sys/fs/bpf/maps/imu_events --topic /rk/imu
+  # Bridge the proven sched_switch pinned object to stdout
+  rk-to-ros --stdout --format text
 
-  # Output to stdout for debugging
-  rk-to-ros --map /sys/fs/bpf/maps/events --stdout --format text
+  # Bridge a different pinned object path using the legacy event parser
+  rk-to-ros --map /sys/fs/bpf/maps/events --event-kind legacy --stdout --format text
 
-  # With rate limiting (max 1000 events/sec)
-  rk-to-ros --map /sys/fs/bpf/maps/motor --topic /rk/motor --rate-limit 1000
+  # Publish scheduler events to a ROS2 topic
+  rk-to-ros --topic /rk/sched_switch
 "#)]
 struct Args {
     /// Path to the pinned rkBPF ring buffer map
-    #[arg(short, long)]
+    #[arg(short, long, default_value = "/sys/fs/bpf/maps/sched_switch_events")]
     map: PathBuf,
 
-    /// ROS2 topic to publish events to
+    /// ROS2 topic to publish events to. With the default `/rk/events`, ROS2 mode
+    /// routes events to stable per-event topics such as `/rk/sched_switch`.
     #[arg(short, long, default_value = "/rk/events")]
     topic: String,
 
@@ -84,6 +85,10 @@ struct Args {
     /// Verbose output
     #[arg(short, long)]
     verbose: bool,
+
+    /// Event payload kind expected in the ring buffer
+    #[arg(long, default_value = "sched-switch", value_enum)]
+    event_kind: EventKindArg,
 }
 
 #[derive(ValueEnum, Clone, Debug)]
@@ -91,6 +96,14 @@ enum FormatArg {
     Json,
     JsonLines,
     Text,
+}
+
+#[derive(ValueEnum, Clone, Debug)]
+enum EventKindArg {
+    /// Parse events using the legacy EventHeader-discriminated format
+    Legacy,
+    /// Parse raw live scheduler switch events
+    SchedSwitch,
 }
 
 impl From<FormatArg> for OutputFormat {
@@ -108,29 +121,46 @@ struct Bridge {
     publisher: Box<dyn EventPublisher>,
     poll_interval: Duration,
     running: Arc<AtomicBool>,
+    event_kind: EventKindArg,
 }
 
 impl Bridge {
-    fn new(publisher: Box<dyn EventPublisher>, poll_interval: Duration) -> Self {
+    fn new(
+        publisher: Box<dyn EventPublisher>,
+        poll_interval: Duration,
+        event_kind: EventKindArg,
+    ) -> Self {
         Self {
             publisher,
             poll_interval,
             running: Arc::new(AtomicBool::new(true)),
+            event_kind,
         }
     }
 
     /// Run the bridge with a real ring buffer.
-    async fn run_with_ringbuf(&self, consumer: RingBufConsumer) -> Result<()> {
+    async fn run_with_ringbuf(&self, mut consumer: RingBufConsumer) -> Result<()> {
         let mut interval = interval(self.poll_interval);
 
         log::info!("Starting bridge, poll interval: {:?}", self.poll_interval);
+        log::info!(
+            "Opened pinned map fd={} type={} max_entries={}",
+            consumer.map_fd(),
+            consumer.info().map_type,
+            consumer.info().max_entries
+        );
 
         while self.running.load(Ordering::Relaxed) {
             interval.tick().await;
 
             // Poll for events
-            for data in consumer.poll() {
-                match RkEvent::from_bytes(&data) {
+            for data in consumer.poll()? {
+                let parsed = match self.event_kind {
+                    EventKindArg::Legacy => RkEvent::from_bytes(&data),
+                    EventKindArg::SchedSwitch => RkEvent::from_sched_switch_bytes(&data),
+                };
+
+                match parsed {
                     Ok(event) => {
                         if let Err(e) = self.publisher.publish(&event) {
                             log::warn!("Failed to publish event: {}", e);
@@ -254,6 +284,7 @@ async fn main() -> Result<()> {
     log::info!("rk-to-ros starting");
     log::info!("Map path: {:?}", args.map);
     log::info!("Topic: {}", args.topic);
+    log::info!("Event kind: {:?}", args.event_kind);
 
     // Create publisher configuration
     let config = PublisherConfig {
@@ -270,11 +301,15 @@ async fn main() -> Result<()> {
         Box::new(StdoutPublisher::new(config))
     } else {
         log::info!("Using ROS2 publisher for topic: {}", args.topic);
-        Box::new(RosPublisher::new(config))
+        Box::new(RosPublisher::new(config)?)
     };
 
     // Create bridge
-    let bridge = Bridge::new(publisher, Duration::from_millis(args.poll_interval));
+    let bridge = Bridge::new(
+        publisher,
+        Duration::from_millis(args.poll_interval),
+        args.event_kind.clone(),
+    );
 
     // Set up signal handler for graceful shutdown
     let running = bridge.running();
