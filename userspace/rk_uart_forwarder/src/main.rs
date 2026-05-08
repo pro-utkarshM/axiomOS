@@ -39,7 +39,10 @@ pub extern "C" fn _start() -> ! {
     let map_fd = match open_pinned_ringbuf() {
         Some(fd) => fd,
         None => {
-            write(2, b"rk_uart_forwarder: BPF_OBJ_GET failed; run sched_switch_export_demo first\n");
+            write(
+                2,
+                b"rk_uart_forwarder: BPF_OBJ_GET failed; run sched_switch_export_demo first\n",
+            );
             exit(1);
         }
     };

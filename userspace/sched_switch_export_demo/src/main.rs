@@ -111,8 +111,14 @@ pub extern "C" fn _start() -> ! {
     write(1, b"OK\n\n");
 
     write(1, b"Next step:\n");
-    write(1, b"  run /bin/sched_switch_bridge_demo to consume the pinned object\n");
-    write(1, b"  this process can now exit; hook and pinned map stay live in-kernel\n");
+    write(
+        1,
+        b"  run /bin/sched_switch_bridge_demo to consume the pinned object\n",
+    );
+    write(
+        1,
+        b"  this process can now exit; hook and pinned map stay live in-kernel\n",
+    );
     exit(0);
 }
 
