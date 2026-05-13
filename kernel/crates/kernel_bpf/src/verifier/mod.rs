@@ -39,6 +39,7 @@ mod cfg;
 mod core;
 mod error;
 pub mod helpers;
+mod pruner;
 mod state;
 mod streaming;
 
@@ -47,5 +48,6 @@ pub use core::Verifier;
 pub use cfg::ControlFlowGraph;
 pub use error::VerifyError;
 pub use helpers::{ArgType, HelperId, HelperSignature, get_helper_signature, validate_helper_call};
+pub use pruner::{PruneDecision, StatePruner, StateSubsumes};
 pub use state::{RegState, RegType, StackSlot, VerifierState};
 pub use streaming::StreamingVerifier;
