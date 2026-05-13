@@ -89,6 +89,7 @@ aarch64_deps = [
 exclude = [
   "kernel/demos/riscv",
   "userspace/rk_bridge",
+  "kernel/crates/kernel_bpf/fuzz",
 ]
 members = [
   "kernel",
