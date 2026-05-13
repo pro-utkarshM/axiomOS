@@ -182,8 +182,7 @@ fn use_def(insn: &BpfInsn) -> UseDef {
                 // Reg-reg ALU also reads dst (e.g. `dst += src` reads dst).
                 ud.uses.insert(dst);
             }
-            if let (crate::bytecode::opcode::SourceType::Reg, Some(src)) =
-                (insn.source_type(), src)
+            if let (crate::bytecode::opcode::SourceType::Reg, Some(src)) = (insn.source_type(), src)
             {
                 ud.uses.insert(src);
             }
@@ -195,8 +194,7 @@ fn use_def(insn: &BpfInsn) -> UseDef {
             if let Some(dst) = dst {
                 ud.uses.insert(dst);
             }
-            if let (crate::bytecode::opcode::SourceType::Reg, Some(src)) =
-                (insn.source_type(), src)
+            if let (crate::bytecode::opcode::SourceType::Reg, Some(src)) = (insn.source_type(), src)
             {
                 ud.uses.insert(src);
             }
