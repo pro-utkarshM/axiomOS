@@ -41,6 +41,7 @@ mod error;
 pub mod helpers;
 mod liveness;
 mod pruner;
+mod refine;
 mod state;
 mod streaming;
 
@@ -51,5 +52,6 @@ pub use error::VerifyError;
 pub use helpers::{ArgType, HelperId, HelperSignature, get_helper_signature, validate_helper_call};
 pub use liveness::{Liveness, RegSet};
 pub use pruner::{PruneDecision, StatePruner, StateSubsumes};
+pub use refine::{RefinedScalar, refine_scalar};
 pub use state::{RegState, RegType, StackSlot, VerifierState};
 pub use streaming::StreamingVerifier;
