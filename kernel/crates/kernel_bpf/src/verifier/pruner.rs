@@ -32,6 +32,7 @@
 
 use alloc::vec::Vec;
 
+use super::liveness::RegSet;
 use super::state::{RegState, RegType, VerifierState};
 use crate::bytecode::registers::Register;
 
@@ -101,16 +102,42 @@ impl StateSubsumes for RegState {
 
 impl StateSubsumes for VerifierState {
     fn subsumes(&self, other: &Self) -> bool {
-        // Every register's state in `self` must subsume the corresponding
-        // register in `other`. Stack subsumption deferred to a follow-up;
-        // for now we require stack states to match exactly.
+        // Default subsumption considers every register live. Use
+        // `subsumes_with_liveness` to ignore dead-register differences.
+        self.subsumes_with_liveness(other, RegSet::ALL)
+    }
+}
+
+impl VerifierState {
+    /// Subsumption check that ignores registers not in `live`.
+    ///
+    /// Two verifier states that disagree only on dead registers are
+    /// equivalent for pruning purposes — those dead values can never
+    /// affect future execution by definition, so claiming subsumption on
+    /// only-live-register agreement is sound.
+    ///
+    /// Pass `RegSet::ALL` to ignore liveness (equivalent to the original
+    /// [`StateSubsumes`] impl).
+    pub fn subsumes_with_liveness(&self, other: &Self, live: RegSet) -> bool {
+        // Every live register's state in `self` must subsume the
+        // corresponding register in `other`. Dead registers are skipped
+        // outright.
         for r in 0..Register::COUNT {
+            let reg = match Register::from_raw(r as u8) {
+                Some(reg) => reg,
+                None => continue,
+            };
+            if !live.contains(reg) {
+                continue;
+            }
             if !self.regs[r].subsumes(&other.regs[r]) {
                 return false;
             }
         }
-        // Conservative stack equality — refine when we add tracked stack
-        // ranges. Documented as a precision opportunity in the test below.
+        // Stack subsumption: still equality. Stack contents are not
+        // covered by register liveness — a dead register doesn't mean
+        // dead stack slots. Conservative stack-range refinement is
+        // tracked as a follow-up on #83.
         if self.stack.max_depth() != other.stack.max_depth() {
             return false;
         }
@@ -148,9 +175,24 @@ impl StatePruner {
     /// current one, return [`PruneDecision::Prune`]. Otherwise record
     /// the current state and return [`PruneDecision::Continue`].
     pub fn check_or_record(&mut self, pc: usize, state: &VerifierState) -> PruneDecision {
+        self.check_or_record_with_liveness(pc, state, RegSet::ALL)
+    }
+
+    /// Liveness-aware variant of [`check_or_record`].
+    ///
+    /// Subsumption ignores registers not in `live`. Two states that
+    /// disagree only on dead registers are equivalent for pruning, which
+    /// is the central reason wiring liveness into the pruner improves
+    /// pruning rate on real programs.
+    pub fn check_or_record_with_liveness(
+        &mut self,
+        pc: usize,
+        state: &VerifierState,
+        live: RegSet,
+    ) -> PruneDecision {
         let entries = self.by_pc.entry(pc).or_default();
         for prior in entries.iter() {
-            if prior.subsumes(state) {
+            if prior.subsumes_with_liveness(state, live) {
                 return PruneDecision::Prune;
             }
         }
