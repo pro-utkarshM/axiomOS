@@ -12,6 +12,7 @@ use core::marker::PhantomData;
 use super::cfg::ControlFlowGraph;
 use super::error::{VerifyError, VerifyResult};
 use super::helpers::{HelperValidation, validate_helper_call};
+use super::liveness::{Liveness, RegSet};
 use super::pruner::{PruneDecision, StatePruner};
 use super::state::{RegState, RegType, ScalarValue, StackSlot, VerifierState};
 use crate::bytecode::insn::BpfInsn;
@@ -40,6 +41,13 @@ pub struct Verifier<P: PhysicalProfile = ActiveProfile> {
     /// for the subsumption check.
     pruner: StatePruner,
 
+    /// Per-instruction liveness analysis. Pruner subsumption ignores
+    /// registers not in `liveness.live_in(pc)`, so two states differing
+    /// only on dead registers prune. Computed once per `verify_safety`
+    /// call after the CFG is built; queried per-instruction by the
+    /// pruner consultation.
+    liveness: Option<Liveness>,
+
     /// Profile marker
     _profile: PhantomData<P>,
 }
@@ -51,6 +59,7 @@ impl<P: PhysicalProfile> Verifier<P> {
             cfg: None,
             states: Vec::new(),
             pruner: StatePruner::new(),
+            liveness: None,
             _profile: PhantomData,
         }
     }
@@ -167,6 +176,10 @@ impl<P: PhysicalProfile> Verifier<P> {
         self.states = alloc::vec![None; insns.len()];
         self.pruner.clear();
 
+        // Compute liveness once per verification run; the pruner uses it
+        // to ignore dead-register differences during subsumption.
+        self.liveness = Some(Liveness::analyze(insns, cfg));
+
         // Start verification from entry
         let initial_state = VerifierState::new_entry(P::MAX_STACK_SIZE);
         self.verify_path(insns, 0, initial_state)?;
@@ -215,14 +228,19 @@ impl<P: PhysicalProfile> Verifier<P> {
             // (O(2^branches)), we explore each basic block once per
             // distinct state shape that reaches it.
             //
-            // The old `states_compatible` check (reg-type equality only)
-            // was too coarse — it pruned states that actually carried
-            // different scalar/tnum info. The pruner's subsumption check
-            // is type + interval + tnum, so it's both more precise (prunes
-            // more often when states agree on shape) and more sound (never
-            // prunes when the new state observes something the old one
-            // didn't).
-            if self.pruner.check_or_record(idx, &state) == PruneDecision::Prune {
+            // Liveness-aware subsumption (#104): two states that disagree
+            // only on dead registers at this pc are equivalent for pruning
+            // purposes, because dead values can never affect future
+            // execution. With `live_in[idx]` passed in, subsumption walks
+            // only live registers — pruning fires more often on stateful
+            // programs without losing soundness.
+            let live = self
+                .liveness
+                .as_ref()
+                .map(|l| l.live_in(idx))
+                .unwrap_or(RegSet::ALL);
+            if self.pruner.check_or_record_with_liveness(idx, &state, live) == PruneDecision::Prune
+            {
                 return Ok(());
             }
             // Keep `self.states` populated so the post-verification stack-
