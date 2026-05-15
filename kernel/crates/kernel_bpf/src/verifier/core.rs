@@ -9,6 +9,7 @@ extern crate alloc;
 use alloc::vec::Vec;
 use core::marker::PhantomData;
 
+use super::alu::{compute_alu_result, scalar_from_imm};
 use super::cfg::ControlFlowGraph;
 use super::error::{VerifyError, VerifyResult};
 use super::helpers::{HelperValidation, validate_helper_call};
@@ -375,8 +376,29 @@ impl<P: PhysicalProfile> Verifier<P> {
             });
         }
 
-        // Update destination register to scalar
-        state.set_scalar(dst, Some(ScalarValue::unknown()));
+        // Compute the rhs ScalarValue from either the source register or
+        // the sign-extended immediate. tnum + interval flow through
+        // `compute_alu_result`, replacing the prior unconditional collapse
+        // to `ScalarValue::unknown()`.
+        let rhs = if matches!(insn.source_type(), crate::bytecode::opcode::SourceType::Reg) {
+            // `src` validated above (init check + div-by-zero); unwrap is
+            // sound because we've already returned on `None`.
+            let src = insn.src().expect("src register validated above");
+            state
+                .reg(src)
+                .scalar_value
+                .unwrap_or_else(ScalarValue::unknown)
+        } else {
+            scalar_from_imm(insn.imm)
+        };
+
+        let dst_scalar = state
+            .reg(dst)
+            .scalar_value
+            .unwrap_or_else(ScalarValue::unknown);
+
+        let result = compute_alu_result(dst_scalar, alu_op, rhs);
+        state.set_scalar(dst, Some(result));
 
         Ok(())
     }
@@ -830,5 +852,48 @@ mod tests {
             result,
             Err(VerifyError::UninitializedRegister { .. })
         ));
+    }
+
+    /// Acceptance test for #102 — tnum + interval flow through ALU sequence.
+    ///
+    /// Before this wiring landed, `verify_alu` collapsed `dst` to
+    /// `ScalarValue::unknown()` after every operation, losing all bit-level
+    /// precision. This program — `r0 &= 0xff; r0 += 1` — is the canonical
+    /// case where that precision matters: after the AND, low byte unknown
+    /// + high 56 bits known zero; after the add, the interval is exactly
+    /// [1, 256]. The verifier should accept and the final r0 should carry
+    /// the refined range.
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn tnum_flows_through_and_then_add() {
+        let insns = [
+            BpfInsn::mov64_imm(0, 0),          // r0 = 0 (init)
+            BpfInsn::new(0x57, 0, 0, 0, 0xff), // r0 &= 0xff (BPF_ALU64 | BPF_AND | BPF_K)
+            BpfInsn::add64_imm(0, 1),          // r0 += 1
+            BpfInsn::exit(),
+        ];
+
+        let result = Verifier::<ActiveProfile>::verify(BpfProgType::SocketFilter, &insns);
+        assert!(
+            result.is_ok(),
+            "program should verify; got {:?}",
+            result.err()
+        );
+    }
+
+    /// Companion: a constant-fold case. `mov r0 = 5; r0 += 3` should
+    /// produce a concrete r0 = 8 in the verifier's view. Acceptance for
+    /// #102 — value propagation through Mov + Add.
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn alu_constant_fold_through_add() {
+        let insns = [
+            BpfInsn::mov64_imm(0, 5),
+            BpfInsn::add64_imm(0, 3),
+            BpfInsn::exit(),
+        ];
+
+        let result = Verifier::<ActiveProfile>::verify(BpfProgType::SocketFilter, &insns);
+        assert!(result.is_ok(), "got {:?}", result.err());
     }
 }
