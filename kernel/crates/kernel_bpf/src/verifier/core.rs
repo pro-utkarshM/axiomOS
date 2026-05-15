@@ -12,6 +12,7 @@ use core::marker::PhantomData;
 use super::cfg::ControlFlowGraph;
 use super::error::{VerifyError, VerifyResult};
 use super::helpers::{HelperValidation, validate_helper_call};
+use super::refine::refine_scalar;
 use super::state::{RegState, RegType, ScalarValue, StackSlot, VerifierState};
 use crate::bytecode::insn::BpfInsn;
 use crate::bytecode::opcode::{AluOp, OpcodeClass};
@@ -229,13 +230,25 @@ impl<P: PhysicalProfile> Verifier<P> {
                 InsnResult::Branch {
                     fallthrough,
                     target,
+                    refinement,
                 } => {
-                    // Verify both paths
+                    // Verify both paths, applying per-arm scalar
+                    // refinement when present. `true_branch` is the target
+                    // (taken) side; `false_branch` is the fallthrough side.
+                    // Per JIT/verifier convention: `BPF_JEQ r0, 0, +1`
+                    // jumps to target when condition is true, falls
+                    // through when false.
                     let mut branch_state = state.clone();
+                    if let Some(r) = refinement {
+                        branch_state.reg_mut(r.dst).scalar_value = Some(r.true_branch);
+                    }
                     branch_state.insn_idx = target;
                     branch_state.insn_processed += 1;
                     self.verify_path(insns, target, branch_state)?;
 
+                    if let Some(r) = refinement {
+                        state.reg_mut(r.dst).scalar_value = Some(r.false_branch);
+                    }
                     state.insn_idx = fallthrough;
                     state.insn_processed += 1;
                 }
@@ -421,7 +434,11 @@ impl<P: PhysicalProfile> Verifier<P> {
             });
         }
 
-        if matches!(insn.source_type(), crate::bytecode::opcode::SourceType::Reg) {
+        // Build the rhs ScalarValue for refinement: either the src
+        // register's tracked scalar (reg mode) or a sign-extended constant
+        // from the immediate (imm mode). Refining dst when its scalar is
+        // None (e.g. dst is a pointer type) is a no-op.
+        let rhs = if matches!(insn.source_type(), crate::bytecode::opcode::SourceType::Reg) {
             let src = insn.src().ok_or(VerifyError::InvalidRegister {
                 insn_idx: idx,
                 reg: insn.src_reg(),
@@ -433,11 +450,38 @@ impl<P: PhysicalProfile> Verifier<P> {
                     reg: src,
                 });
             }
-        }
+
+            state.reg(src).scalar_value
+        } else {
+            // BPF spec: immediate is i32 sign-extended to i64.
+            let v = insn.imm as i64 as u64;
+            Some(ScalarValue {
+                value: Some(v),
+                min: v,
+                max: v,
+                tnum: super::state::TnumValue::constant(v),
+            })
+        };
+
+        // Compute branch refinement when both dst and rhs are scalar.
+        // Pointer-arithmetic refinement is its own future-issue.
+        let dst_scalar = state.reg(dst).scalar_value;
+        let refinement = match (dst_scalar, rhs) {
+            (Some(dst_sv), Some(rhs_sv)) => {
+                let refined = refine_scalar(dst_sv, jmp_op, rhs_sv);
+                Some(BranchRefinement {
+                    dst,
+                    true_branch: refined.true_branch,
+                    false_branch: refined.false_branch,
+                })
+            }
+            _ => None,
+        };
 
         Ok(InsnResult::Branch {
             fallthrough: idx + 1,
             target,
+            refinement,
         })
     }
 
@@ -752,9 +796,31 @@ enum InsnResult {
     /// Jump to target instruction
     Jump(usize),
     /// Branch: verify both paths
-    Branch { fallthrough: usize, target: usize },
+    Branch {
+        fallthrough: usize,
+        target: usize,
+        /// Optional range refinement for dst register on the two branch
+        /// arms. When present, the verifier substitutes the refined scalar
+        /// before exploring each arm — `if r1 < 100 { ... }` lands the
+        /// true branch with `r1 ∈ [0, 99]` and the false branch with
+        /// `r1 ∈ [100, u64::MAX]`. None for unrefinable jumps.
+        refinement: Option<BranchRefinement>,
+    },
     /// Program exit
     Exit,
+}
+
+/// Per-arm scalar refinement attached to a conditional Branch result.
+///
+/// `dst` is the register being refined; `true_branch` / `false_branch`
+/// are the refined `ScalarValue`s for that register on each side. The
+/// reg-vs-reg case can in principle also refine the src register; that's
+/// tracked as a follow-up to #105 and currently returns `None` for src.
+#[derive(Debug, Clone, Copy)]
+struct BranchRefinement {
+    dst: Register,
+    true_branch: ScalarValue,
+    false_branch: ScalarValue,
 }
 
 #[cfg(test)]
