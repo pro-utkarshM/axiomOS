@@ -35,6 +35,7 @@
 //! - **Cloud**: Relaxed constraints, JIT hints, soft WCET
 //! - **Embedded**: Strict constraints, hard WCET, interrupt safety
 
+mod alu;
 mod cfg;
 mod core;
 mod error;
@@ -47,6 +48,7 @@ mod streaming;
 
 pub use core::Verifier;
 
+pub use alu::{compute_alu_result, scalar_from_imm};
 pub use cfg::ControlFlowGraph;
 pub use error::VerifyError;
 pub use helpers::{ArgType, HelperId, HelperSignature, get_helper_signature, validate_helper_call};
