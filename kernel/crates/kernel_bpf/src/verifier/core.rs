@@ -13,6 +13,7 @@ use super::alu::{compute_alu_result, scalar_from_imm};
 use super::cfg::ControlFlowGraph;
 use super::error::{VerifyError, VerifyResult};
 use super::helpers::{HelperValidation, validate_helper_call};
+use super::pruner::{PruneDecision, StatePruner};
 use super::refine::refine_scalar;
 use super::state::{RegState, RegType, ScalarValue, StackSlot, VerifierState};
 use crate::bytecode::insn::BpfInsn;
@@ -30,8 +31,16 @@ pub struct Verifier<P: PhysicalProfile = ActiveProfile> {
     /// Control flow graph
     cfg: Option<ControlFlowGraph>,
 
-    /// Verifier states at each instruction (for path-sensitive analysis)
+    /// Verifier states at each instruction (for path-sensitive analysis).
+    /// Kept alongside [`pruner`] because the post-verification stack-depth
+    /// scan reads `state.stack.max_depth()` from each recorded state.
     states: Vec<Option<VerifierState>>,
+
+    /// State pruning table. The verifier consults this before re-exploring
+    /// any program point — if a previously-recorded state at the same pc
+    /// subsumes the current one, we skip exploration. See [`StatePruner`]
+    /// for the subsumption check.
+    pruner: StatePruner,
 
     /// Profile marker
     _profile: PhantomData<P>,
@@ -43,6 +52,7 @@ impl<P: PhysicalProfile> Verifier<P> {
         Self {
             cfg: None,
             states: Vec::new(),
+            pruner: StatePruner::new(),
             _profile: PhantomData,
         }
     }
@@ -155,8 +165,9 @@ impl<P: PhysicalProfile> Verifier<P> {
             }
         }
 
-        // Initialize states
+        // Initialize states and pruner.
         self.states = alloc::vec![None; insns.len()];
+        self.pruner.clear();
 
         // Start verification from entry
         let initial_state = VerifierState::new_entry(P::MAX_STACK_SIZE);
@@ -199,15 +210,25 @@ impl<P: PhysicalProfile> Verifier<P> {
                 return Err(VerifyError::InfiniteLoop { insn_idx: idx });
             }
 
-            // Merge or store state
-            if let Some(existing) = &self.states[idx] {
-                // Already verified this path with compatible state
-                if self.states_compatible(&state, existing) {
-                    return Ok(());
-                }
-                // Different state - would need full state merging for production
-                // For now, just continue
+            // Consult the state pruner — if a previously-recorded state at
+            // this pc subsumes the current one, we can stop exploring this
+            // path. This is the bounded-time win documented in #83: instead
+            // of re-exploring every basic block once per branch combination
+            // (O(2^branches)), we explore each basic block once per
+            // distinct state shape that reaches it.
+            //
+            // The old `states_compatible` check (reg-type equality only)
+            // was too coarse — it pruned states that actually carried
+            // different scalar/tnum info. The pruner's subsumption check
+            // is type + interval + tnum, so it's both more precise (prunes
+            // more often when states agree on shape) and more sound (never
+            // prunes when the new state observes something the old one
+            // didn't).
+            if self.pruner.check_or_record(idx, &state) == PruneDecision::Prune {
+                return Ok(());
             }
+            // Keep `self.states` populated so the post-verification stack-
+            // depth scan still works — it reads `state.stack.max_depth()`.
             self.states[idx] = Some(state.clone());
 
             let insn = &insns[idx];
@@ -258,17 +279,6 @@ impl<P: PhysicalProfile> Verifier<P> {
                 }
             }
         }
-    }
-
-    /// Check if two states are compatible (for path merging).
-    fn states_compatible(&self, s1: &VerifierState, s2: &VerifierState) -> bool {
-        // Simple compatibility check: same register types
-        for i in 0..Register::COUNT {
-            if s1.regs[i].reg_type != s2.regs[i].reg_type {
-                return false;
-            }
-        }
-        true
     }
 
     /// Verify a single instruction.
