@@ -9,9 +9,13 @@ extern crate alloc;
 use alloc::vec::Vec;
 use core::marker::PhantomData;
 
+use super::alu::{compute_alu_result, scalar_from_imm};
 use super::cfg::ControlFlowGraph;
 use super::error::{VerifyError, VerifyResult};
 use super::helpers::{HelperValidation, validate_helper_call};
+use super::liveness::{Liveness, RegSet};
+use super::pruner::{PruneDecision, StatePruner};
+use super::refine::refine_scalar;
 use super::state::{RegState, RegType, ScalarValue, StackSlot, VerifierState};
 use crate::bytecode::insn::BpfInsn;
 use crate::bytecode::opcode::{AluOp, OpcodeClass};
@@ -28,8 +32,23 @@ pub struct Verifier<P: PhysicalProfile = ActiveProfile> {
     /// Control flow graph
     cfg: Option<ControlFlowGraph>,
 
-    /// Verifier states at each instruction (for path-sensitive analysis)
+    /// Verifier states at each instruction (for path-sensitive analysis).
+    /// Kept alongside [`pruner`] because the post-verification stack-depth
+    /// scan reads `state.stack.max_depth()` from each recorded state.
     states: Vec<Option<VerifierState>>,
+
+    /// State pruning table. The verifier consults this before re-exploring
+    /// any program point — if a previously-recorded state at the same pc
+    /// subsumes the current one, we skip exploration. See [`StatePruner`]
+    /// for the subsumption check.
+    pruner: StatePruner,
+
+    /// Per-instruction liveness analysis. Pruner subsumption ignores
+    /// registers not in `liveness.live_in(pc)`, so two states differing
+    /// only on dead registers prune. Computed once per `verify_safety`
+    /// call after the CFG is built; queried per-instruction by the
+    /// pruner consultation.
+    liveness: Option<Liveness>,
 
     /// Profile marker
     _profile: PhantomData<P>,
@@ -41,6 +60,8 @@ impl<P: PhysicalProfile> Verifier<P> {
         Self {
             cfg: None,
             states: Vec::new(),
+            pruner: StatePruner::new(),
+            liveness: None,
             _profile: PhantomData,
         }
     }
@@ -153,8 +174,13 @@ impl<P: PhysicalProfile> Verifier<P> {
             }
         }
 
-        // Initialize states
+        // Initialize states and pruner.
         self.states = alloc::vec![None; insns.len()];
+        self.pruner.clear();
+
+        // Compute liveness once per verification run; the pruner uses it
+        // to ignore dead-register differences during subsumption.
+        self.liveness = Some(Liveness::analyze(insns, cfg));
 
         // Start verification from entry
         let initial_state = VerifierState::new_entry(P::MAX_STACK_SIZE);
@@ -197,15 +223,30 @@ impl<P: PhysicalProfile> Verifier<P> {
                 return Err(VerifyError::InfiniteLoop { insn_idx: idx });
             }
 
-            // Merge or store state
-            if let Some(existing) = &self.states[idx] {
-                // Already verified this path with compatible state
-                if self.states_compatible(&state, existing) {
-                    return Ok(());
-                }
-                // Different state - would need full state merging for production
-                // For now, just continue
+            // Consult the state pruner — if a previously-recorded state at
+            // this pc subsumes the current one, we can stop exploring this
+            // path. This is the bounded-time win documented in #83: instead
+            // of re-exploring every basic block once per branch combination
+            // (O(2^branches)), we explore each basic block once per
+            // distinct state shape that reaches it.
+            //
+            // Liveness-aware subsumption (#104): two states that disagree
+            // only on dead registers at this pc are equivalent for pruning
+            // purposes, because dead values can never affect future
+            // execution. With `live_in[idx]` passed in, subsumption walks
+            // only live registers — pruning fires more often on stateful
+            // programs without losing soundness.
+            let live = self
+                .liveness
+                .as_ref()
+                .map(|l| l.live_in(idx))
+                .unwrap_or(RegSet::ALL);
+            if self.pruner.check_or_record_with_liveness(idx, &state, live) == PruneDecision::Prune
+            {
+                return Ok(());
             }
+            // Keep `self.states` populated so the post-verification stack-
+            // depth scan still works — it reads `state.stack.max_depth()`.
             self.states[idx] = Some(state.clone());
 
             let insn = &insns[idx];
@@ -229,13 +270,25 @@ impl<P: PhysicalProfile> Verifier<P> {
                 InsnResult::Branch {
                     fallthrough,
                     target,
+                    refinement,
                 } => {
-                    // Verify both paths
+                    // Verify both paths, applying per-arm scalar
+                    // refinement when present. `true_branch` is the target
+                    // (taken) side; `false_branch` is the fallthrough side.
+                    // Per JIT/verifier convention: `BPF_JEQ r0, 0, +1`
+                    // jumps to target when condition is true, falls
+                    // through when false.
                     let mut branch_state = state.clone();
+                    if let Some(r) = refinement {
+                        branch_state.reg_mut(r.dst).scalar_value = Some(r.true_branch);
+                    }
                     branch_state.insn_idx = target;
                     branch_state.insn_processed += 1;
                     self.verify_path(insns, target, branch_state)?;
 
+                    if let Some(r) = refinement {
+                        state.reg_mut(r.dst).scalar_value = Some(r.false_branch);
+                    }
                     state.insn_idx = fallthrough;
                     state.insn_processed += 1;
                 }
@@ -244,17 +297,6 @@ impl<P: PhysicalProfile> Verifier<P> {
                 }
             }
         }
-    }
-
-    /// Check if two states are compatible (for path merging).
-    fn states_compatible(&self, s1: &VerifierState, s2: &VerifierState) -> bool {
-        // Simple compatibility check: same register types
-        for i in 0..Register::COUNT {
-            if s1.regs[i].reg_type != s2.regs[i].reg_type {
-                return false;
-            }
-        }
-        true
     }
 
     /// Verify a single instruction.
@@ -375,8 +417,29 @@ impl<P: PhysicalProfile> Verifier<P> {
             });
         }
 
-        // Update destination register to scalar
-        state.set_scalar(dst, Some(ScalarValue::unknown()));
+        // Compute the rhs ScalarValue from either the source register or
+        // the sign-extended immediate. tnum + interval flow through
+        // `compute_alu_result`, replacing the prior unconditional collapse
+        // to `ScalarValue::unknown()`.
+        let rhs = if matches!(insn.source_type(), crate::bytecode::opcode::SourceType::Reg) {
+            // `src` validated above (init check + div-by-zero); unwrap is
+            // sound because we've already returned on `None`.
+            let src = insn.src().expect("src register validated above");
+            state
+                .reg(src)
+                .scalar_value
+                .unwrap_or_else(ScalarValue::unknown)
+        } else {
+            scalar_from_imm(insn.imm)
+        };
+
+        let dst_scalar = state
+            .reg(dst)
+            .scalar_value
+            .unwrap_or_else(ScalarValue::unknown);
+
+        let result = compute_alu_result(dst_scalar, alu_op, rhs);
+        state.set_scalar(dst, Some(result));
 
         Ok(())
     }
@@ -421,7 +484,11 @@ impl<P: PhysicalProfile> Verifier<P> {
             });
         }
 
-        if matches!(insn.source_type(), crate::bytecode::opcode::SourceType::Reg) {
+        // Build the rhs ScalarValue for refinement: either the src
+        // register's tracked scalar (reg mode) or a sign-extended constant
+        // from the immediate (imm mode). Refining dst when its scalar is
+        // None (e.g. dst is a pointer type) is a no-op.
+        let rhs = if matches!(insn.source_type(), crate::bytecode::opcode::SourceType::Reg) {
             let src = insn.src().ok_or(VerifyError::InvalidRegister {
                 insn_idx: idx,
                 reg: insn.src_reg(),
@@ -433,11 +500,38 @@ impl<P: PhysicalProfile> Verifier<P> {
                     reg: src,
                 });
             }
-        }
+
+            state.reg(src).scalar_value
+        } else {
+            // BPF spec: immediate is i32 sign-extended to i64.
+            let v = insn.imm as i64 as u64;
+            Some(ScalarValue {
+                value: Some(v),
+                min: v,
+                max: v,
+                tnum: super::state::TnumValue::constant(v),
+            })
+        };
+
+        // Compute branch refinement when both dst and rhs are scalar.
+        // Pointer-arithmetic refinement is its own future-issue.
+        let dst_scalar = state.reg(dst).scalar_value;
+        let refinement = match (dst_scalar, rhs) {
+            (Some(dst_sv), Some(rhs_sv)) => {
+                let refined = refine_scalar(dst_sv, jmp_op, rhs_sv);
+                Some(BranchRefinement {
+                    dst,
+                    true_branch: refined.true_branch,
+                    false_branch: refined.false_branch,
+                })
+            }
+            _ => None,
+        };
 
         Ok(InsnResult::Branch {
             fallthrough: idx + 1,
             target,
+            refinement,
         })
     }
 
@@ -752,9 +846,31 @@ enum InsnResult {
     /// Jump to target instruction
     Jump(usize),
     /// Branch: verify both paths
-    Branch { fallthrough: usize, target: usize },
+    Branch {
+        fallthrough: usize,
+        target: usize,
+        /// Optional range refinement for dst register on the two branch
+        /// arms. When present, the verifier substitutes the refined scalar
+        /// before exploring each arm — `if r1 < 100 { ... }` lands the
+        /// true branch with `r1 ∈ [0, 99]` and the false branch with
+        /// `r1 ∈ [100, u64::MAX]`. None for unrefinable jumps.
+        refinement: Option<BranchRefinement>,
+    },
     /// Program exit
     Exit,
+}
+
+/// Per-arm scalar refinement attached to a conditional Branch result.
+///
+/// `dst` is the register being refined; `true_branch` / `false_branch`
+/// are the refined `ScalarValue`s for that register on each side. The
+/// reg-vs-reg case can in principle also refine the src register; that's
+/// tracked as a follow-up to #105 and currently returns `None` for src.
+#[derive(Debug, Clone, Copy)]
+struct BranchRefinement {
+    dst: Register,
+    true_branch: ScalarValue,
+    false_branch: ScalarValue,
 }
 
 #[cfg(test)]
@@ -830,5 +946,48 @@ mod tests {
             result,
             Err(VerifyError::UninitializedRegister { .. })
         ));
+    }
+
+    /// Acceptance test for #102 — tnum + interval flow through ALU sequence.
+    ///
+    /// Before this wiring landed, `verify_alu` collapsed `dst` to
+    /// `ScalarValue::unknown()` after every operation, losing all bit-level
+    /// precision. This program — `r0 &= 0xff; r0 += 1` — is the canonical
+    /// case where that precision matters: after the AND, low byte unknown
+    /// + high 56 bits known zero; after the add, the interval is exactly
+    /// [1, 256]. The verifier should accept and the final r0 should carry
+    /// the refined range.
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn tnum_flows_through_and_then_add() {
+        let insns = [
+            BpfInsn::mov64_imm(0, 0),          // r0 = 0 (init)
+            BpfInsn::new(0x57, 0, 0, 0, 0xff), // r0 &= 0xff (BPF_ALU64 | BPF_AND | BPF_K)
+            BpfInsn::add64_imm(0, 1),          // r0 += 1
+            BpfInsn::exit(),
+        ];
+
+        let result = Verifier::<ActiveProfile>::verify(BpfProgType::SocketFilter, &insns);
+        assert!(
+            result.is_ok(),
+            "program should verify; got {:?}",
+            result.err()
+        );
+    }
+
+    /// Companion: a constant-fold case. `mov r0 = 5; r0 += 3` should
+    /// produce a concrete r0 = 8 in the verifier's view. Acceptance for
+    /// #102 — value propagation through Mov + Add.
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn alu_constant_fold_through_add() {
+        let insns = [
+            BpfInsn::mov64_imm(0, 5),
+            BpfInsn::add64_imm(0, 3),
+            BpfInsn::exit(),
+        ];
+
+        let result = Verifier::<ActiveProfile>::verify(BpfProgType::SocketFilter, &insns);
+        assert!(result.is_ok(), "got {:?}", result.err());
     }
 }

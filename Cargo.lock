@@ -1059,6 +1059,10 @@ dependencies = [
  "ovmf-prebuilt",
  "pwm_demo",
  "safety_demo",
+ "sched_switch_bridge_demo",
+ "sched_switch_demo",
+ "sched_switch_export_demo",
+ "sys_exit_demo",
  "syscall_demo",
  "timeseries_demo",
 ]
@@ -1338,6 +1342,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "sched_switch_bridge_demo"
+version = "0.1.0"
+dependencies = [
+ "kernel_abi",
+ "minilib",
+]
+
+[[package]]
+name = "sched_switch_demo"
+version = "0.1.0"
+dependencies = [
+ "kernel_abi",
+ "minilib",
+]
+
+[[package]]
+name = "sched_switch_export_demo"
+version = "0.1.0"
+dependencies = [
+ "kernel_abi",
+ "minilib",
+]
+
+[[package]]
 name = "scoped-tls"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1479,6 +1507,14 @@ dependencies = [
  "proc-macro2",
  "quote",
  "unicode-ident",
+]
+
+[[package]]
+name = "sys_exit_demo"
+version = "0.1.0"
+dependencies = [
+ "kernel_abi",
+ "minilib",
 ]
 
 [[package]]
